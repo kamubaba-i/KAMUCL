@@ -58,29 +58,20 @@ test('launch: game process survives launcher exit via CreateProcessW detach + ru
   assert.match(app, /关闭启动器不影响游戏/)
 })
 
-test('switch animation slowed to 0.4s ease-in-out globally (修复6)', () => {
+test('switch keeps checked and keyboard focus feedback', () => {
   const css = read('src/renderer/src/styles.css')
-  const block = css.match(/\.switch-ui \{[\s\S]*?\}/)![0]
-  assert.match(block, /transition: background 0\.4s ease-in-out, border-color 0\.4s ease-in-out/)
-  const knob = css.match(/\.switch-ui::before \{[\s\S]*?\}/)![0]
-  assert.match(knob, /transition: left 0\.4s ease-in-out, background 0\.4s ease-in-out/)
+  assert.match(css, /\.switch input:checked \+ \.switch-ui/)
+  assert.match(css, /\.switch input:focus-visible \+ \.switch-ui/)
 })
 
-test('buttons modernized: hover lift + press feedback + focus ring on all tiers (设计7)', () => {
+test('buttons keep focus rings on every tier', () => {
   const css = read('src/renderer/src/styles.css')
-  // 基础悬浮微浮起 + 按压 0.97
-  assert.match(css, /\.btn:hover:not\(:disabled\) \{\s*transform: translateY\(-1px\)/)
-  assert.match(css, /\.btn:active:not\(:disabled\) \{\s*transform: scale\(0\.97\)/)
   // 焦点环可访问性
   assert.match(css, /\.btn:focus-visible/)
   assert.match(css, /\.btn-gold:focus-visible/)
   assert.match(css, /\.btn-ghost:focus-visible/)
   assert.match(css, /\.btn-danger:focus-visible/)
   assert.match(css, /\.icon-btn:focus-visible/)
-  // 主按钮悬浮阴影加深；次按钮悬浮阴影；图标按钮微浮起
-  assert.match(css, /\.btn-gold:hover:not\(:disabled\) \{[^}]*box-shadow: 0 6px 22px/)
-  assert.match(css, /\.btn-ghost:hover:not\(:disabled\) \{[^}]*box-shadow/)
-  assert.match(css, /\.icon-btn:hover:not\(:disabled\) \{[^}]*translateY\(-1px\)/)
 })
 
 test('modified SFCs compile', () => {

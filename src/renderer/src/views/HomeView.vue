@@ -847,7 +847,7 @@ onUnmounted(() => {
 .launch-combo {
   min-width: 310px; height: 76px; border-radius: 14px; overflow: hidden;
   box-shadow: 0 12px 32px color-mix(in srgb, var(--accent) 38%, transparent), 0 2px 0 color-mix(in srgb, white 14%, transparent) inset;
-  transition: transform 0.18s cubic-bezier(0.22, 0.9, 0.32, 1.2), box-shadow 0.22s ease;
+  transition: transform var(--motion-normal) var(--ease-out), box-shadow 0.22s ease;
 }
 .launch-combo:hover { transform: translateY(-2px); box-shadow: 0 16px 40px color-mix(in srgb, var(--accent) 46%, transparent), 0 2px 0 color-mix(in srgb, white 16%, transparent) inset; }
 .launch-combo:active { transform: translateY(0) scale(0.99); }
@@ -870,16 +870,16 @@ onUnmounted(() => {
   border-radius: 12px; margin: var(--space-1) 0;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   opacity: 0; transform: scale(0.97);
-  transition: left 0.28s cubic-bezier(0.3, 1.1, 0.4, 1), width 0.28s cubic-bezier(0.3, 1.1, 0.4, 1), opacity 0.18s ease, transform 0.2s ease;
+  transition: left var(--motion-normal) var(--ease-out), width var(--motion-normal) var(--ease-out), opacity 0.18s ease, transform 0.2s ease;
   pointer-events: none;
 }
 .runtime-blob.on { opacity: 1; transform: scale(1); }
 .runtime-item { position: relative; z-index: 1; display: grid; grid-template-columns: 34px minmax(0, 1fr) 15px; align-items: center; gap: 11px; min-width: 0; padding: 0 18px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: transform 0.18s cubic-bezier(0.22, 0.9, 0.32, 1.15); }
 .runtime-item + .runtime-item { border-left: 1px solid var(--border); }
-.runtime-item:hover { transform: translateY(-2px); }
+.runtime-item:hover { color: var(--accent-2); }
 .runtime-item > svg:first-child { width: 27px; height: 27px; color: var(--text); }
 .runtime-item > span { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.runtime-item small { color: var(--text-dim); font-size: 10px; }
+.runtime-item small { color: var(--text-dim); font-size: 12px; }
 .runtime-item strong { overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .runtime-chevron { width: 14px; height: 14px; color: var(--text-dim); opacity: 0.7; }
 .runtime-state > svg:first-child { color: var(--accent-2); }
@@ -889,7 +889,7 @@ onUnmounted(() => {
 .runtime-state.error strong { color: var(--danger); }
 .runtime-state.error i { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
 
-.instances-block { min-width: 0; margin-top: 30px; }
+.instances-block { min-width: 0; margin-top: 14px; }
 .instances-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
 .instances-head h2 { font-size: 17px; font-weight: 750; display: flex; align-items: center; gap: 9px; }
 /* 区块标题前的主题色短竖线：视觉锚点 */
@@ -898,22 +898,15 @@ onUnmounted(() => {
 .manage-instances:hover { color: var(--text); border-color: var(--border-strong); }
 .manage-instances svg { width: 15px; height: 15px; }
 .instance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-/* 卡片入场：自下而上渐入 + 按列错落（前 8 张），后续滚动自然 */
-.instance-card { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); grid-template-rows: 1fr auto; gap: 8px 8px; min-width: 0; height: 132px; min-height: 132px; padding: 17px 14px 13px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--card) 82%, transparent); cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.22s ease; animation: card-in 0.42s cubic-bezier(0.22, 0.9, 0.32, 1) backwards; }
-.instance-card:nth-child(2) { animation-delay: 45ms; }
-.instance-card:nth-child(3) { animation-delay: 90ms; }
-.instance-card:nth-child(4) { animation-delay: 135ms; }
-.instance-card:nth-child(5) { animation-delay: 180ms; }
-.instance-card:nth-child(6) { animation-delay: 225ms; }
-.instance-card:nth-child(7) { animation-delay: 270ms; }
-.instance-card:nth-child(8) { animation-delay: 315ms; }
-@keyframes card-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-.instance-card:hover { border-color: var(--border-strong); background: var(--card-2); transform: translateY(-3px); box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 14%, transparent); }
-.instance-card.selected { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent), 0 8px 24px var(--accent-soft); }
+/* Cards appear together so every action is available at the same time. */
+.instance-card { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); grid-template-rows: 1fr auto; gap: 8px 8px; min-width: 0; height: 132px; min-height: 132px; padding: 17px 14px 13px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--card) 82%, transparent); cursor: pointer; transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.22s ease; animation: card-in var(--motion-enter) var(--ease-out) backwards; }
+@keyframes card-in { from { opacity: 0; } to { opacity: 1; } }
+.instance-card:hover { border-color: var(--border-strong); background: var(--card-2); transform: translateY(-1px); box-shadow: var(--shadow); }
+.instance-card.selected { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent); }
 .instance-icon { align-self: center; width: 36px; height: 36px; }
 .instance-icon.image { object-fit: contain; image-rendering: pixelated; }
 .instance-copy { grid-column: 2; padding-right: 7px; align-self: center; display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.instance-copy strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; line-height: 1.3; font-weight: 650; overflow-wrap: anywhere; word-break: break-all; }
+.instance-copy strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; line-height: 1.4; font-weight: 650; overflow-wrap: anywhere; word-break: break-all; }
 .instance-copy span, .instance-last { overflow: hidden; color: var(--text-dim); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .instance-more { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); cursor: pointer; }
 .instance-more:hover { background: var(--hover); color: var(--text); }
@@ -1016,6 +1009,18 @@ onUnmounted(() => {
   .runtime-item { padding: 0 9px; gap: 8px; }
   .runtime-item strong { font-size: 11px; }
   .skin-panel { padding-inline: 10px; }
+}
+
+@media (max-width: 1080px) {
+  .hero-actions { flex-wrap: wrap; align-items: stretch; gap: 12px; }
+  .hero-secondary-actions { width: 100%; }
+  .hero-settings { height: 38px; flex: 1; }
+  .hero-more { height: 38px; }
+  .launch-combo { width: 100%; min-width: 0; height: 54px; }
+  .hero-content { padding: 24px; }
+  .hero-content h1, .hero-content h1.long-name { font-size: clamp(25px, 3.2vw, 36px); }
+  .hero-metadata-slot { min-height: 110px; }
+  .hero-edition { font-size: 14px; margin-top: 10px; }
 }
 
 @media (max-height: 760px) {

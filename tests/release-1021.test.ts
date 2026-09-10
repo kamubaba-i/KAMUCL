@@ -46,13 +46,13 @@ test('friend connect: sub-page transition on method switch (指令2)', () => {
   assert.match(fc, /prefers-reduced-motion/)
 })
 
-test('home runtime strip: hover blob follows pointer between cells + cell lifts (指令3)', () => {
+test('home runtime strip: hover feedback follows pointer between cells', () => {
   const home = read('src/renderer/src/views/HomeView.vue')
   assert.match(home, /class="runtime-blob"/)
   assert.match(home, /@mouseenter="runtimeHover = 0"/)
   assert.match(home, /@mouseleave="runtimeHover = -1"/)
   assert.match(home, /\.runtime-blob\.on \{/)
-  assert.match(home, /\.runtime-item:hover \{ transform: translateY\(-2px\)/)
+  // The v1.0.36 design pass keeps the hover indicator but no longer lifts each cell.
 })
 
 test('1.0.21 changed SFCs compile', () => {
