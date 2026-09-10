@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 02:25 ｜ 当前版本：**1.0.48**（已完成验证、打包和发布）
+> 更新时间：2026-09-11 02:54 ｜ 当前版本：**1.0.49**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,29 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.49 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.49 ，Release ID 386542085。功能提交 master `f8c2fb1` / main `4f489a3`；标签指向 master 功能提交。EXE、ZIP、SHA256SUMS.txt 已核对远端大小与 SHA256 后发布，latest=v1.0.49。
+
+**最终本地产物目录**：release/final-1.0.49。打包期间检测到 release/KAMUCL-1.0.49.exe 正在运行（缓存1.0.49-d90f5243f8bbb535，为补入Java安装器互斥前的中间包），旧EXE被占用；未结束该启动器或游戏进程，改在独立目录从最终win-unpacked生成便携EXE，ZIP为最终构建的副本。发布附件取独立目录，旧顶层EXE不得用作最终交付。
+
+**整合包导入**：用户附件是外层 ZIP（PCL EXE、PCL 配置与 modpack.mrpack），旧代码只检查外层清单。现在在无已知外层清单/完整客户端结构时，识别唯一内嵌 mrpack，重用路径/数量/压缩比校验并保留外层文件名；多个内包或内包超过512MiB时明确提示手动选择。外层 EXE 不执行、不导入。
+
+**真实附件验证**：附件 SHA256 `afcd07d0b782ac30acd3e20d1592fa3d6ac2bce7d15b68b6dcd74d0ab476b11f`。识别 MC1.21.11 / Fabric0.19.2，59个下载清单项；使用生产导入器在隔离目录创建实例，4097个 overrides 文件逐个与内包比对一致。scripts/verify-nested-modpack.cjs / out/nested-pack-p240Q0/report.json。此项只模拟了游戏本体/加载器安装与59项网络下载，未声称完整启动整合包游戏。
+
+**下载性能**：旧候选源顺序无论镜像设置都先官方，改为 BMCL 模式镜像优先、官方回退。带可信 SHA1/SHA512 且已知大小≥8MiB的文件最多四路 Range 下载，连接占用统一并发额度；响应区间/大小必须准确，合并后校验完整哈希。Range不支持或异常回退单连接；已有断点保留单连接续传；用户限速时不分段。依赖库与资产池按当前下载线程设置调度。
+
+**同机下载证据及边界**：本地限速HTTP测试约1944ms→509ms（全量测试本轮）；真实官方1.21.11 client.jar大小31,152,600字节，SHA1 ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd，BMCL模式单连接30,018ms接收21,102,270字节后按测试预算取消，四路11,018ms完整下载且哈希通过。out/live-download-w5DaP1/results.json。顺序单次测试，未与PCL同场对比，不承诺所有线路固定倍数或PCL同速。
+
+**多版本并行**：GameView仅锁定正在下载的原始MC版本ID，各版本独立进度；下载中心沿用各任务的暂停/取消。新增fileJobs按目标文件互斥，其他路径并行；取消排队者不释放正在写入的任务。安装原版目录同样加锁；失败不再扫描删除其他 .installing 目录，保留显式清理/重试入口。安装上下文冻结活动和默认共享目录，切换文件夹不改变在途路径。Forge/NeoForge外部Java安装器会改公共launcher_profiles，因此只对同目录的最终安装器阶段排队，文件下载继续并行。
+
+**验证**：353/353测试、TypeScript和最终生产构建通过。真实本地HTTP涵盖分段、Range忽略/错误回退、完整哈希、取消一个文件写入者后另一个接续；两版本真实安装流水线并行、共享库仅请求一次、取消一方另一方完成、切换默认目录不串路径。生产renderer隔离IPC验证两个安装按钮均受理、进度23%/71%互不覆盖、取消一方另一方继续88%。out/tests-all-1049-final.log、out/ui-install-1049.log、out/network-ui-wV1aUa。成品ASAR与最终构建一致、ZIP匹配、便携中文空格路径冷/缓存启动通过；out/startup-1.0.49.log。
+
+```text
+23dc5ecc425e62165cdf31ffa181a33b760cc6b7bbb7bc01d450e5067bb23ed8  KAMUCL-1.0.49.exe
+3584103b44020f245f51fe510f56b63870a30c06299cff83551f513256a285b2  KAMUCL-1.0.49-windows-x64.zip
+```
+
+
 
 **1.0.48 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.48 ，Release ID386524949。功能提交 master `b1a687a` / main `83a241c`；标签指向 master 功能提交。EXE、ZIP、SHA256SUMS.txt 已上传并核对远端摘要，latest=v1.0.48。
 
