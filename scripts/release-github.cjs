@@ -26,10 +26,13 @@ function sha256(file) {
 
 function latestNoteBody() {
   const src = fs.readFileSync(path.join(root, 'src/shared/updateNotes.ts'), 'utf-8')
-  const m = src.match(new RegExp(`version: '${version.replace(/\./g, '\\.')}'[^\\[]*\\[([\\s\\S]*?)\\] \\}`))
-  if (!m) return `KAMUCL ${tag}`
-  const items = [...m[1].matchAll(/'((?:[^'\\]|\\.)*)'/g)].map((x) => x[1].replace(/\\'/g, "'"))
-  return [`KAMUCL ${tag}`, '', ...items.map((i) => `- ${i}`)].join('\n')
+  // Read the same trusted data module as the app; quote style and brackets in notes are irrelevant.
+  const compiled = require('esbuild').transformSync(src, { loader: 'ts', format: 'cjs' }).code
+  const notesModule = { exports: {} }
+  new Function('module', 'exports', compiled)(notesModule, notesModule.exports)
+  const note = notesModule.exports.updateNotes.find(n => n.version === version)
+  if (!note?.changes?.length || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(note.date)) throw new Error('当前版本缺少完整更新日志或分钟时间，停止发布')
+  return [`KAMUCL ${tag}`, note.date + '（UTC+8）', '', ...note.changes.map(i => `- ${i}`)].join('\n')
 }
 
 /** 从 git 凭据管理器取 GitHub 令牌（推送同款凭据） */

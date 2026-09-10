@@ -1,0 +1,1 @@
+require('esbuild').buildSync({ entryPoints: ['src/main/core/modScanWorker.ts'], outfile: 'out/main/modScanWorker.cjs', bundle: true, platform: 'node', format: 'cjs', target: 'node20', minify: true });

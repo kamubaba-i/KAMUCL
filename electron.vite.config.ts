@@ -9,6 +9,7 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 export default defineConfig({
   main: {
     plugins: [{ name: 'kamucl-native-material', closeBundle() {
+      execFileSync(process.execPath, [resolve(__dirname, 'scripts/build-mod-worker.cjs')], { stdio: 'inherit', windowsHide: true })
       execFileSync(process.execPath, [resolve(__dirname, 'scripts/build-native.cjs')], { stdio: 'inherit', windowsHide: true })
       // 内置桥接 MOD：随启动器分发，面板可一键装入实例 mods 目录
       const bridgeJar = resolve(__dirname, 'bridge/dist/kamucl-bridge-1.0.0.jar')

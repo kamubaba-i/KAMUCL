@@ -7,8 +7,8 @@
  */
 import { URL } from 'node:url'
 
-/** Protocol review: AUGUHDAR/VoxLink 40d03c6 (1.1.4, 2026-09-10). */
-export const APP_VERSION = '1.1.4'
+/** Protocol review: AUGUHDAR/VoxLink 6b11d93 (1.1.5, 2026-09-10). */
+export const APP_VERSION = '1.1.5'
 export const DEFAULT_SERVER_URL = 'https://p2p.wuhui.icu'
 export const HTTP_TIMEOUT_MS = 10_000
 export const MAX_RESPONSE_LEN = 4 << 20

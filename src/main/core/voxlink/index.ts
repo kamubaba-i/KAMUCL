@@ -15,6 +15,8 @@ import type { VoxlinkSettings } from './settings'
 import { DEFAULT_VOXLINK_ROOM_NAME, normalizeVoxlinkRoomName } from '../../../shared/voxlinkRoom'
 
 let app: VoxlinkApp | null = null
+let requestGeneration=0
+let requestPending=false
 
 function vapp(): VoxlinkApp {
   if (!app) app = new VoxlinkApp()
@@ -40,12 +42,16 @@ function snapshot(): unknown {
     state: a.state,
     room: a.room,
     session: a.getSessionStateJSON(),
-    settings: a.settings
+    settings: a.settings,
+    pending: requestPending, joinedAt:a.engine.joinedAt, connection:a.engine.lastConnection, stages:a.engine.stages
   }
 }
 
 export function registerVoxlinkIpc(ipcMain: IpcMain): void {
   ipcMain.handle('voxlink:start', async (_e, payload: { mode?: 'host' | 'join'; code?: string; roomName?: string; isPublic?: boolean; category?: string; hostPort?: number; loader?: string; gameVersion?: string }) => {
+    if(requestPending)throw new Error('正在处理联机请求，请先取消')
+    const generation=++requestGeneration;requestPending=true
+    try {
     const a = vapp()
     a.emit = (ev, data) => forwardEvent(ev, data)
     a.netLog = (level, msg) => push('log', { level, msg })
@@ -61,6 +67,7 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
       const ports = await a.detectMcPortsJSON()
       hostPort = ports.ports[0]?.port ?? 0
     }
+    if(generation!==requestGeneration)throw new Error('操作已取消')
     const req: CreateRoomParams = {
       name,
       visible: payload.isPublic !== false,
@@ -72,9 +79,11 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
     const r = await a.createRoom(req)
     push('state', snapshot())
     return { ok: true, ...r }
+    } finally {if(generation===requestGeneration)requestPending=false}
   })
 
   ipcMain.handle('voxlink:stop', async () => {
+    requestGeneration++;requestPending=false
     try { await vapp().leaveRoom() } catch { /* 已经不在房间 */ }
     push('state', snapshot())
     return snapshot()
@@ -94,6 +103,7 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
 
   // 手动后备（app-desktop 同名能力）：打洞约 20 秒未成功时由用户触发
   ipcMain.handle('voxlink:tryDirect', () => vapp().tryDirect())
+  ipcMain.handle('voxlink:useTurnRelay', () => vapp().engine.useTurnRelay())
   ipcMain.handle('voxlink:usePlayerRelay', () => vapp().usePlayerRelay())
 }
 

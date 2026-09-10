@@ -13,6 +13,7 @@ const props = defineProps<{
   versionId: string
   /** 当前版本 mods 相对目录（用于删除文件） */
   rel: string
+  folder: string
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'deleted'): void }>()
 
@@ -37,10 +38,11 @@ const deleteList = computed(() => {
 })
 
 async function scanSingle() {
+  if (!props.versionId) { toast('请先安装或选择一个游戏版本', 'info'); return }
   loading.value = true
   groups.value = []
   try {
-    const list = await findModDuplicates(props.versionId)
+    const list = await findModDuplicates(props.versionId, props.folder)
     groups.value = list
     for (const g of list) {
       keepMap[g.modId] = g.files.find((f) => f.latest)?.fileName ?? g.files[0]?.fileName ?? ''
@@ -60,7 +62,7 @@ async function onConfirmDelete() {
   try {
     for (const item of deleteList.value) {
       try {
-        await removeFs(props.rel, item.fileName)
+        await removeFs(props.rel, item.fileName, props.folder)
         ok++
       } catch {
         /* 单文件失败继续 */
@@ -87,7 +89,7 @@ async function scanCross() {
   crossLoading.value = true
   crossResults.value = null
   try {
-    crossResults.value = await findModCrossDuplicates(crossSel.value)
+    crossResults.value = await findModCrossDuplicates(crossSel.value, props.folder)
   } catch (e) {
     toast('对比失败：' + errText(e), 'error')
   } finally {
@@ -163,7 +165,7 @@ onMounted(() => {
           <p class="modal-label">勾选要对比的版本（≥2 个）</p>
           <div class="cross-versions">
             <label
-              v-for="v in store.installed"
+              v-for="v in store.installed.filter(v => !v.folder || v.folder.toLowerCase() === props.folder.toLowerCase())"
               :key="v.id"
               class="ver-chip"
               :class="{ active: crossSel.includes(v.id) }"

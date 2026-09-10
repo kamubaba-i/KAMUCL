@@ -51,7 +51,7 @@ export const GAME_OPTIONS: GameOptionDef[] = [
   bool('autoJump', '自动跳跃', 'controls', false, '1.10'),
   integer('sprintWindow', '双击疾跑间隔（0 为关闭）', 'controls', 7, 0, 10, '26.2'),
   bool('operatorItemsTab', '管理员物品选项卡', 'controls', false, '1.19.3'),
-  { ...integer('mouseSensitivity', '灵敏度', 'mouse', 100, 0, 200), encoding: 'sensitivity', unit: '%' },
+  { ...integer('mouseSensitivity', '鼠标灵敏度', 'mouse', 100, 0, 200), encoding: 'sensitivity', unit: '%' },
   { ...integer('mouseWheelSensitivity', '滚动灵敏度', 'mouse', 1, .01, 10, '1.14'), step: .01 },
   bool('discrete_mouse_scroll', '离散滚动', 'mouse', false, '1.14'),
   bool('invertXMouse', '反转鼠标 X 轴', 'mouse', false, '26.2'),
