@@ -38,6 +38,7 @@ import {
   installClientJarOnly,
   installVanilla,
   libraryTasks,
+  launchLibraryFiles,
   readVersionJson,
   resolveVersionChain,
   resolvedLibraries,
@@ -48,6 +49,8 @@ import {
 import { downloadAll } from './download'
 import { instanceDirectoryState } from './instances'
 import { prepareLaunchAssets } from './launchAssets'
+import { ensureLaunchArtifact, invalidLaunchArtifact } from './launchIntegrity'
+import { exitHistory, rememberExit } from './exitHistory'
 import { buildGameWindowArguments, resolveGameResolution } from './gameWindow'
 import { supportsQuickPlayMultiplayer } from './serverUtils'
 import * as yggdrasil from './yggdrasil'
@@ -134,7 +137,7 @@ export interface LastLaunchInfo {
 }
 let lastLaunch: LastLaunchInfo | null = null
 export function getLastLaunch(): LastLaunchInfo | null {
-  return lastLaunch
+  return lastLaunch ?? (rememberExit(() => exitHistory().list().find(e => e.kind === 'game' && e.context)?.context) as unknown as LastLaunchInfo | undefined) ?? null
 }
 
 // ---------------- 运行中游戏持久化（重开启动器识别并恢复） ----------------
@@ -378,6 +381,10 @@ async function launchOwned(
   launchLog.debug(`版本链解析完成：${versionId} → 底层 ${baseId}`)
   const instanceConfig = readVersionJson(versionId)
   const instanceMcVersion = instanceConfig._mcVersion ?? baseId
+  const clientJar = clientJarPath(baseId)
+  emit({ stage: 'repair', progress: 0, text: '校验游戏本体完整性' })
+  await ensureLaunchArtifact({ ...readVersionJson(baseId).downloads?.client, dest: clientJar }, settings.mirror,
+    (done, total) => emit({ stage: 'repair', progress: total ? done / total : 0, text: '修复游戏本体' }))
 
   // 默认按键同步（总开关开启时覆盖实例 options.txt 的 key_* 项，其余行原样保留）
   if (settings.resourcePackSync) {
@@ -396,10 +403,6 @@ async function launchOwned(
     }
   }
 
-  const clientJar = clientJarPath(baseId)
-  if (!fs.existsSync(clientJar)) {
-    throw new Error(`客户端文件缺失（${baseId}.jar），请先完整安装版本 ${baseId}`)
-  }
   if (!merged.mainClass) throw new Error('版本 json 缺少 mainClass，文件可能损坏')
 
   // a1) 依赖库完整性：缺失则自动补下（含 fabric/quilt 的 maven 坐标库）
@@ -407,22 +410,24 @@ async function launchOwned(
   const reused = reuseExternalRuntimeLibraries(merged, settings.folders.map(f => f.path), librariesDir(), libTasks.map(t => t.dest))
   if (reused) log(`[KAMUCL] 已复用注册目录中 ${reused} 个运行库文件`)
   await repairNeoRuntime(merged, clientJar, readVersionJson(baseId), emit)
-  const missingLibs = libTasks.filter((t) => !fs.existsSync(t.dest))
-  if (missingLibs.length) {
-    launchLog.info(`检测到 ${missingLibs.length} 个依赖库缺失，正在补全`)
-    emit({
-      stage: 'repair',
-      progress: 0,
-      text: `检测到 ${missingLibs.length} 个依赖库缺失，正在补全…`
-    })
-    await downloadAll(
-      missingLibs,
-      (d, t, speed) =>
-        emit({ stage: 'repair', progress: t ? d / t : 1, text: `补全依赖库 ${d}/${t}`, speed }),
-      8,
-      settings.mirror
-    )
+  const launchFiles = launchLibraryFiles(merged)
+  const damaged = [] as typeof launchFiles
+  for (let i = 0; i < launchFiles.length; i++) {
+    emit({ stage: 'repair', progress: i / launchFiles.length, text: `校验依赖库 ${i + 1}/${launchFiles.length}` })
+    if (await invalidLaunchArtifact(launchFiles[i])) damaged.push(launchFiles[i])
   }
+  // Restore bad downloads concurrently; wait for every worker before ending preparation.
+  let repairIndex = 0, repaired = 0
+  const repairs = await Promise.allSettled(Array.from({ length: Math.min(8, damaged.length) }, async () => {
+    while (repairIndex < damaged.length) {
+      const file = damaged[repairIndex++]
+      await ensureLaunchArtifact(file, settings.mirror)
+      launchLog.info(`已修复依赖库 ${path.basename(file.dest)}`)
+      emit({ stage: 'repair', progress: ++repaired / damaged.length, text: `修复依赖库 ${repaired}/${damaged.length}` })
+    }
+  }))
+  const repairFailure = repairs.find(result => result.status === 'rejected')
+  if (repairFailure?.status === 'rejected') throw repairFailure.reason
 
   // b) 账号
   const account = selectedAccount()
@@ -676,6 +681,9 @@ async function launchOwned(
   }
   // 持久化运行中游戏记录：重开启动器时据此识别并恢复状态
   persistRunningGame({ pid: proc.pid ?? 0, versionId, effectiveGameDir, logDir: launchLogDir, startedAt: lastLaunch.startedAt })
+  const exitRecord = rememberExit(() => exitHistory().begin('game', proc.pid ?? 0, versionId, {
+    versionId, javaPath, effectiveGameDir, logDir: launchLogDir, startedAt: lastLaunch!.startedAt, pid: proc.pid
+  }))
   proc.once('spawn', () => {
     launchLog.info(`游戏进程已启动：pid=${proc.pid}`)
     onState({ status: 'running', text: '游戏进程已启动' })
@@ -704,6 +712,7 @@ async function launchOwned(
     }
     if (!gameSession.release(token)) return
     launchLog.error(`游戏进程启动失败：pid=${proc.pid ?? '未知'}`, err)
+    if (exitRecord) rememberExit(() => exitHistory().end(exitRecord, null))
     logStream?.end()
     stdoutStream?.end()
     stderrStream?.end()
@@ -717,6 +726,7 @@ async function launchOwned(
     if (!gameSession.release(token)) return
     const runS = spawnedAt ? Math.round((Date.now() - spawnedAt) / 1000) : null
     const intentional = restartPending?.sessionToken === token || gameSession.wasIntentionalStop(token)
+    if (exitRecord) rememberExit(() => exitHistory().end(exitRecord, code, intentional))
     if (code === 0) launchLog.info(`实例 ${versionId} 游戏正常退出（code=0${runS !== null ? `，运行 ${runS}s` : ''}）`)
     else if (intentional) launchLog.info(`实例 ${versionId} 游戏按用户要求退出（code=${code ?? '未知'}）`)
     else launchLog.warn(`实例 ${versionId} 游戏异常退出（code=${code ?? '未知'}${runS !== null ? `，运行 ${runS}s` : ''}），如频繁出现请导出错误日志`)
@@ -728,7 +738,7 @@ async function launchOwned(
       lastLaunch.endedAt = new Date().toISOString()
       clearRunningGame()
     }
-    onState({ status: 'exited', code: code ?? 0, intentionalRestart: restartPending?.sessionToken === token, intentionalStop: gameSession.wasIntentionalStop(token), text: `游戏已退出 (code=${code ?? 0})` })
+    onState({ status: 'exited', code: code ?? -1, intentionalRestart: restartPending?.sessionToken === token, intentionalStop: gameSession.wasIntentionalStop(token), text: `游戏已退出 (code=${code ?? '未知'})` })
   })
   } finally {
     if (!spawned) { logStream?.end(); stdoutStream?.end(); stderrStream?.end() }

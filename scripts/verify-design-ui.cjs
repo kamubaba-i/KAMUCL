@@ -8,6 +8,10 @@ app.setPath('userData', path.join(root, 'userData'))
 app.commandLine.appendSwitch('enable-unsafe-swiftshader')
 buildSync({ entryPoints: ['src/shared/types.ts'], bundle: true, platform: 'node', format: 'cjs', outfile: path.join(root, 'types.cjs') })
 const types = require(path.join(root, 'types.cjs'))
+buildSync({ entryPoints: ['src/main/core/exitJournal.ts'], bundle: true, platform: 'node', format: 'cjs', outfile: path.join(root, 'exitJournal.cjs') })
+const journal = new (require(path.join(root, 'exitJournal.cjs')).ExitJournal)(path.join(root, 'exit-history.json'))
+journal.fault('launcher', '上次启动器未正常关闭，已保留异常退出记录。')
+journal.fault('game', '游戏「测试实例」异常退出（代码 -1）。')
 const folder = 'C:/Design fixture/.minecraft'
 const versions = ['26.2-Fabric 0.19.5', '1.21.11-NeoForge Adventures', '1.21.10-Forge Survival', '26.2 Creative'].map((name, i) => ({ id: name, name, mcVersion: i === 1 ? '1.21.11' : '26.2', loader: i === 3 ? undefined : 'fabric', loaderVersion: '0.19.5', folder, isolated: true, modpackName: i === 3 ? 'Creative 整合包' : undefined }))
 let settings = { gameDir: folder, activeFolder: folder, folders: [{ path: folder, name: '我的游戏', isDefault: true }], javaPath: '', javaAuto: true, javaCustom: [], javaHidden: [], memoryMB: 4096, memoryAuto: true, jvmArgs: '', resolution: { width: 854, height: 480, mode: 'windowed' }, mirror: 'bmclapi', theme: 'blue-white', custom: types.DEFAULT_CUSTOM_THEME, disabledFeatures: [], favoriteVersions: [], homeLayout: types.DEFAULT_HOME_LAYOUT, background: types.DEFAULT_BACKGROUND, launchThumbnail: types.DEFAULT_LAUNCH_THUMBNAIL, configVersion: 1 }
@@ -16,6 +20,9 @@ const calls = [], errors = []
 ipcMain.handle('design:invoke', (_event, channel, ...args) => {
   calls.push(channel)
   switch (channel) {
+    case 'exitHistory:list': return journal.list()
+    case 'exitHistory:ack': return journal.acknowledge()
+    case 'exitHistory:clear': return journal.clearHistory()
     case 'settings:get': return settings
     case 'settings:set': return settings = { ...settings, ...args[0] }
     case 'accounts:list': return [account]
@@ -49,6 +56,18 @@ app.whenReady().then(async () => {
   }
   const navigate = async key => { await run(`document.querySelector('[data-nav="${key}"]').click()`); await wait(600) }
   await win.loadFile(path.resolve('out/renderer/index.html')); await wait(1800)
+  assert(await run(`!!document.querySelector('.bell-dot')`), 'Previous abnormal exits have an unread indicator')
+  await run(`document.querySelector('[title="通知"]').click()`); await wait(200)
+  assert.equal(await run(`document.querySelectorAll('.notice-item').length`), 2)
+  assert(journal.list().every(entry => entry.seen), 'Opening notification center persists acknowledgement')
+  await shot('previous-exits')
+  await win.reload(); await wait(1200)
+  assert.equal(await run(`!!document.querySelector('.bell-dot')`), false)
+  await run(`document.querySelector('[title="通知"]').click()`); await wait(200)
+  assert.equal(await run(`document.querySelectorAll('.notice-item').length`), 2, 'History survives renderer reload')
+  await run(`document.querySelector('.notice-panel button').click()`); await wait(150)
+  assert.equal(journal.list().length, 0, 'Clear removes persisted history')
+  await run(`document.querySelector('[title="通知"]').click()`)
   const hover = async key => {
     const point = await run(`(()=>{const r=document.querySelector('[data-nav="${key}"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`)
     win.webContents.sendInputEvent({ type: 'mouseMove', ...point })

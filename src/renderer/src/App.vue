@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import LaunchNotice from './components/LaunchNotice.vue'
+import { loadExitNotices, clearNotices } from './store'
 import { useNavigationBubble } from './composables/useNavigationBubble'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -1056,6 +1057,7 @@ watch(
 const offs: Array<() => void> = []
 
 onMounted(async () => {
+  void loadExitNotices()
   applyTheme(store.settings?.theme, store.settings?.custom)
   motionQuery.addEventListener('change', onMotionChange)
   // 每次上线自动切换一张背景图（按顺序/随机）；off 模式固定第一张
@@ -1408,7 +1410,7 @@ onUnmounted(() => {
           <div v-if="noticeOpen" class="notice-panel">
             <div class="notice-head">
               <span class="notice-title">通知</span>
-              <button class="btn btn-ghost btn-sm" :disabled="!store.notices.length" @click="store.notices = []">清空</button>
+              <button class="btn btn-ghost btn-sm" :disabled="!store.notices.length" @click="clearNotices">清空</button>
             </div>
             <div v-if="!store.notices.length" class="notice-empty">暂无通知</div>
             <div v-else class="notice-list">

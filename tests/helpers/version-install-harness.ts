@@ -9,7 +9,7 @@ let bundle: Promise<string> | undefined
 export async function versionInstallHarness(root: string, metadataFetch: typeof fetch = fetch, downloadUrl = (url: string) => url) {
   bundle ??= build({
     stdin: {
-      contents: `export { installVersion, readVersionJson, listInstalled } from './src/main/core/versions';
+      contents: `export { installVersion, readVersionJson, listInstalled, libraryTasks, resolvedLibraries, resolveVersionChain, launchLibraryFiles } from './src/main/core/versions';
         export { getSettings } from './src/main/core/settings';
         export { listFabricApiVersions } from './src/main/core/loaders';
         export { communityDownload, communitySearchPage, communityFiles } from './src/main/core/community';
@@ -37,6 +37,10 @@ export async function versionInstallHarness(root: string, metadataFetch: typeof 
     readVersionJson: typeof import('../../src/main/core/versions').readVersionJson
     listInstalled: typeof import('../../src/main/core/versions').listInstalled
     getSettings: typeof import('../../src/main/core/settings').getSettings
+    libraryTasks: typeof import('../../src/main/core/versions').libraryTasks
+    resolvedLibraries: typeof import('../../src/main/core/versions').resolvedLibraries
+    resolveVersionChain: typeof import('../../src/main/core/versions').resolveVersionChain
+    launchLibraryFiles: typeof import('../../src/main/core/versions').launchLibraryFiles
     listFabricApiVersions: typeof import('../../src/main/core/loaders').listFabricApiVersions
     communityDownload: typeof import('../../src/main/core/community').communityDownload
     communitySearchPage: typeof import('../../src/main/core/community').communitySearchPage
