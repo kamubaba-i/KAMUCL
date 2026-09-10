@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 22:42 ｜ 当前版本：**1.0.44**（已完成验证、打包和发布）
+> 更新时间：2026-09-10 22:56 ｜ 当前版本：**1.0.45**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,18 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.45 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.45 ，Release ID386379123。功能提交 master `b6f5b41` / main `190e5a1`，标签 v1.0.45 指向 master 功能提交。三个附件大小、SHA256与源码标签核对后公开。校验值：
+
+```text
+417ac2d3bc8fc5fee37834b848902592fa3e24bf1320a248f0805fc86200610c  KAMUCL-1.0.45.exe
+2260a4d21bfb0397baa8b9c3795b72d75d93649031ec11fd8ba747908f9b8901  KAMUCL-1.0.45-windows-x64.zip
+```
+
+**1.0.45 更新弹窗 UI**：原更新与版本回退使用无背景的 menu-overlay 和普通透明 card（浅色62%、深色44%），导致后方设置与壁纸直接透字；另有更新成功 toast 与弹窗重复、群提示常驻、版本摘要重复标题和内容滚动层级混乱。新增 UpdateDialogShell，Teleport 到 body，独立实色 card-solid 表面、模糊遮罩、固定标题和底部操作，中间内容滚动。更新/下载/完成、回退及本地安装确认统一样式；去掉重复 toast、折叠备用下载说明，历史版本展示实际变更摘要及本地分钟时间。支持 Tab 焦点循环、Esc 按状态关闭、关闭后恢复焦点。
+
+**1.0.45 验证**：341/341测试、TypeScript、生产构建通过；两个旧测试要求重复 toast，已随新交互改为检查弹窗反馈且无重复通知。实际生产 Electron UI 使用隔离 IPC 和高对比条纹背景，验证浅色小窗口、粉色、深色、透明主题的实色表面与遮罩、顶层挂载、长列表和长说明的滚动/固定按钮、更新→下载→完成状态、本地安装确认、Tab循环/Esc。证据 out/design-ui-84nXIQ；测试中的1.0.46仅隔离假数据，不访问下载地址、不写真实用户配置。包内版本与ZIP构建一致；便携中文空格路径、冷启动及缓存启动验证通过，详见 out/portable-path-1.0.45.log 与 out/startup-1.0.45.log。
+
 
 **1.0.44 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.44 ，Release ID386367083。功能提交 master `4dad402` / main `3f3bac1`，标签 v1.0.44 指向 master 功能提交。EXE 67,616,046 字节、ZIP 103,187,304 字节；三个远端附件大小和 SHA256、源码标签核对后公开，latest 为 v1.0.44，误发 v1.0.41 仍未公开。EXE SHA256 `bfc6004bb723aafd567195390702939ff5eaf45e711c35695430293ae2cef31f`；ZIP SHA256 `4c78c5f551d8a4af27e0d6a79143d4db2073dbac029d9c58dfcd07e5fd41fff9`。
 
