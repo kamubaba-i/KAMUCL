@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 04:26 ｜ 当前版本：**1.0.53**（已验证、打包和发布）
+> 更新时间：2026-09-11 05:23 ｜ 当前版本：**1.0.54**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,24 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.54 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.54 ，Release ID 386632313。master 功能提交 `5b29177`，main 独立历史 cherry-pick `5e71b92`。tag 指向 master 功能提交；三个附件大小与 SHA256 核对后公开，latest 已核验。
+
+**工作台替换旧交互**：见 [V1_0_54.md](V1_0_54.md)。独立工具栏/图层树/缩放画布/属性分区，窄窗口标签切换。智能模式仅在已有 flex/grid 同组容器排序，自由模式允许容器内定位、对齐、层级与锁定；不强改父容器布局。实时预览保存到 appearance-draft.json，点击应用才提交正式外观；支持保留草稿/放弃、单项恢复、50步撤销、主题往返。旧自由位移保留，App 稳定标识固化。浏览仅开放导航，业务点击和文件拖入被拦截。
+
+**迁移和模组管理**：Minecraft 分类选择器提供正式、预发布/RC、快照、远古、全部；搜索、独立滚动、方向键/Home/End/Enter/Esc、边缘展开、失败手动输入。切换目标丢弃旧检查结果。模组支持就地搜索/筛选/排序、分页多选/全选筛选结果、批量启停和逐项结果；失败保持选择。版本锁按实际目录+可信项目/哈希保存，排除批量更新；单项版本切换使用可信选择/计划令牌，显示说明与必要前置，锁定项必须确认。替换前验证旧文件、哈希、目录列表、目标冲突及运行状态；失败回滚，外部变化阻碍恢复时保留备份并明确路径。新文件继承禁用和锁定状态。
+
+**最终验证**：375/375测试、TypeScript、生产构建通过。新增后端测试覆盖锁状态、目录隔离、幂等/部分失败、下载失败、源变化、冲突、提交失败回滚、禁用/锁定保持、依赖提醒、草稿失败保留。生产 renderer 夹具验证工作台/缩放拖拽/智能排序/100%/草稿/空文字/窄窗/浅深色和图片、批量部分失败、版本分类滚动键盘边缘、失败手输、快速改目标；截图 `out/network-ui-kt9ahK`，日志 `out/verify-workbench-1054-final.log`。模拟断网的 Electron stderr 是刻意触发，断网交互验证通过。主题往返实际主进程+PNG验证：`out/theme-proof-8LZvu0`。不声称已启动所有迁移后的第三方模组组合。
+
+**成品**：`release/final-1.0.54` 为已核验归档（本版与顶层 release 同字节）。EXE 中文/空格路径冷启动和缓存启动、ZIP 解压后 Electron 入口通过；144个打包源文件与最终构建一致，EXE/ZIP ASAR 相同。原生反馈首帧343/243ms，Electron入口6044/208ms（RunAsNode探针，非完整首页加载耗时）；日志 `out/startup-1.0.54.log`、`out/release-1.0.54-proof.json`、`out/package-1054-final.log`、`out/tests-all-1054-final.log`、`out/tsc-1054-final.log`。上传与附件/标签核对日志：`out/upload-1054.log`、`out/publish-1054.log`。未结束用户游戏/启动器进程，未触碰 wuhui。
+
+```text
+e932191290fb074a3ae417e9bd536dd51433f4de10df22daf6cf360d3491733e  KAMUCL-1.0.54.exe
+703df39fec667011dd20d54cc8a017c8abd164b65700271738f6d5d2911a205f  KAMUCL-1.0.54-windows-x64.zip
+```
+
+---
+
 
 **1.0.53 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.53 ，Release ID 386600614。master 功能提交 `0bef8f9`、长度修复 `74021af`；main 对应 `a986140`、`53a263f`。标签指向最终修复提交74021af，三个附件大小与SHA256核对后公开发布。
 
