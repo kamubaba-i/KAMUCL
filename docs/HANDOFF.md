@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 01:32 ｜ 当前版本：**1.0.46**（已完成验证、打包和发布）
+> 更新时间：2026-09-11 02:25 ｜ 当前版本：**1.0.48**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,22 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.48 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.48 ，Release ID386524949。功能提交 master `b1a687a` / main `83a241c`；标签指向 master 功能提交。EXE、ZIP、SHA256SUMS.txt 已上传并核对远端摘要，latest=v1.0.48。
+
+**启动优化**：Windows 初始隐藏主窗口的合成帧实测约 1fps，单独设置 backgroundThrottling=false 未解决。新增 startupRendering.ts，在启动阶段请求并丢弃 1×1 capturePage 帧，每次完成后16ms再发下一次，绝不重叠、不保存图像、不显示未就绪界面。仅当前窗口 boot:renderer-ready 可停止；停止时恢复后台节流；关闭、失败、10秒预算到期均清理监听/计时器，不伪造就绪。原有资源门禁、60fps粒子、620ms汇聚、2000ms头像停留、260ms主界面淡入均保留。未修改实例迁移或游戏启动路径。
+
+**同机成品对比**：scripts/measure-startup.cjs 使用真实生产首页、原生粒子、隔离空游戏/账户配置，禁用网络，不含便携 EXE 首次解压。1.0.47 三次首页显示 6673/6725/6637ms，中位6673ms；1.0.48 为4264/4181/4197ms，中位4197ms，缩短37.1%。日志 out/startup-measure-kf7i8F/report.json 与 out/startup-measure-eEP2N1/report.json；用户大量实例、自定义图片、网络账号的实际耗时会不同，不能宣称所有用户固定4.2秒。
+
+**验证**：7项启动测试、TypeScript、生产构建通过；启动预绘制测试覆盖异窗IPC、不重叠请求、失败、关闭期间晚完成、预算到期和清理。原生动画约59.99fps；统一启动验证汇聚+停留2736ms，仍为一个原生动画进程、一个主窗口；成品三次均保持隐藏到就绪且恢复后台节流。ZIP ASAR一致性通过，便携中文空格路径冷/缓存启动通过（首帧347/242ms，缓存未重复解压）。日志 out/tests-startup-1048.log、out/types-1.0.48.log、out/framerate-1.0.48.log、out/unified-1.0.48.log、out/startup-1.0.48.log。
+
+```text
+6702f2945a295e9510d018e7b8d373b9c591131be0980689e5dc72bc19790af4  KAMUCL-1.0.48.exe
+d439503d6d7ccfdc9e4125babdd69ce56ccca07afa8e424b8c5bededacf93c4c  KAMUCL-1.0.48-windows-x64.zip
+```
+
+**1.0.47 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.47 。master `5bd2e51` / main `5f8720f`；创作者卡片使用用户提供的完整文案，整卡打开既有 B 站空间，悬停浮现 BAI_ZHU、AeZz、物晖。生产UI悬停及链接、便携启动、附件摘要已验证。
+
 
 **1.0.46 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.46 ，Release ID386487076。功能提交 master `62fba23` / main `fd98c2d`；标签 v1.0.46 指向 master 功能提交。EXE 67,631,370 字节、ZIP 103,222,824 字节；三个远端附件大小与 SHA256、源码标签验证后公开。
 
