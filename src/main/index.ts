@@ -2,6 +2,7 @@ import { app, BrowserWindow, crashReporter, shell, ipcMain, net, protocol } from
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createStartupSplash } from './startupSplash'
+import { prepareStartupFrames } from './startupRendering'
 import { authorizeManagedImage } from './core/appearanceAssets'
 import {
   initializeLauncherLog,
@@ -99,12 +100,13 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
-      nodeIntegration: false
-      // backgroundThrottling 保持默认开启（不设 false）：窗口隐藏/最小化时定时器与 rAF 自动节流，
-      // 静默期渲染层近零功耗；IPC 推送（进度/日志事件）不受节流影响。
+      nodeIntegration: false,
+      // 闪屏期间主窗口虽隐藏，仍须正常准备纹理与连续两帧；后台节流会把这些帧拖至秒级。
+      // showStartupWindow 在展示首页时恢复节流，之后最小化/隐藏仍保持原有低功耗策略。
+      backgroundThrottling: !startup
     }
   })
-  if (startup) startup.attach(win)
+  if (startup) { prepareStartupFrames(win); startup.attach(win) }
   else   win.on('ready-to-show', () => win?.show())
   applyNativeAppearance(win, getSettings())
   if (windowState?.maximized) applyMaximized(win)
