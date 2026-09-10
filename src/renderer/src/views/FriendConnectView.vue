@@ -46,7 +46,7 @@ function pick(key: ConnectPage) {
 </script>
 
 <template>
-  <div class="page friend-connect-page">
+  <div class="page friend-connect-page" :data-design-page="page">
     <div class="connect-page">
       <!-- 方式选择页（landing） -->
       <template v-if="page === 'choose'">

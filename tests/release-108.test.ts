@@ -49,8 +49,8 @@ test('edit panel: topbar clickable in edit mode, details with empty groups show 
   assert.match(app, /\.shell\.edit-mode \.topbar/)
   assert.match(app, /-webkit-app-region: no-drag/)
   const panel = read('src/renderer/src/components/EditPanel.vue')
-  assert.match(panel, /ep-empty-hint/)
-  assert.match(panel, /!g\.colors\.length/)
+  assert.match(panel, /点选想修改的组件/)
+  assert.match(panel, /页面图层/)
 })
 
 test('SkinViewer3D and EditPanel compile', () => {

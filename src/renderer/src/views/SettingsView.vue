@@ -632,7 +632,7 @@ async function onRemovePlugin(p: PluginInfo) {
             </button>
           </div>
 
-          <p class="muted group-hint">六套主题共用图一布局与系统桌面磨砂玻璃，只改变配色；切换不会改变账户、版本或启动设置。</p>
+          <p class="muted group-hint">先选择喜欢的基础主题，再进入外观工作台，直接点选页面上的卡片、按钮与文字，自由调整布局与样式。</p>
           <button
             v-if="store.settings.theme === 'custom'"
             class="btn personalize-btn"

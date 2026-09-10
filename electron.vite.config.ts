@@ -1,5 +1,6 @@
 import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
+import { visualIds } from './scripts/visual-ids'
 import { resolve } from 'node:path'
 import { readFileSync, copyFileSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -36,7 +37,7 @@ export default defineConfig({
       outDir: 'out/renderer',
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html'), splash: resolve(__dirname, 'src/renderer/splash.html') } }
     },
-    plugins: [vue()],
+    plugins: [visualIds(), vue()],
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version)
     },

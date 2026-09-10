@@ -1,3 +1,4 @@
+import { cleanDesign } from '../../shared/visualDesign'
 /**
  * 设置持久化：userData/settings.json
  */
@@ -86,6 +87,7 @@ export function getSettings(): Settings {
     cached = {
       ...def,
       ...raw,
+      visualDesign: cleanDesign(raw.visualDesign),
       resolution: { ...def.resolution, ...(raw.resolution ?? {}) },
       custom: {
         colors: { ...def.custom.colors, ...(raw.custom?.colors ?? {}) },
@@ -183,6 +185,7 @@ export function saveSettings(patch: Partial<Settings>): Settings {
   const merged: Settings = {
     ...cur,
     ...patch,
+    visualDesign: cleanDesign(patch.visualDesign ?? cur.visualDesign),
     resolution: nextResolution,
     custom: {
       colors: { ...cur.custom.colors, ...(patch.custom?.colors ?? {}) },

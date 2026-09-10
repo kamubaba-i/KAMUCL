@@ -19,7 +19,7 @@ import ConnectionStatus from '../components/connection/ConnectionStatus.vue'
 import ServerListItem from '../components/connection/ServerListItem.vue'
 import ServerDetails from '../components/connection/ServerDetails.vue'
 import '../components/connection/connection.css'
-import { refreshInstalled, store, toast } from '../store'
+import { selectInstance, selectedInstance, refreshInstalled, store, toast } from '../store'
 import type { InstalledVersion, ServerEntry, ServerPingResult } from '@shared/types'
 
 // ---------------- 列表与状态 ----------------
@@ -189,6 +189,7 @@ async function onDelete() {
 }
 
 // ---------------- 一键进服 ----------------
+function syncJoinSelection(){const t=parseTargetToken(joinModal.versionId);if(t)void selectInstance(t.id,t.folder)}
 const joinModal = reactive({ open: false, target: null as ServerEntry | null, versionId: '' })
 
 const normalizedPath = (value: string) => value.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
@@ -252,6 +253,7 @@ async function doLaunch(s: ServerEntry, versionId: string) {
     const prepared = await prepareServerLaunch(s.id, versionId, target?.folder ?? s.folder)
     store.settings = await getSettings()
     await refreshInstalled()
+    await selectInstance(prepared.versionId, prepared.folder)
     store.launchingVersionId = prepared.versionId
     store.launchingFolder = prepared.folder
     await launchGame(prepared.versionId, prepared.directJoin ? prepared.address : undefined)
@@ -274,6 +276,7 @@ async function onBind(s: ServerEntry, token: string) {
   try {
     const target = parseTargetToken(token)
     servers.value = await bindServer(s.id, target?.id ?? '', target?.folder)
+    if(target)await selectInstance(target.id,target.folder)
     toast(target ? `已关联到 ${target.id}` : '已解除实例关联', 'success')
   } catch (e) {
     toast('绑定失败：' + errText(e), 'error')
@@ -293,7 +296,7 @@ function openJoin(s: ServerEntry) {
     return
   }
   joinModal.target = s
-  joinModal.versionId = targetOf(s) ? boundToken(s) : targetToken(targets.value[0])
+  joinModal.versionId = targetOf(s) ? boundToken(s) : targetToken(selectedInstance.value ?? targets.value[0])
   joinModal.open = true
 }
 
@@ -416,7 +419,7 @@ async function copyAddress(s: ServerEntry) {
         <div class="modal">
           <h3 class="modal-title">进入 {{ joinModal.target?.name }}</h3>
           <p class="modal-label">选择游戏实例（将保存关联并启动 {{ joinModal.target?.address }}）</p>
-          <select v-model="joinModal.versionId" class="select">
+          <select v-model="joinModal.versionId" class="select" @change="syncJoinSelection">
             <option v-for="v in targets" :key="`${v.folder}\u0000${v.id}`" :value="targetToken(v)">
               {{ targetLabel(v) }}
             </option>

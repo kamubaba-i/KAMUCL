@@ -687,16 +687,16 @@ input[type='number'] {
 
 /* ---------------- 个性化点选编辑模式 ---------------- */
 /* 可编辑板块：指针 + 悬停虚线描边 */
-.edit-mode [data-edit] {
+.legacy-edit-mode [data-edit] {
   cursor: pointer;
 }
-.edit-mode [data-edit]:hover {
+.legacy-edit-mode [data-edit]:hover {
   outline: 2px dashed var(--accent);
   outline-offset: 2px;
 }
 /* 选中板块：实线高亮描边（优先于 hover） */
-.edit-mode [data-edit].edit-active,
-.edit-mode [data-edit].edit-active:hover {
+.legacy-edit-mode [data-edit].edit-active,
+.legacy-edit-mode [data-edit].edit-active:hover {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }

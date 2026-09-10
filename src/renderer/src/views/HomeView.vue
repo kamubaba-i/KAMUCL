@@ -18,6 +18,7 @@ import {
   showFolderContextMenu
 } from '../api'
 import {
+  selectedInstance, activeInstalled, selectInstance,
   displayVersionName,
   displayVersionSub,
   fmtLastPlayed,
@@ -52,32 +53,8 @@ const LAST_VERSION_KEY = 'kamucl.lastVersion'
 const builtInBanners = [banner1, banner2, banner3]
 
 // ---------------- 当前实例与展示图 ----------------
-const selectedId = ref('')
-
-watch(
-  () => store.installed,
-  (versions) => {
-    if (!versions.length) {
-      selectedId.value = ''
-      return
-    }
-    const remembered = localStorage.getItem(LAST_VERSION_KEY) ?? ''
-    if (versions.some((version) => version.id === remembered)) {
-      selectedId.value = remembered
-    } else if (!versions.some((version) => version.id === selectedId.value)) {
-      selectedId.value = versions[0].id
-    }
-  },
-  { immediate: true }
-)
-
-watch(selectedId, (id) => {
-  if (id) localStorage.setItem(LAST_VERSION_KEY, id)
-})
-
-const currentVersion = computed(() =>
-  store.installed.find((version) => version.id === selectedId.value)
-)
+const selectedId = computed({get: () => store.resourceVersionId, set: id => { store.resourceVersionId = id }})
+const currentVersion = selectedInstance
 const versionLabel = (version: InstalledVersion) => displayVersionName(version)
 const cap = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 const loaderText = (version: InstalledVersion) =>
@@ -392,7 +369,7 @@ watch(
 // ---------------- 最近游戏与菜单 ----------------
 // 收藏优先 + 最近游玩排序；启动某实例后 recordLastPlayed 更新使其自然提前。
 // 选中实例不再直接置顶——只有启动过才排到第一个。
-const recent = computed(() => sortWithFavorite(store.installed).slice(0, 4))
+const recent = computed(() => sortWithFavorite(activeInstalled.value).slice(0, 4))
 const sortedInstalled = computed(() => sortWithFavorite(store.installed))
 
 const versionMenu = reactive({ open: false, top: 0, left: 0, width: 230 })

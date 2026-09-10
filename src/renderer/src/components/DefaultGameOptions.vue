@@ -40,7 +40,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="card game-options">
+  <section class="card game-options" :data-design-page="'game-options-'+page">
     <header class="options-header">
       <div><h2>游戏选项</h2><p class="muted">按游戏内「Esc → 选项」的入口顺序设置，下次启动时应用。</p></div>
       <label class="options-sync"><span>启动时同步</span><span class="switch"><input type="checkbox" :checked="state.enabled" :disabled="busy || loading" @change="save({enabled: ($event.target as HTMLInputElement).checked})"><span class="switch-ui"></span></span></label>
