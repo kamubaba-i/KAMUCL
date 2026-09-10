@@ -1,5 +1,5 @@
 import faceUrl from './assets/splash-face.png'
-import { makeBootPixels, pixelPosition, RISE_END, CONVERGE_DURATION, ASSEMBLED_HOLD_MS, type BootState } from '@shared/startup'
+import { makeBootPixels, pixelPosition, RISE_END, CONVERGE_DURATION, ASSEMBLED_HOLD_MS, BOOT_FRAME_MS, type BootState } from '@shared/startup'
 import './splash.css'
 
 const bridge = window.kamuclSplash
@@ -10,6 +10,7 @@ const face = new Image()
 let state: BootState = { completed: [], ready: false }
 let geometry = makeBootPixels(innerWidth, innerHeight)
 let start = 0, convergence: number | null = null, raf = 0, assembled = false
+let nextFrame = 0
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
 const labels = ['读取配置', '加载账户', '扫描游戏实例', '加载首页图片、Java 与皮肤', '准备首帧']
 function resize() {
@@ -25,6 +26,10 @@ const offReveal = bridge.onReveal(() => {
   document.body.addEventListener('transitionend', () => bridge.finished(), { once: true })
 })
 function frame(now: number) {
+  if (now + 0.5 < nextFrame) { raf = requestAnimationFrame(frame); return }
+  if (!nextFrame) nextFrame = now
+  nextFrame += BOOT_FRAME_MS
+  if (nextFrame <= now) nextFrame = now + BOOT_FRAME_MS
   if (!start) start = now
   const elapsed = now - start
   if (state.ready && convergence === null && (reduced || elapsed >= RISE_END)) convergence = elapsed

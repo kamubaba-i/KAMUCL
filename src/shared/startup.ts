@@ -47,3 +47,5 @@ export function pixelPosition(p: BootPixel, elapsed: number, convergeAt: number 
   const from = floating(convergeAt), ease = smooth(t)
   return { x: from.x + (p.targetX - from.x) * ease, y: from.y + (p.targetY - from.y) * ease, rotation: from.rotation * (1 - ease) }
 }
+/** Match the portable native scene, including on high-refresh-rate displays. */
+export const BOOT_FRAME_MS = 1000 / 60
