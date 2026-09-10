@@ -4,7 +4,7 @@
  * 通过 IPC fs:list / fs:remove / app:openDir 管理游戏目录下的子目录。
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { importResources, applyModUpdates, checkModUpdates, copyText, errText, listFs, openDir, removeFs, toggleDisableFs } from '../api'
+import { getModIcons, importResources, applyModUpdates, checkModUpdates, copyText, errText, listFs, openDir, removeFs, toggleDisableFs } from '../api'
 import { refreshInstalled, store, toast } from '../store'
 import ConfirmModal from './ConfirmModal.vue'
 import DupCleanModal from './DupCleanModal.vue'
@@ -120,6 +120,24 @@ const filtered = computed(() =>
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
 const visibleEntries = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+const modIcons = ref<Record<string, string>>({})
+let iconGeneration = 0
+let iconTimer: ReturnType<typeof setTimeout> | undefined
+watch([visibleEntries, effectiveRel, activeFolder], () => {
+  const generation = ++iconGeneration
+  clearTimeout(iconTimer); modIcons.value = {}
+  const version = currentVersion.value
+  if (props.rel !== 'mods' || !version) return
+  const names = visibleEntries.value.filter(e => !e.isDir && /\.jar(?:\.disabled)?$/i.test(e.name)).map(e => e.name)
+  if (!names.length) return
+  const folder = version.folder || activeFolder.value
+  iconTimer = setTimeout(() => {
+    void getModIcons(version.id, names, folder).then(icons => {
+      if (generation === iconGeneration) modIcons.value = icons
+    }).catch(() => {})
+  }, 120)
+})
+onUnmounted(() => { iconGeneration++; clearTimeout(iconTimer) })
 watch([keyword, pageCount], () => { page.value = Math.min(page.value, pageCount.value) })
 
 async function onOpenDir() {
@@ -400,7 +418,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       <div v-else class="fm-list">
         <div v-for="e in visibleEntries" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
           <span class="fm-file-icon">
-            <svg v-if="e.isDir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <img v-if="props.rel === 'mods' && modIcons[e.name]" :src="modIcons[e.name]" alt="" @error="delete modIcons[e.name]" />
+            <svg v-else-if="e.isDir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
             </svg>
             <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -522,8 +541,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 }
 .fm-file-icon {
   display: flex;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   color: var(--accent);
   flex-shrink: 0;
 }
@@ -531,6 +550,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
   width: 100%;
   height: 100%;
 }
+.fm-file-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: 6px; }
 .fm-name {
   flex: 1;
   min-width: 0;

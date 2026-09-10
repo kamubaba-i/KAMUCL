@@ -42,6 +42,7 @@ import { scanModTargets, selectModTarget, copyCompatibleMods } from './core/modT
 import { prepareModInstall, executeModPlan, discardModPlan } from './core/modInstallPlan'
 import * as modinfo from './core/modinfo'
 import * as modUpdates from './core/modUpdates'
+import { getModIcons } from './core/modIcons'
 import * as plugins from './core/plugins'
 import * as keybindings from './core/keybindings'
 import * as modBridge from './core/modBridge'
@@ -812,6 +813,8 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.modsCrossDuplicates, (_e, versionIds: string[], folder?: string) =>
     withGameFolder(folder || settings.getSettings().activeFolder || settings.getSettings().gameDir, () => modinfo.findCrossDuplicates(Array.isArray(versionIds) ? versionIds.map(String) : []))
   )
+  ipcMain.handle(IPC.modsIcons, (_e, versionId: string, names: string[], folder?: string) =>
+    getModIcons(String(versionId ?? ''), folder || folderOfVersion(String(versionId ?? '')), Array.isArray(names) ? names : []))
   ipcMain.handle(IPC.modsCheckUpdates, (_e, versionId: string, folder?: string) =>
     withGameFolder(folder || folderOfVersion(String(versionId ?? '')), () =>
       modUpdates.checkModUpdates(String(versionId ?? ''))

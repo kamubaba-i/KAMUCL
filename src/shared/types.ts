@@ -775,6 +775,7 @@ export const IPC = {
   serversPrepareLaunch: 'servers:prepareLaunch', // (id: string, versionId?: string, folder?: string) => ServerLaunchPreparation
 
   // MOD 拖入即装
+  modsIcons: 'mods:icons',
   modsTargets: 'mods:targets', // Scan all registered folders; folder + id identify each target.
   modsParse: 'mods:parse', // (paths: string[]) => ModInfo[]  支持文件/文件夹路径，静默解析元数据
   modsPrepare: 'mods:prepare',
