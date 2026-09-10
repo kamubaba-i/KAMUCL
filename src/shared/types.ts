@@ -643,6 +643,9 @@ export interface LaunchState {
 
 // ---------------- IPC 通道（invoke: 前端 await 调用） ----------------
 export const IPC = {
+  exitHistoryList: 'exitHistory:list',
+  exitHistoryAck: 'exitHistory:ack',
+  exitHistoryClear: 'exitHistory:clear',
   // 设置
   settingsGet: 'settings:get',
   settingsSet: 'settings:set', // (patch: Partial<Settings>) => Settings

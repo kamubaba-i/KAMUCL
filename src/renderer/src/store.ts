@@ -11,7 +11,7 @@ import type {
   Settings,
   YggdrasilProviderInput
 } from '@shared/types'
-import { errText, getInstalled, getSelectedAccount, listAccounts, saveSettings } from './api'
+import { errText, getInstalled, getSelectedAccount, listAccounts, saveSettings, getExitHistory, acknowledgeExitHistory, clearExitHistory } from './api'
 
 export type ViewName =
   | 'home'
@@ -247,6 +247,20 @@ export function toast(text: string, type: ToastType = 'info') {
 /** 打开通知中心时调用：清除未读标记 */
 export function markNoticesRead() {
   store.noticesUnread = false
+  void acknowledgeExitHistory().catch(() => undefined)
+}
+
+export async function loadExitNotices() {
+  try {
+    const records = await getExitHistory()
+    records.forEach((record, i) => store.notices.push({ id: -i - 1, time: record.time, text: record.text, type: record.uncertain ? 'info' : 'error' }))
+    store.notices.sort((a, b) => b.time - a.time)
+    store.noticesUnread ||= records.some(record => !record.seen)
+  } catch { /* Older test bridges or unreadable journal must not block startup. */ }
+}
+export function clearNotices() {
+  store.notices = []
+  void clearExitHistory().catch(() => undefined)
 }
 
 // ---------------- 数据刷新 ----------------

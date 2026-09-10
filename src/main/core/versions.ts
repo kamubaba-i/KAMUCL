@@ -2,6 +2,7 @@
  * 版本管理：版本清单缓存、rules 评估、原版安装、已装列表、删除
  */
 import { resolveInstanceMetadata } from './instanceMetadata'
+import { mavenIdentity } from './mavenIdentity'
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -287,22 +288,25 @@ interface LibEntry {
 function collectLibraries(vj: VersionJson): LibEntry[] {
   const out: LibEntry[] = []
   const seen = new Set<string>()
-  const push = (art: (Pick<LibraryArtifact, 'path'> & Partial<LibraryArtifact>) | undefined, isNative: boolean): void => {
+  const coordinates = new Set<string>()
+  const push = (art: (Pick<LibraryArtifact, 'path'> & Partial<LibraryArtifact>) | undefined, isNative: boolean, coordinate?: string): void => {
     if (!art?.path) return
     const dest = libraryPath(art.path)
-    // Installer-generated libraries have no download URL; keep a verified local
-    // path on the classpath, but never create an impossible network task for it.
-    if (!art.url && !fs.existsSync(dest)) return
+    // Retain installer-generated entries even when missing, so launch validation
+    // can report them instead of silently constructing an incomplete classpath.
+    if (coordinate && coordinates.has(coordinate)) return
+    if (coordinate) coordinates.add(coordinate)
     if (seen.has(dest)) return
     seen.add(dest)
     out.push({ path: dest, url: art.url, sha1: art.sha1, size: art.size, isNative })
   }
   /** maven 坐标（group:artifact:version[:classifier]）→ 仓库相对路径 */
   const mavenPath = (name: string): string | null => {
-    const p = name.split(':')
+    const [coordinate, extension = 'jar'] = name.split('@')
+    const p = coordinate.split(':')
     if (p.length < 3) return null
     const [g, a, v, classifier] = p
-    const file = `${a}-${v}${classifier ? `-${classifier}` : ''}.jar`
+    const file = `${a}-${v}${classifier ? `-${classifier}` : ''}.${extension}`
     return `${g.replace(/\./g, '/')}/${a}/${v}/${file}`
   }
   /** 仅声明 maven 坐标（无 downloads/url，典型为安装器注入的 forge 语言提供器）时按组织推断下载源 */
@@ -314,30 +318,28 @@ function collectLibraries(vj: VersionJson): LibEntry[] {
   for (const lib of vj.libraries ?? []) {
     if (!rulesAllow(lib.rules)) continue
     if (lib.downloads?.artifact) {
-      push(lib.downloads.artifact, false)
+      push(lib.downloads.artifact, false, mavenIdentity(lib.name))
     } else if (lib.name && lib.url) {
       // Fabric/Quilt 等 profile 的 maven 坐标形式：无内联 downloads，需按仓库基址拼接
       const rel = mavenPath(lib.name)
       if (rel) {
         const base = lib.url.endsWith('/') ? lib.url : lib.url + '/'
-        push({ path: rel, url: base + rel }, false)
+        push({ path: rel, url: base + rel }, false, mavenIdentity(lib.name))
       }
     } else if (lib.name) {
       // forge 安装器注入库（fmlcore/javafmllanguage/mclanguage/lowcodelanguage 等）：
       // json 仅给 maven 坐标，本地有则直接收编，缺失按组织推断 maven 源下载
       const rel = mavenPath(lib.name)
-      if (rel && fs.existsSync(libraryPath(rel))) {
-        push({ path: rel }, false)
-      } else if (rel) {
+      if (rel) {
         const base = mavenRepoBase(lib.name)
-        if (base) push({ path: rel, url: base + rel }, false)
+        push({ path: rel, url: base ? base + rel : undefined }, false, mavenIdentity(lib.name))
       }
     }
     const nativesKey = lib.natives?.[OS_NAME]?.replace(
       '${arch}',
       process.arch === 'ia32' ? '32' : '64'
     )
-    if (nativesKey) push(lib.downloads?.classifiers?.[nativesKey], true)
+    if (nativesKey) push(lib.downloads?.classifiers?.[nativesKey], true, mavenIdentity(lib.name, nativesKey))
   }
   return out
 }
@@ -548,6 +550,10 @@ export async function installVersion(
   return withGameFolder(gameDir(), () => installVersionInFolder(versionId, opts, emit, signal, isolated))
 }
 
+export function launchLibraryFiles(vj: VersionJson) {
+  return collectLibraries(vj).map(e => ({ dest: e.path, url: e.url, sha1: e.sha1, size: e.size }))
+}
+
 async function installVersionInFolder(
   versionId: string,
   opts: InstallOptions,
@@ -720,7 +726,10 @@ export async function installClientJarOnly(id: string, emit: ProgressEmit): Prom
         text: `下载游戏本体 ${(d / 1024 / 1024).toFixed(1)}MB${t ? '/' + (t / 1024 / 1024).toFixed(1) + 'MB' : ''}`
       }),
     client.sha1,
-    mirror
+    mirror,
+    undefined,
+    [],
+    { size: client.size }
   )
 }
 

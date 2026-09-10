@@ -24,6 +24,12 @@ import { applyPendingIfAny, getPendingUpdate } from './core/applyUpdate'
 import { startMemoryTrim } from './core/memTrim'
 import type { MemoryTrimController } from './core/memTrim'
 import { getRunningGamePids } from './core/launch'
+import { exitHistory, rememberExit } from './core/exitHistory'
+
+const launcherExitRecord = rememberExit(() => {
+  exitHistory().reconcile()
+  return exitHistory().begin('launcher', process.pid, app.getVersion())
+})
 
 // ---------------- 内存极限压榨（任务A）：Chromium/V8 开关（必须 app ready 前注册） ----------------
 app.commandLine.appendSwitch(
@@ -124,6 +130,7 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
   })
   // 渲染进程崩溃/无响应取证（25h2 GPU 崩溃常见前兆），现有 splash 处理只覆盖初始化期
   win.webContents.on('render-process-gone', (_event, details) => {
+    if (!['clean-exit', 'killed'].includes(details.reason)) rememberExit(() => exitHistory().fault('launcher', `启动器界面异常退出：${details.reason}（代码 ${details.exitCode}）。`))
     launcherLogWarn('window', `渲染进程退出：reason=${details.reason} exitCode=${details.exitCode}`)
   })
   win.webContents.on('unresponsive', () => {
@@ -284,13 +291,16 @@ app.on('before-quit', (e) => {
 // ---------------- 崩溃取证（win11 25h2 概率闪退排查） ----------------
 // 主进程未捕获异常：记录完整堆栈并保持进程存活（活着 > 闪退；日志可回溯）
 process.on('uncaughtException', (error) => {
+  rememberExit(() => exitHistory().fault('launcher', '启动器发生未捕获异常，详情已记录到启动器日志。'))
   launcherLogError('crash', '主进程未捕获异常（进程保持存活）', error)
 })
 process.on('unhandledRejection', (reason) => {
+  rememberExit(() => exitHistory().fault('launcher', '启动器发生未处理的异步错误，详情已记录到启动器日志。'))
   launcherLogError('crash', '未处理的 Promise 拒绝', reason)
 })
 // 子进程（GPU/渲染/网络等）异常退出记录：25h2 上 GPU 进程崩溃是常见闪退前兆
 app.on('child-process-gone', (_event, details) => {
+  if (!['clean-exit', 'killed'].includes(details.reason)) rememberExit(() => exitHistory().fault('launcher', `启动器子进程异常退出：${details.type} / ${details.reason}（代码 ${details.exitCode}）。`))
   launcherLogWarn(
     'crash',
     `子进程异常退出：type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
@@ -305,6 +315,7 @@ app.on('before-quit', () => {
   void flushLauncherLog()
 })
 app.on('quit', (_event, exitCode) => {
+  if (launcherExitRecord) rememberExit(() => exitHistory().end(launcherExitRecord, exitCode ?? Number(process.exitCode ?? 0)))
   try {
     launcherLogInfo('main', `应用退出，退出码 ${exitCode ?? process.exitCode ?? 0}`)
   } catch {

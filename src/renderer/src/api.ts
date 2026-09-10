@@ -68,6 +68,9 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 
 // ---------------- 设置 ----------------
 export const getSettings = () => invoke<Settings>(IPC.settingsGet)
+export const getExitHistory = () => invoke<Array<{ id: string; kind: string; time: number; text: string; seen: boolean; uncertain?: boolean }>>(IPC.exitHistoryList)
+export const acknowledgeExitHistory = () => invoke<void>(IPC.exitHistoryAck)
+export const clearExitHistory = () => invoke<void>(IPC.exitHistoryClear)
 /** 真实系统信息（物理内存总量等），用于内存滑块上限等 */
 export const getSystemInfo = () => invoke<SystemInfo>(IPC.appSystemInfo)
 /**

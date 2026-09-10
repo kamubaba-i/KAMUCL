@@ -342,12 +342,17 @@ function hashesOf(
   })
 }
 
-async function verifyFile(
+export async function verifyFile(
   file: string,
   expected: { sha1?: string; sha512?: string; size?: number },
   signal?: AbortSignal
 ): Promise<string | null> {
-  const stat = await fs.promises.stat(file)
+  let stat: fs.Stats
+  try { stat = await fs.promises.stat(file) } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '文件缺失'
+    throw error
+  }
+  if (!stat.isFile()) return '路径不是文件'
   if (expected.size != null && stat.size !== expected.size) {
     return `大小校验失败：期望 ${expected.size}，实际 ${stat.size}`
   }
