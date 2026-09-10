@@ -858,6 +858,8 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   })
 
   // ---------------- 默认按键 ----------------
+  ipcMain.handle(IPC.gameOptionsGet, async () => (await import('./core/defaultGameOptions')).getDefaultGameOptions())
+  ipcMain.handle(IPC.gameOptionsSet, async (_e, change) => (await import('./core/defaultGameOptions')).setDefaultGameOptions(change))
   ipcMain.handle(IPC.keysGetDefault, () => keybindings.getDefaultKeys())
   ipcMain.handle(IPC.keysSetDefault, (_e, id: string, bind: string) =>
     keybindings.setDefaultKey(String(id ?? ''), String(bind ?? ''))

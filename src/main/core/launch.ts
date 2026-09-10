@@ -380,13 +380,24 @@ async function launchOwned(
   const { merged, baseId } = resolveChain(versionId)
   launchLog.debug(`版本链解析完成：${versionId} → 底层 ${baseId}`)
   const instanceConfig = readVersionJson(versionId)
-  const instanceMcVersion = instanceConfig._mcVersion ?? baseId
+  const { resolveInstanceMetadata } = await import('./instanceMetadata')
+  let instanceMcVersion = resolveInstanceMetadata(instanceConfig, id => { try { return readVersionJson(id) } catch { return undefined } }).mcVersion
   const clientJar = clientJarPath(baseId)
   emit({ stage: 'repair', progress: 0, text: '校验游戏本体完整性' })
   await ensureLaunchArtifact({ ...readVersionJson(baseId).downloads?.client, dest: clientJar }, settings.mirror,
     (done, total) => emit({ stage: 'repair', progress: total ? done / total : 0, text: '修复游戏本体' }))
+  // Renamed vanilla profiles can lose their canonical id in launcher metadata.
+  try {
+    const manifest = new AdmZip(clientJar).readAsText('version.json')
+    const canonical = manifest && JSON.parse(manifest).id
+    if (typeof canonical === 'string' && canonical) instanceMcVersion = canonical
+  } catch { /* Older clients have no embedded version.json; keep resolved metadata. */ }
 
   // 默认按键同步（总开关开启时覆盖实例 options.txt 的 key_* 项，其余行原样保留）
+  const { syncDefaultGameOptions } = await import('./defaultGameOptions')
+  const gameOptionsResult = syncDefaultGameOptions(effectiveGameDir, instanceMcVersion)
+  if (gameOptionsResult.applied.length) log(`[KAMUCL] 已同步 ${gameOptionsResult.applied.length} 项默认游戏选项并校验写入`)
+  if (gameOptionsResult.unsupported.length) log(`[KAMUCL] 当前版本不支持：${gameOptionsResult.unsupported.join('、')}`)
   if (settings.resourcePackSync) {
     const { syncDefaultResourcePacks } = await import('./defaultResourcePacks')
     const count = syncDefaultResourcePacks(effectiveGameDir, instanceMcVersion, clientJarPath(baseId))

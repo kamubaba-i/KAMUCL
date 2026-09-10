@@ -137,6 +137,8 @@ function cancelHistoryRename() {
   historyRenameText.value = ''
 }
 async function commitHistoryRename(item: SkinHistoryEntry) {
+  // Enter 会卸载输入框并触发 blur；同一次编辑只能提交一次，Esc 后也不能再保存。
+  if (historyRenaming.value !== item.id) return
   const name = historyRenameText.value.trim()
   const old = item.name || ''
   cancelHistoryRename()
@@ -566,7 +568,7 @@ watch(
                   v-model="historyRenameText"
                   class="input history-name-input"
                   :placeholder="item.id + '.png'"
-                  @keydown.enter="commitHistoryRename(item)"
+                  @keydown.enter="!$event.isComposing && commitHistoryRename(item)"
                   @keydown.esc="cancelHistoryRename"
                   @blur="commitHistoryRename(item)"
                   v-focus

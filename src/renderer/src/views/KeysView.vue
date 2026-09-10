@@ -4,6 +4,7 @@
  * 开启「按键设置同步」后，启动任何版本时自动把默认按键写入该实例 options.txt 的 key_* 项。
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import DefaultGameOptions from '../components/DefaultGameOptions.vue'
 import { errText, getDefaultKeys, resetDefaultKeys, setDefaultKey, getDefaultResourcePacks, importDefaultResourcePacks, pickDefaultResourcePacks, removeDefaultResourcePack, moveDefaultResourcePack } from '../api'
 import type { DefaultResourcePack } from '@shared/types'
 import { store, toast } from '../store'
@@ -11,6 +12,8 @@ import { updateSettings } from '../settingsUpdates'
 import { KEYBIND_CATEGORIES, VANILLA_KEYBINDS, codeToMcKey, mcKeyLabel, mouseButtonToMcKey } from '@shared/keybindings'
 
 const keys = ref<Record<string, string>>({})
+const section = ref<'game' | 'keys' | 'packs'>('game')
+function selectSection(value: 'game' | 'keys' | 'packs') { stopCapture(); section.value = value }
 const loading = ref(true)
 const keySearch = ref('')
 const capturing = ref('')
@@ -30,6 +33,7 @@ async function editPacks(action: () => Promise<DefaultResourcePack[]>, enable = 
   finally { packsBusy.value = false }
 }
 async function dropPacks(event: DragEvent) {
+  selectSection('packs')
   dragActive.value = false
   const files = Array.from(event.dataTransfer?.files ?? [])
   await editPacks(() => importDefaultResourcePacks(files.map(file => window.kamucl.getFilePath(file)).filter(Boolean)), true)
@@ -140,10 +144,16 @@ onUnmounted(stopCapture)
   <div class="page cfg-page">
     <div class="page-head">
       <h1 class="page-title">默认配置</h1>
-      <p class="page-sub">默认材质包与按键；开启同步后，启动游戏时自动应用到该版本</p>
+      <p class="page-sub">让每个世界，都保留你熟悉的操作习惯。</p>
     </div>
 
-    <div class="card cfg-col default-packs" :class="{ 'drag-active': dragActive }" @dragover.prevent="dragActive = true" @dragleave.self="dragActive = false" @drop.prevent="dropPacks">
+    <nav class="cfg-sections" aria-label="默认配置分类">
+      <button :class="{active:section === 'game'}" @click="selectSection('game')"><strong>游戏选项</strong><small>画面、控制与辅助功能</small></button>
+      <button :class="{active:section === 'keys'}" @click="selectSection('keys')"><strong>按键配置</strong><small>{{ keyModifiedCount }} 项自定义绑定</small></button>
+      <button :class="{active:section === 'packs'}" @click="selectSection('packs')"><strong>默认材质包</strong><small>{{ resourcePacks.length }} 个材质包</small></button>
+    </nav>
+    <DefaultGameOptions v-show="section === 'game'" @section="selectSection" />
+    <div v-show="section === 'packs'" class="card cfg-col default-packs" :class="{ 'drag-active': dragActive }" @dragover.prevent="dragActive = true" @dragleave.self="dragActive = false" @drop.prevent="dropPacks">
       <div class="cfg-col-head">
         <div><h3 class="group-title">默认材质包</h3><p class="muted group-hint">拖入多个 ZIP 材质包，列表靠后的包优先级更高</p></div>
         <label class="cfg-sync"><span>材质包同步</span><span class="switch"><input type="checkbox" :checked="store.settings?.resourcePackSync === true" @change="togglePackSync(($event.target as HTMLInputElement).checked)"/><span class="switch-ui"></span></span></label>
@@ -160,7 +170,7 @@ onUnmounted(stopCapture)
     </div>
     <div v-if="loading" class="card empty"><span class="spin"></span></div>
     <!-- 按键配置（同步开关整合进卡片头部，不再单独占一张卡） -->
-    <div v-else class="card cfg-col">
+    <div v-else v-show="section === 'keys'" class="card cfg-col">
       <div class="cfg-col-head">
         <div>
           <h3 class="group-title">按键配置</h3>
@@ -212,7 +222,9 @@ onUnmounted(stopCapture)
 
 <style scoped>
 /* 间距全部走全局设计令牌：元素与板块边缘保持呼吸感（card-pad 由 .card 提供） */
-.cfg-page { max-width: 760px; }
+.cfg-page { max-width: 1040px; }
+.cfg-sections{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:24px}.cfg-sections button{display:flex;flex-direction:column;align-items:flex-start;gap:7px;text-align:left;padding:18px 20px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);cursor:pointer;transition:background 180ms,border-color 180ms}.cfg-sections small{font-size:12px;color:var(--text-dim)}.cfg-sections button.active{border-color:var(--accent);background:var(--accent-soft)}.cfg-sections button:hover{border-color:var(--accent)}
+@media(max-width:700px){.cfg-sections{gap:8px}.cfg-sections button{padding:12px}.cfg-sections small{display:none}}
 .default-packs { margin-bottom: var(--sec-gap); }
 .default-packs.drag-active { outline: 2px solid var(--accent); background: var(--accent-soft); }
 .cfg-col { display: flex; flex-direction: column; min-height: 0; }
@@ -226,7 +238,8 @@ onUnmounted(stopCapture)
 .cfg-sync:hover { background: var(--hover); }
 .cfg-sync-text { font-size: var(--text-sm); color: var(--text-dim); font-weight: 600; }
 .cfg-search { width: 100%; margin-bottom: var(--space-3); }
-.cfg-scroll { overflow-y: auto; max-height: calc(100vh - 330px); min-height: 220px; padding-right: var(--space-2); }
+.cfg-scroll { min-height: 220px; display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;padding-top:12px }
+@media(max-width:850px){.cfg-scroll{grid-template-columns:1fr}}
 .cfg-group { margin-top: var(--space-4); }
 .cfg-group:first-child { margin-top: 0; }
 .cfg-cat { font-size: var(--text-sm); color: var(--text-dim); margin: 0 0 var(--space-2); font-weight: 650; }

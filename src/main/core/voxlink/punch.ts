@@ -126,6 +126,8 @@ export class Puncher {
   private wonResolvers: Array<() => void> = []
   private stopFlag = false
   private recvTimer: NodeJS.Timeout | null = null
+  private sendTimer: NodeJS.Timeout | null = null
+  private deadlineTimer: NodeJS.Timeout | null = null
   private onMsg: ((buf: Buffer, rinfo: dgram.RemoteInfo) => void) | null = null
 
   constructor(opts: PuncherOptions) {
@@ -163,14 +165,15 @@ export class Puncher {
 
   /** 启动接收循环。 */
   start(): void {
+    if (this.stopFlag || this.onMsg) return
     const onMsg = (buf: Buffer, rinfo: dgram.RemoteInfo): void => {
       if (this.stopFlag) return
       const ctrl = punchParseControl(buf)
       if (!ctrl) return
       const from = { address: rinfo.address, port: rinfo.port }
       if (!this.target || !punchAcceptSource(this.target, from)) return
-      // 回 ACK
-      void udpSendTo(this.conn, punchAckFor(buf), from)
+      // ACK不能再触发ACK，避免两端响应互相激发热循环。
+      if (ctrl.type === PUNCH_TYPE_PUNCH) void udpSendTo(this.conn, punchAckFor(buf), from)
       if (!this.peerFired && this.onPeer) {
         this.peerFired = true
         try { this.onPeer(from) } catch { /* ignore */ }
@@ -201,17 +204,18 @@ export class Puncher {
       for (const a of this.predicted) {
         for (let r = 0; r < PUNCH_PER_ROUND; r++) void udpSendTo(this.conn, pkt, a)
       }
-      setTimeout(blast, PUNCH_INTERVAL_MS)
+      this.sendTimer = setTimeout(blast, PUNCH_INTERVAL_MS)
     }
-    setTimeout(blast, PUNCH_INTERVAL_MS)
+    this.sendTimer = setTimeout(blast, PUNCH_INTERVAL_MS)
 
     // 总超时
-    setTimeout(() => this.stop(), this.timeoutMs)
+    this.deadlineTimer = setTimeout(() => this.stop(), this.timeoutMs)
   }
 
   /** 阻塞直到打洞成功 / 超时 / 外部取消。成功返回对端实际源地址。 */
   wait(): Promise<{ address: string; port: number }> {
     if (this.won && this.actual) return Promise.resolve(this.actual)
+    if (this.stopFlag) return Promise.reject(new Error('punch: 已取消'))
     return new Promise((resolve, reject) => {
       const finish = (): void => {
         if (this.actual) resolve(this.actual)
@@ -236,6 +240,8 @@ export class Puncher {
     if (this.stopFlag) return
     this.stopFlag = true
     if (this.recvTimer) clearTimeout(this.recvTimer)
+    if (this.sendTimer) clearTimeout(this.sendTimer)
+    if (this.deadlineTimer) clearTimeout(this.deadlineTimer)
     if (this.onMsg) {
       try { this.conn.removeListener('message', this.onMsg) } catch { /* ignore */ }
       this.onMsg = null

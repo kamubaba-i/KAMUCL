@@ -24,6 +24,7 @@ export const STUN_SERVERS: string[] = [
 ]
 
 /** 一次 STUN 探测得到的映射地址。 */
+const reachableServers = new Set<string>()
 export interface StunMappedAddr {
   ip: string
   port: number
@@ -169,9 +170,12 @@ export async function stunSampleSeries(
 ): Promise<StunMappedAddr[]> {
   const limit = Math.max(0, Math.min(n, servers.length))
   const out: StunMappedAddr[] = []
-  for (let i = 0; i < limit; i++) {
-    const a = await stunQuery(uc, servers[i]!, tries, timeoutMs)
-    if (a && validMappedAddr(a)) out.push(a)
+  const ordered = [...servers].sort((a, b) => Number(reachableServers.has(b)) - Number(reachableServers.has(a)))
+  for (const server of ordered) {
+    if (out.length >= limit) break
+    const a = await stunQuery(uc, server, tries, timeoutMs)
+    if (a && validMappedAddr(a)) { reachableServers.add(server); out.push(a) }
+    else reachableServers.delete(server)
   }
   return out
 }
