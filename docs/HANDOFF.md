@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 21:32 ｜ 当前版本：**1.0.42**（已完成验证、打包和发布）
+> 更新时间：2026-09-10 22:04 ｜ 当前版本：**1.0.43**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,12 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.43 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.43 ，Release ID386336943。EXE中文空格路径启动通过，ZIP内app.asar与构建一致；便携粒子首帧冷启动412ms、缓存启动250ms，缓存复用通过。三个远端附件大小、SHA256和源码标签核对后公开，latest为v1.0.43。EXE SHA256 `7e22cf1afff7fb3865c0b40e378d32573d9b6780e956e6a1bc709134e51bfa95`；ZIP SHA256 `4bce1e6ae559277351011eaf4b0213ac94fd82addfbdb278c3679a02a0d18f7c`。
+
+**1.0.43 披风加载后人物倾斜**：SkinViewer3D的俯仰已改为相机绕人物中心环绕，但buildModel重建仍把pitch写入模型rotation.x；加载/切换/移除披风触发重建后双重施加俯仰，下一帧只改yaw也不会清除倾斜。重建及applyPose统一rotation.set(0,yaw,0)，俯仰只作用于相机，保留当前观察角度、缩放和披风自身10度外倾。共用组件同时覆盖首页及皮肤页。
+
+**1.0.43 验证**：335/335测试、TypeScript和生产构建通过。新增真实Three.js模型回归：俯视/仰视、行走/待机、加载/切换/移除披风，断言重建第一帧及后续姿态世界向上方向不变、相机及缩放不变、披风确实增删，回正恢复默认。独立Electron WebGL加载实际SFC并截图，证据out/cape-ui-XdVWzL（before.png、cape.png、result.json），相机位置一致、人物直立；测试使用生成纹理及隔离目录，不改真实账号披风。功能提交master `d2c1d44` / main `6328be6`。
 
 **1.0.42 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.42 ，Release ID386311212。EXE中文空格路径启动通过，ZIP内app.asar与构建一致；便携粒子首帧冷启动433ms、缓存启动276ms，缓存复用通过。三个远端附件大小、SHA256和源码标签核对后公开，latest为v1.0.42，v1.0.41仍为撤回状态。EXE SHA256 `8403da51f26809dd8282ab087f8b34a3dbbdc2c55c42e52e6ac39ac9c4947ef5`；ZIP SHA256 `13685c85f57d3619d9891e290b58dce26e95cb508cea0fe270f3d96a3029f8aa`。
 
