@@ -1,12 +1,55 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import vm from 'node:vm'
+import ts from 'typescript'
+import * as THREE from 'three'
 
 /**
  * 3D 人物渲染对齐 skinview3d v3.4.2（参考/skinview3d-master，MIT）的专项回归：
  * 锁定本次审计修复的三处真实渲染瑕疵，防止后续回退。
  */
 const read = (file: string) => fs.readFileSync(file, 'utf8')
+
+test('换披风重建真实模型后保持直立、相机角度及缩放不变', async () => {
+  const source = read('src/renderer/src/components/SkinViewer3D.vue').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1].replace(/^import .*$/gm, '')
+  const props = { src: '', variant: 'classic', animation: 'walk', paused: false, cape: '' }
+  const context = vm.createContext({ THREE, performance, propsFixture: props, defineProps: () => props, withDefaults: (p: unknown) => p,
+    ref: (value: unknown) => ({ value }), watch: () => {}, onMounted: () => {}, onUnmounted: () => {}, defineExpose: () => {},
+    requestAnimationFrame: () => 1, loadImage: async () => ({ width: 64, height: 32 }) })
+  const probe = `
+    scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(FOV, 1, .5, 500);
+    renderer = {} as THREE.WebGLRenderer; skinTex = new THREE.Texture(); buildModel();
+    globalThis.probe = {
+      orbit(y: number, p: number) { yaw = y; pitch = p; zoom = 1.4; walkBlend = props.animation === 'walk' ? 1 : 0; stepWalk(); applyCamera(); applyPose(); },
+      snapshot() { root!.updateMatrixWorld(true); return { up: new THREE.Vector3(0,1,0).transformDirection(root!.matrixWorld).toArray(), camera: camera.position.toArray(), yaw: root!.rotation.y, zoom, parts: root!.children.length }; },
+      cape() { rebuildCape(); }, pose() { stepWalk(); applyPose(); }, reset() { pitch=0; yaw=INITIAL_YAW; zoom=1; applyPose(); applyCamera(); }
+    };
+  `
+  vm.runInContext(ts.transpileModule(source + probe, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context)
+  const probeApi = context.probe
+  for (const animation of ['walk', 'idle']) {
+    props.animation = animation
+    for (const angle of [-0.6, 0.45]) {
+      probeApi.orbit(2.5, angle)
+      const before = probeApi.snapshot()
+      for (const cape of ['first-cape', 'second-cape', '']) {
+        props.cape = cape; probeApi.cape(); await new Promise(r => setImmediate(r))
+        for (let i = 0; i < 2; i++) {
+          const after = probeApi.snapshot()
+          assert(after.up.every((v: number, n: number) => Math.abs(v - [0, 1, 0][n]) < 1e-12), '模型重建及下一动画帧均保持直立')
+          assert.deepEqual(after.camera, before.camera)
+          assert.equal(after.yaw, before.yaw); assert.equal(after.zoom, before.zoom)
+          assert.equal(after.parts, cape ? 7 : 6)
+          probeApi.pose()
+        }
+      }
+    }
+  }
+  probeApi.reset()
+  assert.equal(probeApi.snapshot().zoom, 1)
+  assert.equal(probeApi.snapshot().camera[1], 16)
+})
 
 test('skin3d parity: -y bottom face UV follows skinview3d uvBottom vertex order (no bowtie twist)', () => {
   const viewer = read('src/renderer/src/components/SkinViewer3D.vue')
