@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 03:12 ｜ 当前版本：**1.0.50**（已验证、打包和发布）
+> 更新时间：2026-09-11 03:24 ｜ 当前版本：**1.0.51**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,22 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.51 交付**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.51 ，Release ID386560537，latest已核对。EXE/ZIP/SHA256SUMS.txt远端大小与digest逐项通过后发布。release目录成品、ZIP ASAR、便携解压ASAR均等于最终构建。中文空格路径便携冷/缓存启动通过（首帧351/242ms，隔离ElectronRunAsNode验证，不是完整用户首页启动），out/startup-1.0.51.log。
+
+```text
+194e1c7bc73bbad93567cf43de22bd6266786c2326ee96b003ac92109d16cc84  KAMUCL-1.0.51.exe
+4532ee74d19933ff1126c5e4025487dbaeb5484e5ecfbd0fbda55bd48c7d2a5f  KAMUCL-1.0.51-windows-x64.zip
+```
+
+**1.0.51 模组社区图标**：master `e764cea` / main `dc7386c`，tag指向master功能提交。FileManager 模组页每页最多100项，120ms防抖后发mods:icons，传当前folder、version、文件名；渲染不等待图标，切页/切实例/卸载废弃旧结果。资源包/光影页不查模组图标。32px图标支持禁用JAR，图片失败退回文件图标。
+
+**精确匹配**：后台modScanWorker仅处理指定页的常规.jar/.jar.disabled，不扫描其他目录/其他页，不跟随文件符号链接。Modrinth按SHA1 version_files反查project并取icon_url；未匹配项计算去ASCII空白的MurmurHash2(seed1)请求CF fingerprints，再核对SHA1防指纹碰撞，按modId取logo.thumbnailUrl。不根据模组文件名做模糊猜测。找不到社区图标时保留JAR内图标，无图标才用通用文件图标。首次离线仍可显示本地图标，后台API有8秒超时。
+
+**缓存**：userData/cache/mod-icons-v1，路径+文件名+大小+mtime+ctime派生键，文件变化重新识别；社区图片缓存7天、本地回退短缓存60秒。社区图片仅取允许的HTTPS图片CDN，PNG/JPEG/WebP/GIF，最大512KiB并转换为data URL。四路图片读取、后台扫描请求串行，避免多页同时解析大JAR。缓存目前无自动容量回收。
+
+**验证**：358/358全量测试，tsc和生产构建通过。新增测试涵盖哈希匹配、CF哈希冲突排除、离线、禁用JAR与指定页扫描；实际Fabric API 0.160.0+26.2在Modrinth匹配截图相同图标，首次2362ms，缓存3ms。额外强制跳过MR，实际CF匹配指纹325389910且SHA1一致，返回media.forgecdn.net社区图标。out/live-icons-cgGdtt/result.json、out/live-icons-lFGjPJ/result.json。生产renderer用真实已取图标验证图片解码、100项分页、当前folder IPC以及资源包页面不查询，out/network-ui-zXs5KF。ASAR内worker额外验证指定已禁用JAR哈希和CF指纹，out/packaged-worker-1051.log。
+
 
 
 **1.0.50 交付**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.50 ，Release ID 386553343。release/KAMUCL-1.0.50.exe（67634926字节）、release/KAMUCL-1.0.50-windows-x64.zip（103225860字节）、SHA256SUMS.txt 已上传并按GitHub资产digest/大小逐项核对后公开为latest。最终ASAR等于生产构建，ZIP及便携解出ASAR相同。中文空格路径冷/缓存启动通过，冷首帧337ms、缓存首帧233ms；此验证使用隔离ElectronRunAsNode，不是完整用户配置首页启动。out/startup-1.0.50.log、out/publish-1.0.50.log。
