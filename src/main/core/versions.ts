@@ -3,6 +3,8 @@
  */
 import { resolveInstanceMetadata } from './instanceMetadata'
 import { mavenIdentity } from './mavenIdentity'
+import { withFileJob } from './fileJobs'
+import { downloadLimiter } from './downloadLimits'
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -372,6 +374,14 @@ function fmtMB(bytes: number): string {
  * dest='base'：作为加载器实例的内部依赖装进 .kamucl/base/（不进版本列表，json/jar 仅供链解析）
  */
 export async function installVanilla(
+  ...args: Parameters<typeof installVanillaUnlocked>
+): Promise<string> {
+  const [id, , dest = 'versions', name, signal] = args
+  const dir = dest === 'base' ? baseVersionDir(id) : versionDir(name?.trim() || id)
+  return withFileJob(dir, signal, () => installVanillaUnlocked(...args))
+}
+
+async function installVanillaUnlocked(
   versionId: string,
   emit: ProgressEmit,
   dest: 'versions' | 'base' = 'versions',
@@ -417,7 +427,7 @@ export async function installVanilla(
           indeterminate: detail.indeterminate,
           source: sourceText
         }),
-      8,
+      downloadLimiter.maxConcurrent,
       mirror,
       signal
     )
@@ -498,7 +508,7 @@ export async function installVanilla(
             indeterminate: detail.indeterminate,
             source: sourceText
           }),
-        8,
+        downloadLimiter.maxConcurrent,
         mirror,
         signal
       )

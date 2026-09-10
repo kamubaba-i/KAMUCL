@@ -14,6 +14,7 @@ import crypto from 'node:crypto'
 import { once } from 'node:events'
 import { finished } from 'node:stream/promises'
 import { downloadLimiter } from './downloadLimits'
+import { withFileJob } from './fileJobs'
 import { launcherLog } from './launcherLog'
 import { httpFetch } from './httpClient'
 import {
@@ -305,15 +306,15 @@ function assertDiskSpace(dest: string, size: number): void {
   )
 }
 
-/** 元数据给出的真实地址始终优先；仅配置镜像且规则明确支持时追加 BMCL 备用地址。 */
+/** 遵循用户下载源选择；镜像规则明确时优先镜像，并保留元数据原地址回退。 */
 export function downloadCandidates(urls: string[], mirror: MirrorPref): string[] {
   const out: string[] = []
   for (const url of urls) {
-    if (url && !out.includes(url)) out.push(url)
     if (mirror === 'bmclapi') {
       const mirrored = mirrorUrl(url, mirror)
       if (mirrored && mirrored !== url && !out.includes(mirrored)) out.push(mirrored)
     }
+    if (url && !out.includes(url)) out.push(url)
   }
   return out
 }
@@ -396,7 +397,8 @@ async function doDownload(
   extSignal?: AbortSignal,
   expectedSize?: number,
   allowSizeProbe = false,
-  preferFaster = false
+  preferFaster = false,
+  range?: { start: number; end: number; total: number }
 ): Promise<TransferResult> {
   fs.mkdirSync(path.dirname(dest), { recursive: true })
   if (extSignal?.aborted) throw new Error('已取消')
@@ -438,7 +440,9 @@ async function doDownload(
       await waitIfTaskPaused(extSignal)
       armInactivity()
       const headers: Record<string, string> = {}
-      if (offset > 0) headers.Range = `bytes=${offset}-`
+      headers['Accept-Encoding'] = 'identity'
+      if (range) headers.Range = `bytes=${range.start + offset}-${range.end}`
+      else if (offset > 0) headers.Range = `bytes=${offset}-`
       else if (allowSizeProbe) headers.Range = 'bytes=0-'
       const res = await httpFetch(url, {
         signal: requestController.signal,
@@ -458,18 +462,27 @@ async function doDownload(
       }
 
       const append = offset > 0 && res.status === 206
+      if (range && res.status !== 206) {
+        await res.body.cancel()
+        throw new DownloadIntegrityError('此来源不支持分段下载，回退单连接')
+      }
       if (!append) offset = 0 // 服务端忽略 Range 并返回 200 时从头覆盖
       const contentRange = res.headers.get('content-range')
       const rangeMatch = contentRange?.match(/^bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i)
-      if (append && rangeMatch && Number(rangeMatch[1]) !== offset) {
+      if (range && (!rangeMatch || Number(rangeMatch[1]) !== range.start + offset ||
+          Number(rangeMatch[2]) !== range.end || Number(rangeMatch[3]) !== range.total)) {
+        await res.body.cancel()
+        throw new DownloadIntegrityError('分段响应范围不匹配')
+      }
+      if (!range && append && (!rangeMatch || Number(rangeMatch[1]) !== offset)) {
         await res.body.cancel()
         fs.rmSync(tmp, { force: true })
-        throw new DownloadIntegrityError(`断点位置不匹配：请求 ${offset}，响应 ${rangeMatch[1]}`)
+        throw new DownloadIntegrityError(`断点位置不匹配：请求 ${offset}，响应 ${contentRange}`)
       }
       const contentLength = Number(res.headers.get('content-length') ?? 0)
       const rangeTotal = rangeMatch?.[3] && rangeMatch[3] !== '*' ? Number(rangeMatch[3]) : 0
       const total = expectedSize ?? (rangeTotal || (contentLength > 0 ? offset + contentLength : 0))
-      if (expectedSize != null && rangeTotal > 0 && rangeTotal !== expectedSize) {
+      if (!range && expectedSize != null && rangeTotal > 0 && rangeTotal !== expectedSize) {
         await res.body.cancel()
         throw new DownloadIntegrityError(`远端大小 ${rangeTotal} 与元数据 ${expectedSize} 不一致`)
       }
@@ -507,6 +520,7 @@ async function doDownload(
             await waitIfTaskPaused(extSignal)
             extSignal?.throwIfAborted()
             received += value.byteLength
+            if (expectedSize != null && received > expectedSize) throw new DownloadIntegrityError('下载内容超出预期大小')
             if (!ws.write(value)) await once(ws, 'drain', { signal: requestController.signal })
             slowWindow.add(value.byteLength)
             if (slowWindow.shouldAbort()) throw new DOMException('连接速度过慢，已主动断开', 'TimeoutError')
@@ -549,8 +563,51 @@ async function startTransfer(
   onProgress: ProgressFn | undefined,
   extSignal: AbortSignal | undefined,
   expectedSize: number | undefined,
-  preferFaster = false
+  preferFaster = false,
+  parallel = false
 ): Promise<TransferResult> {
+  const count = Math.min(4, downloadLimiter.maxConcurrent)
+  if (parallel && expectedSize && expectedSize >= 8 * 1024 * 1024 && count > 1 &&
+      !downloadLimiter.isThrottling && !fs.existsSync(dest + '.part')) {
+    const controller = new AbortController()
+    const signal = extSignal ? AbortSignal.any([extSignal, controller.signal]) : controller.signal
+    inheritTaskControl(extSignal, signal)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    const dir = fs.mkdtempSync(dest + '.segments-')
+    const done = Array.from({ length: count }, () => 0)
+    let firstError: unknown
+    try {
+      const transfers = await Promise.allSettled(done.map(async (_, index) => {
+        const start = Math.floor(index * expectedSize / count)
+        const end = Math.floor((index + 1) * expectedSize / count) - 1
+        try {
+          const part = await doDownload(url, path.join(dir, String(index)), (n) => {
+            done[index] = n; onProgress?.(done.reduce((a, b) => a + b, 0), expectedSize)
+          }, signal, end - start + 1, false, false, { start, end, total: expectedSize })
+          if (part.received !== end - start + 1) throw new DownloadIntegrityError('分段内容不完整')
+          return part
+        } catch (error) { firstError ??= error; controller.abort(error); throw error }
+      }))
+      if (firstError) throw firstError
+      extSignal?.throwIfAborted()
+      const output = await fs.promises.open(dest + '.part', 'w')
+      try {
+        for (const transfer of transfers) {
+          if (transfer.status !== 'fulfilled') throw new Error('分段下载未完成')
+          for await (const chunk of fs.createReadStream(transfer.value.tmp)) {
+            await waitIfTaskPaused(extSignal); extSignal?.throwIfAborted()
+            await output.writeFile(chunk)
+          }
+          fs.rmSync(transfer.value.tmp, { force: true })
+        }
+      } finally { await output.close() }
+      return { tmp: dest + '.part', received: expectedSize, total: expectedSize }
+    } catch (error) {
+      fs.rmSync(dest + '.part', { force: true })
+      if (extSignal?.aborted) throw error
+      launcherLog(`分段下载回退单连接 ${path.basename(dest)}：${error instanceof Error ? error.message : error}`)
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  }
   return doDownload(url, dest, onProgress, extSignal, expectedSize, expectedSize == null, preferFaster)
 }
 
@@ -624,6 +681,12 @@ async function tryLocalReuse(
  * - extSignal 取消时立即抛出「已取消」，不重试
  */
 export async function downloadFile(
+  ...args: Parameters<typeof downloadFileUnlocked>
+): Promise<void> {
+  return withFileJob(args[1], args[5], () => downloadFileUnlocked(...args))
+}
+
+async function downloadFileUnlocked(
   url: string,
   dest: string,
   onProgress?: ProgressFn,
@@ -721,7 +784,7 @@ for (let round = 0; round < 2; round++) {
         transferTries++
         try {
           const preferFaster = round === 0 && candidate !== candidates[candidates.length - 1] && (expected.size ?? 0) >= slowSpeedThresholds.largeFileBytes
-          const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size, preferFaster)
+          const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size, preferFaster, !!(expected.sha1 || expected.sha512))
           // 远端总长不写回 expected，避免污染后续候选来源。
           const verifyTarget = expected
           const invalid = await verifyFile(transfer.tmp, verifyTarget, extSignal)

@@ -143,10 +143,10 @@ const normEntry = (name: string): string => name.replace(/\\/g, '/').replace(/^\
 /** 压缩包文件名（去扩展名），作为实例命名来源之一 */
 const packFileName = (filePath: string): string => path.basename(filePath).replace(/\.[^.]+$/, '')
 
-function openPackZip(filePath: string): AdmZip {
+function openPackZip(filePath: string, nested?: Buffer): AdmZip {
   if (!filePath || !fs.existsSync(filePath)) throw new Error('整合包文件不存在，请重新选择')
   try {
-    const zip = new AdmZip(filePath)
+    const zip = new AdmZip(nested ?? filePath)
     const entries = zip.getEntries()
     if (entries.length > PACK_MAX_ENTRIES) throw new Error('整合包文件数量超过安全上限')
     let unpacked = 0
@@ -169,9 +169,19 @@ function openPackZip(filePath: string): AdmZip {
     if (unpacked > 64 * 1024 * 1024 && unpacked / Math.max(1, packed) > PACK_MAX_RATIO) {
       throw new Error('整合包整体压缩比异常，疑似解压炸弹')
     }
+    // PCL 分发包在外层放启动器，真正的清单位于独立 mrpack 中；仅读取清单包，不执行/导入外层 EXE。
+    const names = new Set(entries.map(entry => normEntry(entry.entryName)))
+    if (!nested && !names.has('modrinth.index.json') && !names.has('manifest.json') && !detectFullpackEntry(zip)) {
+      const packs = entries.filter(entry => !entry.isDirectory && /\.mrpack$/i.test(entry.entryName))
+      if (packs.length > 1) throw new Error('整合包包含多个 mrpack，请解压后选择要导入的那个 mrpack')
+      if (packs.length === 1) {
+        if (packs[0].header.size > 512 * 1024 * 1024) throw new Error('整合包内层 mrpack 超过 512 MB，请解压后直接导入')
+        return openPackZip(filePath, packs[0].getData())
+      }
+    }
     return zip
   } catch (error) {
-    if (error instanceof Error && /^整合包(?:文件数量|解压后|条目|整体|包含)/.test(error.message)) {
+    if (error instanceof Error && /^整合包(?:文件数量|解压后|条目|整体|包含|内层)/.test(error.message)) {
       throw error
     }
     throw new Error('整合包文件损坏或不是有效的压缩包')
