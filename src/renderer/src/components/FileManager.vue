@@ -7,6 +7,8 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { getModIcons, importResources, applyModUpdates, checkModUpdates, copyText, errText, listFs, openDir, removeFs, toggleDisableFs } from '../api'
 import { activeInstalled, selectedInstance, refreshInstalled, store, toast } from '../store'
 import ModMigrationModal from './ModMigrationModal.vue'
+import ModVersionModal from './ModVersionModal.vue'
+import type { ManagedMod, ModOperationResult } from '@shared/modManagement'
 import ConfirmModal from './ConfirmModal.vue'
 import DupCleanModal from './DupCleanModal.vue'
 import SelectMenu from './SelectMenu.vue'
@@ -58,7 +60,7 @@ async function load() {
   loading.value = true
   try {
     const result = await listFs(effectiveRel.value, v.folder || activeFolder.value)
-    if (generation === loadGeneration) entries.value = result
+    if (generation === loadGeneration) { entries.value = result; void loadCatalog(generation) }
   } catch (e) { if (generation === loadGeneration) loadError.value = errText(e) }
   finally { if (generation === loadGeneration) loading.value = false }
 }
@@ -88,7 +90,7 @@ onMounted(async () => {
   void load()
 })
 
-watch([effectiveRel, activeFolder], () => { dupOpen.value = false; delModal.open = false; updatePanel.open = false; migrationOpen.value=false; void load() })
+watch([effectiveRel, activeFolder], () => { dupOpen.value = false; delModal.open = false; updatePanel.open = false; updatePanel.checking=false; updatePanel.applying=false; updatePanel.report=null; migrationOpen.value=false; void load() })
 onUnmounted(() => { loadGeneration++ })
 watch(() => store.fsRefreshTick, () => void load())
 
@@ -114,12 +116,19 @@ async function copyPath() {
 }
 
 // ---------------- 顶栏搜索联动（过滤文件名） ----------------
-const keyword = computed(() => store.searchKeyword.trim().toLowerCase())
-const filtered = computed(() =>
-  keyword.value
-    ? entries.value.filter((e) => e.name.toLowerCase().includes(keyword.value))
-    : entries.value
-)
+const batchResults=ref<ModOperationResult[]>([]),catalogError=ref('')
+const localSearch=ref(''),modFilter=ref('all'),sortBy=ref('name'),catalog=ref<Record<string,ManagedMod>>({}),selection=ref(new Set<string>()),batchBusy=ref(false),switchFile=ref('')
+const keyword = computed(() => (localSearch.value||store.searchKeyword).trim().toLowerCase())
+const filtered = computed(() => {
+ const rows=entries.value.filter(e=>(!keyword.value||(e.name+' '+(catalog.value[e.name]?.name||'')).toLowerCase().includes(keyword.value))&&(props.rel!=='mods'||modFilter.value==='all'||modFilter.value==='enabled'&&/\.jar$/i.test(e.name)||modFilter.value==='disabled'&&/\.jar\.disabled$/i.test(e.name)||modFilter.value==='locked'&&catalog.value[e.name]?.locked||modFilter.value==='updates'&&updatePanel.report?.entries.some(m=>m.fileName===e.name&&m.update)))
+ return rows.sort((a,b)=>sortBy.value==='date'?b.mtime-a.mtime:sortBy.value==='size'?b.size-a.size:a.name.localeCompare(b.name,'zh-CN',{numeric:true}))
+})
+async function loadCatalog(generation:number){if(props.rel!=='mods')return;const v=currentVersion.value;if(!v)return;try{const list=await window.kamucl.invoke('mods:catalog',v.id,v.folder||activeFolder.value) as ManagedMod[];if(generation===loadGeneration){catalog.value=Object.fromEntries(list.map(m=>[m.fileName,m]));catalogError.value=''}}catch(e){if(generation===loadGeneration){catalog.value={};catalogError.value=errText(e)}}}
+function selectMod(name:string,checked:boolean){const s=new Set(selection.value);checked?s.add(name):s.delete(name);selection.value=s}
+function selectAll(all=false){const s=new Set(selection.value);for(const e of (all?filtered.value:visibleEntries.value).filter(isModEntry))s.add(e.name);selection.value=s}
+async function batch(action:'enable'|'disable'|'lock'|'unlock',names=[...selection.value]){const v=currentVersion.value;if(!v||batchBusy.value)return;const generation=loadGeneration;batchBusy.value=true;try{const results=await window.kamucl.invoke(action==='lock'||action==='unlock'?'mods:setLocked':'mods:setEnabled',v.id,v.folder||activeFolder.value,names,action==='lock'||action==='enable') as ModOperationResult[];const failed=results.filter(r=>!r.ok);toast('已处理 '+(results.length-failed.length)+' 项'+(failed.length?'；'+failed.length+' 项失败：'+failed[0].error:''),failed.length?'error':'success');if(generation===loadGeneration){batchResults.value=results;const remaining=new Set(selection.value);for(const r of results)r.ok?remaining.delete(r.fileName):remaining.add(r.fileName);selection.value=remaining;await load()}}catch(e){toast(errText(e),'error')}finally{batchBusy.value=false}}
+watch([effectiveRel,activeFolder],()=>{selection.value=new Set();batchResults.value=[];catalog.value={};catalogError.value='';localSearch.value='';modFilter.value='all';switchFile.value=''})
+watch([localSearch,modFilter,sortBy],()=>page.value=1)
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
 const visibleEntries = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
@@ -229,6 +238,7 @@ const updatePanel = reactive({
   itemError: {} as Record<string, string>
 })
 
+watch(catalog,()=>{updatePanel.selected=new Set([...updatePanel.selected].filter(name=>!catalog.value[name]?.locked))})
 const updatableEntries = computed(() => updatePanel.report?.entries.filter((e) => e.update) ?? [])
 const unmatchedCount = computed(() => updatePanel.report?.entries.filter((e) => !e.source).length ?? 0)
 const latestCount = computed(() => updatePanel.report?.entries.filter((e) => e.alreadyLatest || (e.source && !e.update)).length ?? 0)
@@ -250,12 +260,12 @@ async function onCheckUpdates() {
     updateIcons.value={}
     const names=report.entries.filter(e=>e.update).map(e=>e.fileName)
     for(let i=0;i<names.length;i+=100)void getModIcons(v.id,names.slice(i,i+100),v.folder||activeFolder.value).then(icons=>{if(generation===loadGeneration)updateIcons.value={...updateIcons.value,...icons}}).catch(()=>{})
-    updatePanel.selected = new Set(report.entries.filter((e) => e.update).map((e) => e.fileName))
+    updatePanel.selected = new Set(report.entries.filter((e) => e.update && !catalog.value[e.fileName]?.locked).map((e) => e.fileName))
     if (!report.entries.length) toast('该实例 mods 目录为空', 'info')
   } catch (e) {
     if(generation===loadGeneration)updatePanel.error = errText(e)
   } finally {
-    updatePanel.checking = false
+    if(generation===loadGeneration)updatePanel.checking = false
   }
 }
 
@@ -264,12 +274,14 @@ async function applyUpdates(fileNames: string[]) {
   const report = updatePanel.report
   if (!v || !report || updatePanel.applying) return
   const targets = report.entries
-    .filter((e) => e.update && fileNames.includes(e.fileName))
-    .map((e) => ({ fileName: e.fileName, url: e.update!.url, targetName: e.update!.fileName, sha1: e.update!.sha1, size: e.update!.size }))
+    .filter((e) => e.update && fileNames.includes(e.fileName) && !catalog.value[e.fileName]?.locked)
+    .map((e) => ({ fileName: e.fileName, oldSha1:e.sha1, url: e.update!.url, targetName: e.update!.fileName, sha1: e.update!.sha1, size: e.update!.size }))
   if (!targets.length) return
   updatePanel.applying = true
+  const generation=loadGeneration
   try {
     const results = await applyModUpdates(v.id, targets, v.folder)
+    if(generation!==loadGeneration){toast('原实例的模组更新已结束','info');return}
     let okCount = 0
     for (const r of results) {
       updatePanel.itemState[r.fileName] = r.ok ? 'ok' : 'error'
@@ -291,7 +303,7 @@ async function applyUpdates(fileNames: string[]) {
   } catch (e) {
     toast('更新失败：' + errText(e), 'error')
   } finally {
-    updatePanel.applying = false
+    if(generation===loadGeneration)updatePanel.applying = false
   }
 }
 
@@ -386,15 +398,16 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
             <input
               type="checkbox"
               class="upd-check"
-              :checked="updatePanel.selected.has(e.fileName)"
-              :disabled="updatePanel.applying"
+              :checked="updatePanel.selected.has(e.fileName)&&!catalog[e.fileName]?.locked"
+              :disabled="updatePanel.applying||catalog[e.fileName]?.locked"
               @change="toggleUpdateSelect(e.fileName, ($event.target as HTMLInputElement).checked)"
             />
-            <span class="fm-file-icon"><img v-if="updateIcons[e.fileName] || modIcons[e.fileName]" :src="updateIcons[e.fileName] || modIcons[e.fileName]" alt=""/><span v-else>◇</span></span><span class="upd-name" :title="e.fileName"><strong>{{ e.fileName }}</strong><small class="muted">{{ e.name }}</small></span>
+
+          <span class="fm-file-icon"><img v-if="updateIcons[e.fileName] || modIcons[e.fileName]" :src="updateIcons[e.fileName] || modIcons[e.fileName]" alt=""/><span v-else>◇</span></span><span class="upd-name" :title="e.fileName"><strong>{{ e.fileName }}</strong><small class="muted">{{ e.name }}</small></span>
             <span class="muted upd-ver">{{ e.currentVersion || '未知' }} → <b>{{ e.update!.versionNumber }}</b></span>
             <span v-if="updatePanel.itemState[e.fileName] === 'start'" class="spin upd-spin"></span>
             <span v-else-if="updatePanel.itemState[e.fileName] === 'error'" class="upd-err" :title="updatePanel.itemError[e.fileName]">失败</span>
-            <button class="btn btn-ghost btn-sm" :disabled="updatePanel.applying" @click="applyUpdates([e.fileName])">更新</button>
+            <button class="btn btn-ghost btn-sm" :disabled="updatePanel.applying" @click="catalog[e.fileName]?.locked ? switchFile=e.fileName : applyUpdates([e.fileName])">{{catalog[e.fileName]?.locked?'已锁定 · 选版本':'更新'}}</button>
           </div>
         </div>
         <div v-else class="empty upd-empty"><span>所有已匹配来源的 MOD 均为最新</span></div>
@@ -407,6 +420,15 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       </template>
     </div>
 
+    <div v-if="currentVersion && props.rel==='mods'" class="fm-controls">
+      <input v-model="localSearch" class="input fm-search" aria-label="搜索本地模组" placeholder="搜索文件名或模组名称…"/>
+      <SelectMenu v-model="modFilter" :options="[{value:'all',label:'全部状态'},{value:'enabled',label:'已启用'},{value:'disabled',label:'已禁用'},{value:'locked',label:'已锁定'},{value:'updates',label:updatePanel.report?'可更新':'可更新（先检测）'}]"/>
+      <SelectMenu v-model="sortBy" :options="[{value:'name',label:'名称排序'},{value:'date',label:'最近修改'},{value:'size',label:'文件大小'}]"/>
+      <button class="btn btn-ghost" @click="selectAll()">选择当前页</button>
+    </div>
+    <div v-if="selection.size && props.rel==='mods'" class="fm-batch card"><strong>已选 {{selection.size}} 项</strong><button class="btn btn-ghost btn-sm" :disabled="batchBusy" @click="selectAll(true)">全选筛选结果（{{filtered.filter(isModEntry).length}}）</button><button class="btn btn-ghost btn-sm" :disabled="batchBusy" @click="batch('enable')">批量启用</button><button class="btn btn-ghost btn-sm" :disabled="batchBusy" @click="batch('disable')">批量禁用</button><button class="btn btn-ghost btn-sm" :disabled="batchBusy" @click="batch('lock')">锁定版本</button><button class="btn btn-ghost btn-sm" :disabled="batchBusy" @click="batch('unlock')">解除锁定</button><button class="btn btn-ghost btn-sm" :disabled="batchBusy" @click="selection=new Set()">清空选择</button></div>
+    <p v-if="catalogError" class="muted" role="alert">模组识别或锁定记录读取失败：{{catalogError}}。可刷新重试，写入操作仍会由后端校验。</p>
+    <details v-if="batchResults.length" class="fm-results card" :open="batchResults.some(r=>!r.ok)"><summary>上次批量操作：{{batchResults.filter(r=>r.ok).length}} 项成功 · {{batchResults.filter(r=>!r.ok).length}} 项失败</summary><div class="fm-result-list"><p v-for="r in batchResults" :key="r.fileName" :class="{failed:!r.ok}"><strong>{{r.fileName}}</strong><span>{{r.ok?'已完成':r.error}}</span></p></div></details>
     <!-- 文件列表 -->
     <div v-if="currentVersion" class="card fm-card">
       <div v-if="loading" class="empty">
@@ -422,11 +444,12 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
         <span>{{ props.emptyText }}</span>
         <button class="btn btn-ghost btn-sm" @click="onOpenDir">打开文件夹</button>
       </div>
-      <div v-else-if="keyword && !filtered.length" class="empty">
-        <span>没有匹配「{{ store.searchKeyword }}」的文件</span>
+      <div v-else-if="!filtered.length" class="empty">
+        <span>当前搜索或筛选条件没有匹配的文件</span>
       </div>
       <div v-else class="fm-list">
         <div v-for="e in visibleEntries" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
+          <input v-if="isModEntry(e)" type="checkbox" :aria-label="'选择 '+e.name" :checked="selection.has(e.name)" :disabled="batchBusy" @change="selectMod(e.name,($event.target as HTMLInputElement).checked)"/>
           <span class="fm-file-icon">
             <img v-if="modIcons[e.name]" :src="modIcons[e.name]" alt="" @error="delete modIcons[e.name]" />
             <svg v-else-if="e.isDir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -437,11 +460,12 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
               <path d="M14 2v6h6" />
             </svg>
           </span>
-          <span class="fm-name" :title="e.name">{{ e.name }}</span>
+          <span class="fm-name" :title="e.name">{{ e.name }}<small v-if="catalog[e.name]?.name && catalog[e.name].name!==e.name" class="fm-internal">{{catalog[e.name].name}}</small></span>
           <span v-if="isDisabledMod(e)" class="tag fm-disabled-tag">已禁用</span>
           <span class="muted fm-meta">{{ e.isDir ? '文件夹' : fmtSize(e.size) }}</span>
           <span class="muted fm-meta fm-date">{{ fmtDate(e.mtime) }}</span>
-          <label v-if="isModEntry(e)" class="switch fm-toggle" :title="isDisabledMod(e)?'启用模组':'禁用模组'"><input type="checkbox" role="switch" :aria-label="(isDisabledMod(e)?'启用 ':'禁用 ')+e.name" :checked="!isDisabledMod(e)" :disabled="!!toggling" @change="onToggleDisable(e, $event)"/><span class="switch-ui"></span></label>
+          <button v-if="isModEntry(e)" class="btn btn-ghost btn-sm" :disabled="batchBusy" :aria-label="(catalog[e.name]?.locked?'解除锁定 ':'锁定版本 ')+e.name" :title="catalog[e.name]?.locked?'已锁定：不参与自动更新':'锁定此模组版本'" @click="batch(catalog[e.name]?.locked?'unlock':'lock',[e.name])">{{catalog[e.name]?.locked?'已锁定':'锁定'}}</button><button v-if="isModEntry(e)" class="btn btn-ghost btn-sm" :disabled="batchBusy" :aria-label="'切换版本 '+e.name" @click="switchFile=e.name">版本</button>
+          <label v-if="isModEntry(e)" class="switch fm-toggle" :title="isDisabledMod(e)?'启用模组':'禁用模组'"><input type="checkbox" role="switch" :aria-label="(isDisabledMod(e)?'启用 ':'禁用 ')+e.name" :checked="!isDisabledMod(e)" :disabled="!!toggling||batchBusy" @change="onToggleDisable(e, $event)"/><span class="switch-ui"></span></label>
           <button class="btn btn-danger btn-sm fm-remove" @click="onRemove(e)">删除</button>
         </div>
       </div>
@@ -453,6 +477,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       <span>{{ page }} / {{ pageCount }}</span>
       <button class="btn btn-ghost btn-sm" :disabled="page >= pageCount" @click="page++">下一页</button>
     </nav>
+    <ModVersionModal v-if="switchFile && currentVersion" :source="currentVersion" :file-name="switchFile" @close="switchFile=''" @done="load();toast('模组版本已切换','success')"/>
     <ModMigrationModal v-if="migrationOpen && currentVersion" :source="currentVersion" @close="migrationOpen=false"/>
     <!-- 删除文件二次确认 -->
     <ConfirmModal
@@ -478,6 +503,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 </template>
 
 <style scoped>
+.fm-results{padding:12px 16px!important;margin-bottom:16px}.fm-results summary{cursor:pointer;font-size:12px}.fm-result-list{max-height:180px;overflow:auto;overscroll-behavior:contain}.fm-result-list p{display:flex;gap:12px;justify-content:space-between;font-size:12px;min-height:28px;align-items:center}.fm-result-list p.failed{color:var(--danger)}.fm-result-list strong{overflow-wrap:anywhere}.fm-controls{display:grid;grid-template-columns:minmax(180px,1fr) 160px 140px auto;gap:10px;margin-bottom:16px}.fm-batch{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 16px!important;margin-bottom:16px}.fm-internal{display:block;color:var(--text-dim);font-size:11px;margin-top:4px}.fm-row input[type=checkbox]{accent-color:var(--accent);flex-shrink:0}@media(max-width:1000px){.fm-controls{grid-template-columns:1fr 1fr}.fm-row{flex-wrap:wrap}.fm-name{min-width:180px!important}}
+
 .upd-name {display:flex;flex-direction:column;min-width:0;gap:3px}.upd-name strong{font-weight:600;overflow:hidden;text-overflow:ellipsis}.upd-name small{font-size:12px}.fm-toggle{flex-shrink:0}
 
 .fm-pagination { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; padding:8px 0; font-size:13px }

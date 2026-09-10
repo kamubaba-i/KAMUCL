@@ -11,12 +11,16 @@ import path from 'node:path'
 import { readVersionJson } from './versions'
 import { resolveInstanceMetadata } from './instanceMetadata'
 import { downloadFile } from './download'
+import { withFileJob } from './fileJobs'
+import { modHash, replaceModFiles, validateModFile } from './modTransaction'
+import { isModLocked, rememberModIdentity, transferModLock } from './modState'
 
 const MR_BASES = ['https://api.modrinth.com/v2', 'https://mod.mcimirror.top/modrinth/v2']
 const UA = { 'User-Agent': 'KAMUCL-Launcher (github.com/kamicl)' }
 const TIMEOUT = 15_000
 
 export interface ModUpdateTarget {
+  oldSha1?: string
   /** 本地旧文件名（更新成功后删除） */
   fileName: string
   /** 新文件下载地址 */
@@ -149,6 +153,7 @@ export async function checkModUpdates(versionId: string): Promise<ModUpdateRepor
   })) as Record<string, MrVersion | undefined>
 
   report.entries = mapUpdateEntries(entries, byHash)
+  for(const e of report.entries)if(e.update?.projectId)rememberModIdentity(dir,e.sha1,'modrinth:'+e.update.projectId)
   return report
 }
 
@@ -160,28 +165,21 @@ export async function applyModUpdates(
 ): Promise<Array<{ fileName: string; ok: boolean; error?: string }>> {
   const dir = await modsDirOf(versionId)
   fs.mkdirSync(dir, { recursive: true })
+  const { assertModsIdle } = await import('./modManagement')
+  return withFileJob(dir,undefined,async()=>{
   const results: Array<{ fileName: string; ok: boolean; error?: string }> = []
   for (const item of items) {
-    const oldPath = path.join(dir, path.basename(item.fileName))
-    const targetName = path.basename(item.targetName || item.fileName)
-    const newPath = path.join(dir, targetName)
-    const tmpPath = newPath + '.update'
-    onItem?.(item.fileName, 'start')
+    onItem?.(item.fileName,'start')
     try {
-      if (!/^https:\/\//.test(item.url)) throw new Error('非法下载地址')
-      await downloadFile(item.url, tmpPath, undefined, item.sha1, 'official', undefined, [], { size: item.size })
-      // 校验通过才替换：删除旧文件与可能占用目标名的文件，再落位
-      if (path.resolve(oldPath) !== path.resolve(newPath) && fs.existsSync(newPath)) fs.rmSync(newPath, { force: true })
-      if (fs.existsSync(oldPath)) fs.rmSync(oldPath, { force: true })
-      fs.renameSync(tmpPath, newPath)
-      onItem?.(item.fileName, 'ok')
-      results.push({ fileName: item.fileName, ok: true })
-    } catch (error) {
-      fs.rmSync(tmpPath, { force: true })
-      const message = error instanceof Error ? error.message : String(error)
-      onItem?.(item.fileName, 'error', message)
-      results.push({ fileName: item.fileName, ok: false, error: message })
-    }
+      await assertModsIdle(dir)
+      await validateModFile(dir,item.fileName,item.oldSha1)
+      const oldHash=await modHash(path.join(dir,item.fileName))
+      if(isModLocked(dir,oldHash))throw new Error('此模组已锁定，请解除锁定后更新')
+      const name=item.targetName.replace(/\.disabled$/i,'')+(/\.disabled$/i.test(item.fileName)?'.disabled':'')
+      await replaceModFiles(dir,[{oldName:item.fileName,oldSha1:oldHash,name,sha1:item.sha1||'',url:item.url,size:item.size}],async()=>{await assertModsIdle(dir);if(isModLocked(dir,oldHash))throw new Error('此模组已锁定');transferModLock(dir,oldHash,item.sha1!)})
+      onItem?.(item.fileName,'ok');results.push({fileName:item.fileName,ok:true})
+    }catch(error){const message=error instanceof Error?error.message:String(error);onItem?.(item.fileName,'error',message);results.push({fileName:item.fileName,ok:false,error:message})}
   }
   return results
+  })
 }

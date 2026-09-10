@@ -1183,6 +1183,7 @@ export interface ModUpdateReport {
 
 /** 应用更新的单项：旧文件 + 新文件下载信息 */
 export interface ModUpdateTarget {
+  oldSha1?: string
   fileName: string
   url: string
   targetName: string

@@ -43,7 +43,9 @@ import { scanModTargets, selectModTarget, copyCompatibleMods } from './core/modT
 import { prepareModInstall, executeModPlan, discardModPlan } from './core/modInstallPlan'
 import * as modinfo from './core/modinfo'
 import * as modUpdates from './core/modUpdates'
+import * as modManagement from './core/modManagement'
 import { exportVisualTheme, importVisualTheme, resetVisualTheme } from './core/visualTheme'
+import * as appearanceDraft from './core/appearanceDraft'
 import { getModIcons } from './core/modIcons'
 import * as plugins from './core/plugins'
 import * as keybindings from './core/keybindings'
@@ -121,8 +123,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   const emit = (e: ProgressEvent): void => send(IPC_EVENT.progress, e)
   const sendState = (s: LaunchState): void => send(IPC_EVENT.launchState, s)
   ipcMain.handle(IPC.appearanceResetTheme, () => resetVisualTheme())
-  ipcMain.handle(IPC.appearanceExportTheme, () => exportVisualTheme())
-  ipcMain.handle(IPC.appearanceImportTheme, (_e, code: string) => importVisualTheme(code))
+  ipcMain.handle(IPC.appearanceExportTheme, (_e, preview) => exportVisualTheme(preview?appearanceDraft.appearanceOnly(preview):undefined))
+  ipcMain.handle(IPC.appearanceImportTheme, (_e, code: string, preview?: boolean) => importVisualTheme(code,preview===true))
+  ipcMain.handle('appearance:draftRead', () => appearanceDraft.readAppearanceDraft())
+  ipcMain.handle('appearance:draftSave', (_e, value) => appearanceDraft.saveAppearanceDraft(value))
+  ipcMain.handle('appearance:draftDiscard', () => appearanceDraft.discardAppearanceDraft())
+  ipcMain.handle('appearance:draftApply', (_e, value) => appearanceDraft.applyAppearanceDraft(value))
   let activeJavaScanTaskId: string | null = null
   const pickImage = async (title: string): Promise<string | null> => {
     const win = getWin()
@@ -834,6 +840,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       modUpdates.checkModUpdates(String(versionId ?? ''))
     )
   )
+  ipcMain.handle('mods:catalog', (_e,id:string,folder:string)=>modManagement.modCatalog(id,folder))
+  ipcMain.handle('mods:setEnabled', (_e,id:string,folder:string,names:string[],enabled:boolean)=>modManagement.setModsEnabled(id,folder,names,enabled===true))
+  ipcMain.handle('mods:setLocked', (_e,id:string,folder:string,names:string[],locked:boolean)=>modManagement.lockMods(id,folder,names,locked===true))
+  ipcMain.handle('mods:versionChoices', (_e,id:string,folder:string,name:string)=>modManagement.modVersionChoices(id,folder,name))
+  ipcMain.handle('mods:versionPlan', (_e,id:string,fileId:string)=>modManagement.planModVersionChange(id,fileId))
+  ipcMain.handle('mods:versionApply', (_e,id:string,confirmed:boolean)=>modManagement.applyModVersionChange(id,confirmed===true))
   ipcMain.handle(IPC.modsApplyUpdates, (_e, versionId: string, items: unknown, folder?: string) =>
     withGameFolder(folder || folderOfVersion(String(versionId ?? '')), () =>
       modUpdates.applyModUpdates(String(versionId ?? ''), Array.isArray(items) ? items : [])

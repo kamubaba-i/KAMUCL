@@ -523,7 +523,7 @@ input[type='number'] {
 .modal-mask {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -532,6 +532,12 @@ input[type='number'] {
   -webkit-backdrop-filter: blur(10px);
   animation: mask-in 0.2s ease;
 }
+
+/* User content layers stay within the page, below navigation and system dialogs. */
+.content { isolation: isolate; z-index: 0; }
+.sidebar, .topbar { isolation: isolate; position: relative; z-index: 2; }
+#design-preview-host > .shell { width: 100% !important; height: 100% !important; min-height: 0 !important; }
+#design-preview-host > .app-bg { position: absolute !important; }
 .modal {
   width: min(460px, calc(100vw - 48px));
   max-height: calc(100vh - 96px);

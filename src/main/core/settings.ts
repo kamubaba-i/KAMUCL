@@ -222,7 +222,8 @@ export function saveSettings(patch: Partial<Settings>): Settings {
   }
   try {
     fs.mkdirSync(path.dirname(settingsFile()), { recursive: true })
-    fs.writeFileSync(settingsFile(), JSON.stringify(merged, null, 2), 'utf-8')
+    fs.writeFileSync(settingsFile()+'.tmp', JSON.stringify(merged, null, 2), 'utf-8')
+    fs.renameSync(settingsFile()+'.tmp', settingsFile())
   } catch (error) {
     throw new Error(`设置写入失败：${error instanceof Error ? error.message : String(error)}`)
   }

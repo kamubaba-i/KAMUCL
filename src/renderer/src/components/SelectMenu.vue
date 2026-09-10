@@ -3,7 +3,7 @@
  * 通用自定义下拉：替代原生 <select>（原生展开列表是 Windows 外观，与主题不符）。
  * 浮层 Teleport 到 body 避免卡片 overflow 裁切；点击外部 / Esc 关闭。
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 
 const props = defineProps<{
   modelValue: string
@@ -16,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void; (e: 'change', value: string): void }>()
 
 const open = ref(false)
+const menuEl=ref<HTMLElement>(), active=ref(0)
 const buttonEl = ref<HTMLElement | null>(null)
 const menuStyle = ref<Record<string, string>>({})
 
@@ -28,7 +29,7 @@ function toggle() {
   if (open.value) { close(); return }
   const rect = buttonEl.value?.getBoundingClientRect()
   if (rect) {
-    const maxH = props.maxHeight ?? 320
+    const maxH = Math.min(props.maxHeight ?? 320,innerHeight-24)
     const below = innerHeight - rect.bottom
     const up = below < Math.min(maxH, 220) && rect.top > below
     menuStyle.value = up
@@ -45,10 +46,12 @@ function close() {
   removeEventListener('keydown', onKeydown, true)
 }
 function onPointerDown(e: PointerEvent) {
-  if (!(e.target as HTMLElement).closest('.select-menu-float, .select-menu-btn')) close()
+  if(!menuEl.value?.contains(e.target as Node)&&!buttonEl.value?.contains(e.target as Node))close()
 }
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') close()
+  if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();close();buttonEl.value?.focus()}
+  if(['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();active.value=e.key==='Home'?0:e.key==='End'?props.options.length-1:Math.max(0,Math.min(props.options.length-1,active.value+(e.key==='ArrowDown'?1:-1)));void nextTick(()=>menuEl.value?.querySelector<HTMLElement>('[data-focused=true]')?.scrollIntoView({block:'nearest'}))}
+  if(e.key==='Enter'&&props.options[active.value]){e.preventDefault();e.stopImmediatePropagation();choose(props.options[active.value].value)}
 }
 function choose(value: string) {
   emit('update:modelValue', value)
@@ -72,9 +75,10 @@ onBeforeUnmount(close)
     <svg class="select-menu-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
   </button>
   <Teleport to="body">
-    <div v-if="open" class="select-menu-float" :style="menuStyle" role="listbox">
+    <div v-if="open" ref="menuEl" class="select-menu-float" @wheel.stop :style="menuStyle" role="listbox">
       <button
-        v-for="o in props.options"
+        v-for="(o,i) in props.options"
+        :data-focused="active===i"
         :key="o.value"
         type="button"
         class="select-menu-option"
@@ -128,6 +132,7 @@ onBeforeUnmount(close)
   -webkit-backdrop-filter: blur(24px) saturate(130%);
   box-shadow: var(--shadow);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .select-menu-option {
   display: flex;
@@ -146,7 +151,7 @@ onBeforeUnmount(close)
   transition: background 0.12s ease;
 }
 .select-menu-option svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent); }
-.select-menu-option:hover { background: var(--hover); }
+.select-menu-option:hover,.select-menu-option[data-focused=true] { background: var(--hover); }
 .select-menu-option.active { background: var(--accent-soft); color: color-mix(in srgb, var(--text) 86%, var(--accent)); font-weight: 600; }
 .select-menu-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-menu-empty { display: flex; align-items: center; justify-content: center; min-height: var(--row-h); padding: var(--space-3); color: var(--text-dim); font-size: var(--text-xs); text-align: center; }

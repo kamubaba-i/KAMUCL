@@ -49,7 +49,7 @@ import { DEFAULT_CUSTOM_THEME, THEME_PRESETS } from '@shared/types'
 import { readableCustomColors } from '@shared/themeContrast'
 import { managedImageUrl } from './managedAssets'
 import Toasts from './components/Toasts.vue'
-import { installVisualDesign } from './visualDesign'
+import { installVisualDesign, appearancePreview, designStageReady } from './visualDesign'
 import EditPanel from './components/EditPanel.vue'
 import { waitForBootTasks, sealBootTasks } from './bootTasks'
 import { acceptsImportDrag, showsImportOverlay } from '@shared/dropIntent'
@@ -374,6 +374,7 @@ const looksLikeYggdrasilProvider = (value: string): boolean => {
 
 const resourceDropPage = () => ['keys', 'mods', 'packs', 'shaders'].includes(store.currentView)
 function onDragEnter(e: DragEvent) {
+  if(store.editMode){e.preventDefault();e.stopImmediatePropagation();endDrag();return}
   if (resourceDropPage()) { if (dragHasFiles(e)) e.preventDefault(); endDrag(); return }
   if (!dragHasSupportedData(e)) return
   e.preventDefault()
@@ -383,6 +384,7 @@ function onDragEnter(e: DragEvent) {
 }
 
 function onDragOver(e: DragEvent) {
+  if(store.editMode){e.preventDefault();e.stopImmediatePropagation();endDrag();return}
   if (resourceDropPage()) { if (dragHasFiles(e)) e.preventDefault(); endDrag(); return }
   if (!dragHasSupportedData(e)) return
   e.preventDefault() // 必须 preventDefault 才允许 drop
@@ -398,6 +400,7 @@ function onDragLeave(e: DragEvent) {
 }
 
 function onDrop(e: DragEvent) {
+  if(store.editMode){e.preventDefault();e.stopImmediatePropagation();endDrag();return}
   if (resourceDropPage()) {
     endDrag(); e.preventDefault(); e.stopPropagation()
     if (dragHasFiles(e)) {
@@ -791,7 +794,7 @@ const failedBackground = ref('')
 
 /** 背景图列表：多图自动切换用 images；否则回退单张 image */
 const bgImages = computed(() => {
-  const bg = store.settings?.background
+  const bg = appearancePreview.value?.background
   if (!bg || bg.mode !== 'image') return [] as string[]
   return bg.images?.length ? bg.images : (bg.image ? [bg.image] : [])
 })
@@ -802,7 +805,7 @@ const currentBgImage = computed(() => bgImages.value[currentBgIndex.value % Math
 /** 切换到下一张背景图（按顺序/随机）；off 模式不切换 */
 function switchBackground() {
   const list = bgImages.value
-  const mode = store.settings?.background.switchMode ?? 'off'
+  const mode = appearancePreview.value?.background.switchMode ?? 'off'
   if (mode === 'off' || list.length < 2) return
   if (mode === 'random') {
     let next = currentBgIndex.value
@@ -818,7 +821,7 @@ let bgSwitchTimer: ReturnType<typeof setInterval> | undefined
 function armBgSwitchTimer() {
   clearInterval(bgSwitchTimer)
   bgSwitchTimer = undefined
-  const bg = store.settings?.background
+  const bg = appearancePreview.value?.background
   const mode = bg?.switchMode ?? 'off'
   if (bg?.mode !== 'image' || mode === 'off' || bgImages.value.length < 2) return
   const sec = Math.max(30, bg?.switchIntervalSec ?? 300)
@@ -830,7 +833,7 @@ function armBgSwitchTimer() {
 }
 
 watch(
-  () => [store.settings?.background.mode, currentBgImage.value] as const,
+  () => [appearancePreview.value?.background.mode, currentBgImage.value] as const,
   ([mode, imagePath]) => {
     failedBackground.value = ''
     if (mode !== 'image' || !imagePath) return
@@ -849,7 +852,7 @@ watch(
 )
 
 // 切换策略/图片列表变化时重排定时器；图片被删除导致越界时收敛索引
-watch([() => store.settings?.background.switchMode, () => store.settings?.background.switchIntervalSec, bgImages], () => {
+watch([() => appearancePreview.value?.background.switchMode, () => appearancePreview.value?.background.switchIntervalSec, bgImages], () => {
   if (currentBgIndex.value >= bgImages.value.length) currentBgIndex.value = 0
   armBgSwitchTimer()
 })
@@ -859,7 +862,7 @@ watch([() => store.settings?.background.switchMode, () => store.settings?.backgr
  * BrowserWindow + Windows DWM Acrylic 提供。
  */
 const bgStyle = computed(() => {
-  const bg = store.settings?.background
+  const bg = appearancePreview.value?.background
   if (!bg || bg.mode === 'none') return null
   if (bg.mode === 'color') {
     return {
@@ -1014,47 +1017,15 @@ function applyTheme(theme?: ThemeName, custom?: CustomTheme) {
 // settings 未加载时按亮色应用；加载完成 / 修改后 watch 触发立即生效
 // deep: true 保证 custom.colors / custom.layout 内部字段变化也重新应用（即改即生效）
 watch(
-  () => [store.settings?.theme, store.settings?.custom] as const,
+  () => [appearancePreview.value?.theme, appearancePreview.value?.custom] as const,
   ([t, c]) => applyTheme(t, c),
   { immediate: true, deep: true }
 )
 
 // ---------------- 个性化点选编辑模式 ----------------
-/** 编辑模式下捕获点击：命中最内层 [data-edit] 板块则拦截真实动作并选中（再点取消） */
-function onEditClick(e: MouseEvent) {
-  if (!store.editMode) return
-  const el = (e.target as HTMLElement | null)?.closest?.('[data-edit]') as HTMLElement | null
-  if (!el) return // 未命中不清空，便于点击编辑面板
-  e.preventDefault()
-  e.stopPropagation()
-  const key = el.dataset.edit ?? ''
-  store.editTarget = store.editTarget === key ? '' : key
-}
-
-/** Esc 退出编辑模式 */
 function onEditKeydown(e: KeyboardEvent) {
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); void enterEditMode() }
-  if (e.key === 'Escape' && store.editMode) exitEditMode()
 }
-
-/** 同步选中板块的 .edit-active 高亮描边（视图切换后需重挂） */
-async function refreshEditHighlight() {
-  await nextTick()
-  document
-    .querySelectorAll('[data-edit].edit-active')
-    .forEach((el) => el.classList.remove('edit-active'))
-  if (store.editMode && store.editTarget) {
-    document
-      .querySelectorAll(`[data-edit="${store.editTarget}"]`)
-      .forEach((el) => el.classList.add('edit-active'))
-  }
-}
-
-watch(
-  () => [store.editMode, store.editTarget, store.currentView] as const,
-  () => void refreshEditHighlight(),
-  { flush: 'post' }
-)
 
 // ---------------- 初始化与事件订阅 ----------------
 const offs: Array<() => void> = []
@@ -1066,8 +1037,8 @@ onMounted(async () => {
   motionQuery.addEventListener('change', onMotionChange)
   // 每次上线自动切换一张背景图（按顺序/随机）；off 模式固定第一张
   {
-    const mode = store.settings?.background.switchMode ?? 'off'
-    if (store.settings?.background.mode === 'image' && mode !== 'off' && bgImages.value.length > 1) {
+    const mode = appearancePreview.value?.background.switchMode ?? 'off'
+    if (appearancePreview.value?.background.mode === 'image' && mode !== 'off' && bgImages.value.length > 1) {
       const last = Number(localStorage.getItem(BG_INDEX_KEY) ?? -1)
       currentBgIndex.value = Number.isInteger(last) && last >= 0 && last < bgImages.value.length ? last : 0
       switchBackground()
@@ -1235,42 +1206,43 @@ onUnmounted(() => {
 
 <template>
   <LaunchNotice />
+  <Teleport :to="designStageReady ? '#design-preview-host' : 'body'" :disabled="!designStageReady">
   <!-- 自定义背景层（纯色/图片 + 透明度 + 模糊） -->
-  <div v-if="bgStyle" class="app-bg" :style="bgStyle"></div>
-  <div
+  <div data-ui="App:870373af1ab7" v-if="bgStyle" class="app-bg" :style="bgStyle"></div>
+  <div data-ui="App:e8c1fdc22711"
     class="shell"
     :class="{ 'edit-mode': store.editMode, 'has-bg': !!bgStyle }"
 
   >
     <!-- ============ 左侧边栏（宽度 --sidebar-w） ============ -->
-    <aside class="sidebar" data-edit="sidebar">
+    <aside data-ui="App:25064d2bb910" class="sidebar" data-edit="sidebar">
       <!-- Logo 区 -->
-      <div class="logo-area">
-        <img class="brand-head" :src="brandHead" alt="KaMuaMua 的 Minecraft 头像" />
-        <div class="logo-text">
-          <span class="logo-name">KAMUCL</span>
-          <span class="logo-version">v{{ appVersion }}</span>
+      <div data-ui="App:fc5fc8ba7e96" class="logo-area">
+        <img data-ui="App:0f39bd9dbfd2" class="brand-head" :src="brandHead" alt="KaMuaMua 的 Minecraft 头像" />
+        <div data-ui="App:7494cda29e47" class="logo-text">
+          <span data-ui="App:c396a9ff34cb" class="logo-name">KAMUCL</span>
+          <span data-ui="App:31accf043a9a" class="logo-version">v{{ appVersion }}</span>
         </div>
       </div>
 
       <!-- 导航 -->
-      <nav ref="navEl" class="nav" aria-label="主导航" @pointerover="retargetNav" @pointerleave="resetNav" @focusin="retargetNav" @focusout="navFocusOut" @scroll.passive="measureNav">
-        <div class="nav-bubble" :style="bubbleStyle" aria-hidden="true"></div>
+      <nav data-ui="App:adafe645f766" ref="navEl" class="nav" aria-label="主导航" @pointerover="retargetNav" @pointerleave="resetNav" @focusin="retargetNav" @focusout="navFocusOut" @scroll.passive="measureNav">
+        <div data-ui="App:763b7368d7c7" class="nav-bubble" :style="bubbleStyle" aria-hidden="true"></div>
         <template v-for="item in visibleNavItems" :key="item.key">
-          <button
+          <button data-ui="App:e2cd389fbd0f"
             class="nav-item"
             :data-nav="item.key"
             :class="{ active: store.currentView === item.key }"
             :aria-current="store.currentView === item.key ? 'page' : undefined"
             @click="store.currentView = item.key"
           >
-            <span class="nav-icon" v-html="item.icon"></span>
-            <span class="nav-label">{{ item.label }}</span>
+            <span data-ui="App:1480740577df" class="nav-icon" v-html="item.icon"></span>
+            <span data-ui="App:f8a0bfe85bf9" class="nav-label">{{ item.label }}</span>
           </button>
 
           <!-- 资源管理子级菜单（插在「游戏版本」之后） -->
           <template v-if="item.key === 'game'">
-            <button
+            <button data-ui="App:7080ad4eb8e0"
               class="nav-item nav-parent"
               data-nav="resources"
               :class="{ 'group-active': inResourceGroup }"
@@ -1278,10 +1250,10 @@ onUnmounted(() => {
               aria-controls="resource-navigation"
               @click="resourceExpanded = !resourceExpanded"
             >
-              <span class="nav-icon">
+              <span data-ui="App:48f397d463e5" class="nav-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 11h18"/></svg>
               </span>
-              <span class="nav-label">资源管理</span>
+              <span data-ui="App:215ddb49217f" class="nav-label">资源管理</span>
               <svg
                 class="nav-caret"
                 :class="{ open: resourceExpanded || inResourceGroup }"
@@ -1291,9 +1263,9 @@ onUnmounted(() => {
               </svg>
             </button>
             <!-- 收起时 inert，键盘导航不会落入隐藏的资源菜单。 -->
-            <div id="resource-navigation" class="nav-sub" :class="{ open: resourceExpanded || inResourceGroup }" :inert="!(resourceExpanded || inResourceGroup)">
-              <div class="nav-sub-inner">
-                <button
+            <div data-ui="App:60e2cab1729e" id="resource-navigation" class="nav-sub" :class="{ open: resourceExpanded || inResourceGroup }" :inert="!(resourceExpanded || inResourceGroup)">
+              <div data-ui="App:23fdfa0f7cd4" class="nav-sub-inner">
+                <button data-ui="App:98aaad3e10e8"
                   v-for="sub in visibleResourceSubItems"
                   :key="sub.key"
                   class="nav-item nav-sub-item"
@@ -1302,8 +1274,8 @@ onUnmounted(() => {
                   :aria-current="store.currentView === sub.key ? 'page' : undefined"
                   @click="store.currentView = sub.key"
                 >
-                  <span class="nav-icon" v-html="sub.icon"></span>
-                  <span class="nav-label">{{ sub.label }}</span>
+                  <span data-ui="App:1025aa4e9a68" class="nav-icon" v-html="sub.icon"></span>
+                  <span data-ui="App:6f84d207dfdd" class="nav-label">{{ sub.label }}</span>
                 </button>
               </div>
             </div>
@@ -1311,23 +1283,23 @@ onUnmounted(() => {
         </template>
       </nav>
 
-      <button
+      <button data-ui="App:f81b37b0f9eb"
         class="sidebar-health"
         :class="`is-${launcherHealth.tone}`"
         title="打开通知中心"
         @click="toggleNotices"
       >
-        <i></i>
-        <span>{{ launcherHealth.text }}</span>
+        <i data-ui="App:8534bb11ef26"></i>
+        <span data-ui="App:8c2f3c89a0dd">{{ launcherHealth.text }}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg>
       </button>
     </aside>
 
     <!-- ============ 右侧（顶栏 + 内容） ============ -->
-    <div class="main-area">
+    <div data-ui="App:f900e94b908a" class="main-area">
       <!-- 顶部栏（可拖拽） -->
-      <header class="topbar" data-edit="topbar" @pointerdown="onTopbarPointerDown">
-        <button
+      <header data-ui="App:db645f1637b0" class="topbar" data-edit="topbar" @pointerdown="onTopbarPointerDown">
+        <button data-ui="App:3cd32ab47022"
           v-if="canGoBack && store.currentView !== 'home'"
           class="top-back"
           :disabled="!canGoBack"
@@ -1336,12 +1308,12 @@ onUnmounted(() => {
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
-        <div class="search-box">
+        <div data-ui="App:bf9ade9a884c" class="search-box">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="7" />
             <path d="m21 21-4.3-4.3" />
           </svg>
-          <input
+          <input data-ui="App:fa8c61171be4"
             v-model="store.searchKeyword"
             class="search-input"
             placeholder="搜索游戏版本、模组、资源包…"
@@ -1349,17 +1321,17 @@ onUnmounted(() => {
           />
         </div>
 
-        <div class="top-actions">
-          <button v-if="store.currentView !== 'home'" class="top-btn dl-toggle" @click="dlOpen = !dlOpen">
+        <div data-ui="App:5f4d42b34aae" class="top-actions">
+          <button data-ui="App:e7efd70d16b8" v-if="store.currentView !== 'home'" class="top-btn dl-toggle" @click="dlOpen = !dlOpen">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 3v11" />
               <path d="m7 10 5 5 5-5" />
               <path d="M4 21h16" />
             </svg>
             下载
-            <span v-if="activeTaskCount" class="dl-badge">{{ activeTaskCount }}</span>
+            <span data-ui="App:1585a95f110a" v-if="activeTaskCount" class="dl-badge">{{ activeTaskCount }}</span>
           </button>
-          <button v-if="store.currentView !== 'home'" class="top-btn" @click="onImportClick">
+          <button data-ui="App:0995359279d1" v-if="store.currentView !== 'home'" class="top-btn" @click="onImportClick">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 15V4" />
               <path d="m7 8 5-5 5 5" />
@@ -1367,43 +1339,43 @@ onUnmounted(() => {
             </svg>
             导入
           </button>
-          <button
+          <button data-ui="App:50549c4d6612"
             v-if="store.currentView === 'home' && activeTaskCount"
             class="top-icon-btn dl-toggle"
             title="下载中心"
             @click="dlOpen = !dlOpen"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11" /><path d="m7 10 5 5 5-5" /><path d="M4 21h16" /></svg>
-            <span class="dl-badge compact">{{ activeTaskCount }}</span>
+            <span data-ui="App:34ac91e6ba07" class="dl-badge compact">{{ activeTaskCount }}</span>
           </button>
-          <button v-if="store.currentView === 'home'" class="top-icon-btn dl-toggle" title="更新日志" @click="notesOpen = !notesOpen">
+          <button data-ui="App:0a28f190d06e" v-if="store.currentView === 'home'" class="top-icon-btn dl-toggle" title="更新日志" @click="notesOpen = !notesOpen">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 12a9 9 0 1 0 9-9" />
               <path d="M3 4v5h5" />
               <path d="M12 7v5l3.5 2" />
             </svg>
           </button>
-          <button class="top-icon-btn" title="通知" @click="toggleNotices">
+          <button data-ui="App:b3baec2490ab" class="top-icon-btn" title="通知" @click="toggleNotices">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.7 21a2 2 0 0 1-3.4 0" />
             </svg>
-            <span v-if="store.noticesUnread" class="bell-dot"></span>
+            <span data-ui="App:9fb26325a181" v-if="store.noticesUnread" class="bell-dot"></span>
           </button>
 
-          <span class="top-divider"></span>
+          <span data-ui="App:2d64ba8e392c" class="top-divider"></span>
 
-          <button class="win-btn" title="最小化" @click="win('minimize')">
+          <button data-ui="App:e3e46a2d0aaf" class="win-btn" title="最小化" @click="win('minimize')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <path d="M5 12h14" />
             </svg>
           </button>
-          <button class="win-btn" title="最大化/还原" @click="win('maximize')">
+          <button data-ui="App:bd7bf1eb0182" class="win-btn" title="最大化/还原" @click="win('maximize')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <rect x="6" y="6" width="12" height="12" rx="1.5" />
             </svg>
           </button>
-          <button class="win-btn win-close" title="关闭" @click="win('close')">
+          <button data-ui="App:f3cf1f9c86a5" class="win-btn win-close" title="关闭" @click="win('close')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <path d="M6 6l12 12M18 6 6 18" />
             </svg>
@@ -1412,19 +1384,19 @@ onUnmounted(() => {
 
         <!-- 通知中心下拉 -->
         <Teleport to="body">
-          <div v-if="noticeOpen" class="notice-mask" @click="noticeOpen = false"></div>
-          <div v-if="noticeOpen" class="notice-panel">
-            <div class="notice-head">
-              <span class="notice-title">通知</span>
-              <button class="btn btn-ghost btn-sm" :disabled="!store.notices.length" @click="clearNotices">清空</button>
+          <div data-ui="App:8e1aef347238" v-if="noticeOpen" class="notice-mask" @click="noticeOpen = false"></div>
+          <div data-ui="App:9730228f244a" v-if="noticeOpen" class="notice-panel">
+            <div data-ui="App:e6028868bd80" class="notice-head">
+              <span data-ui="App:43feec7b6fd3" class="notice-title">通知</span>
+              <button data-ui="App:da706702d37c" class="btn btn-ghost btn-sm" :disabled="!store.notices.length" @click="clearNotices">清空</button>
             </div>
-            <div v-if="!store.notices.length" class="notice-empty">暂无通知</div>
-            <div v-else class="notice-list">
-              <div v-for="n in store.notices" :key="n.id" class="notice-item" :class="'notice-' + n.type">
-                <span class="notice-dot"></span>
-                <div class="notice-body">
-                  <p class="notice-text">{{ n.text }}</p>
-                  <span class="notice-time">{{ fmtNoticeTime(n.time) }}</span>
+            <div data-ui="App:84df1441fafa" v-if="!store.notices.length" class="notice-empty">暂无通知</div>
+            <div data-ui="App:b4daafdb8870" v-else class="notice-list">
+              <div data-ui="App:a73122485a3f" v-for="n in store.notices" :key="n.id" class="notice-item" :class="'notice-' + n.type">
+                <span data-ui="App:adb2057c5de6" class="notice-dot"></span>
+                <div data-ui="App:2278766c3c3f" class="notice-body">
+                  <p data-ui="App:e0e95443c7b4" class="notice-text">{{ n.text }}</p>
+                  <span data-ui="App:9f929a457637" class="notice-time">{{ fmtNoticeTime(n.time) }}</span>
                 </div>
               </div>
             </div>
@@ -1433,20 +1405,20 @@ onUnmounted(() => {
 
         <!-- 更新日志下拉（首页标题栏秒表入口）：内置各版本改动，无网络依赖 -->
         <Teleport to="body">
-          <div v-if="notesOpen" class="notice-mask" @click="notesOpen = false"></div>
-          <div v-if="notesOpen" class="notice-panel notes-panel">
-            <div class="notice-head">
-              <span class="notice-title">更新日志</span>
-              <span class="muted">{{ latestUpdateNote()?.version }} · {{ latestUpdateNote()?.date }}</span>
+          <div data-ui="App:c07fadcedfba" v-if="notesOpen" class="notice-mask" @click="notesOpen = false"></div>
+          <div data-ui="App:8e6f6e3d72b8" v-if="notesOpen" class="notice-panel notes-panel">
+            <div data-ui="App:aeac05a751bf" class="notice-head">
+              <span data-ui="App:6919eb62e967" class="notice-title">更新日志</span>
+              <span data-ui="App:632f2221de5a" class="muted">{{ latestUpdateNote()?.version }} · {{ latestUpdateNote()?.date }}</span>
             </div>
-            <div class="notes-list">
-              <section v-for="note in updateNotes" :key="note.version" class="note-version">
-                <h4 class="note-head">
-                  <span class="note-ver">{{ note.version }}</span>
-                  <span class="muted">{{ note.date }}</span>
+            <div data-ui="App:27bd32aa001a" class="notes-list">
+              <section data-ui="App:f14cd0f7ca63" v-for="note in updateNotes" :key="note.version" class="note-version">
+                <h4 data-ui="App:7f4b6a7ad79d" class="note-head">
+                  <span data-ui="App:5860d27f0ee9" class="note-ver">{{ note.version }}</span>
+                  <span data-ui="App:21f2f31213b2" class="muted">{{ note.date }}</span>
                 </h4>
-                <ul class="note-changes">
-                  <li v-for="(c, i) in note.changes" :key="i">{{ c }}</li>
+                <ul data-ui="App:2ce63f856bef" class="note-changes">
+                  <li data-ui="App:f7a2ec78fb95" v-for="(c, i) in note.changes" :key="i">{{ c }}</li>
                 </ul>
               </section>
             </div>
@@ -1455,33 +1427,33 @@ onUnmounted(() => {
 
         <!-- 下载中心下拉：版本安装/整合包导入/资源下载统一任务列表，支持取消 -->
         <Teleport to="body">
-          <div v-if="dlOpen" class="notice-mask" @click="dlOpen = false"></div>
-          <div v-if="dlOpen" class="notice-panel dl-panel">
-            <div class="notice-head">
-              <span class="notice-title">下载中心</span>
-              <button class="btn btn-ghost btn-sm" @click="dlOpen = false; store.currentView = 'game'">
+          <div data-ui="App:32e6a4482be2" v-if="dlOpen" class="notice-mask" @click="dlOpen = false"></div>
+          <div data-ui="App:17d738b19ef5" v-if="dlOpen" class="notice-panel dl-panel">
+            <div data-ui="App:1960026275b2" class="notice-head">
+              <span data-ui="App:9bb15b429862" class="notice-title">下载中心</span>
+              <button data-ui="App:93f5c2a356cd" class="btn btn-ghost btn-sm" @click="dlOpen = false; store.currentView = 'game'">
                 去版本下载
               </button>
             </div>
-            <div v-if="!store.tasks.length" class="notice-empty">没有进行中的任务</div>
-            <div v-else class="notice-list">
-              <div v-for="t in store.tasks" :key="t.id" class="dl-item" :class="'dl-' + t.status">
-                <div class="dl-item-head">
-                  <span class="dl-title" :title="t.title">{{ t.title }}</span>
-                  <span v-if="t.status === 'running'" class="dl-actions">
-                    <button class="btn btn-ghost btn-sm" @click="onPauseTask(t.id)">暂停</button>
-                    <button class="btn btn-ghost btn-sm" @click="onCancelTask(t.id)">取消</button>
+            <div data-ui="App:61130e12d278" v-if="!store.tasks.length" class="notice-empty">没有进行中的任务</div>
+            <div data-ui="App:9f518a7bbb67" v-else class="notice-list">
+              <div data-ui="App:ac5c4222257f" v-for="t in store.tasks" :key="t.id" class="dl-item" :class="'dl-' + t.status">
+                <div data-ui="App:1147e17bfe61" class="dl-item-head">
+                  <span data-ui="App:a4f0a4d42456" class="dl-title" :title="t.title">{{ t.title }}</span>
+                  <span data-ui="App:7faad0b50853" v-if="t.status === 'running'" class="dl-actions">
+                    <button data-ui="App:4db86123aef2" class="btn btn-ghost btn-sm" @click="onPauseTask(t.id)">暂停</button>
+                    <button data-ui="App:4f9c2f515cb9" class="btn btn-ghost btn-sm" @click="onCancelTask(t.id)">取消</button>
                   </span>
-                  <span v-else-if="t.status === 'paused'" class="dl-actions">
-                    <button class="btn btn-ghost btn-sm" @click="onResumeTask(t.id)">继续</button>
-                    <button class="btn btn-ghost btn-sm" @click="onCancelTask(t.id)">取消</button>
+                  <span data-ui="App:03cdc173529c" v-else-if="t.status === 'paused'" class="dl-actions">
+                    <button data-ui="App:7cae05871ea8" class="btn btn-ghost btn-sm" @click="onResumeTask(t.id)">继续</button>
+                    <button data-ui="App:13a915056e72" class="btn btn-ghost btn-sm" @click="onCancelTask(t.id)">取消</button>
                   </span>
-                  <button v-else-if="t.status === 'cancelling'" class="btn btn-ghost btn-sm" disabled>
+                  <button data-ui="App:ea8947fe4164" v-else-if="t.status === 'cancelling'" class="btn btn-ghost btn-sm" disabled>
                     正在取消…
                   </button>
-                  <button v-else class="dl-dismiss" title="移除记录" @click="dismissTask(t.id)">×</button>
+                  <button data-ui="App:d19e1566b2b8" v-else class="dl-dismiss" title="移除记录" @click="dismissTask(t.id)">×</button>
                 </div>
-                <div class="dl-sub muted">
+                <div data-ui="App:a1b294f53a4e" class="dl-sub muted">
                   <template v-if="t.status === 'running'">
                     {{ taskSubText(t) }} · {{ t.indeterminate ? '正在计算总量' : '总进度 ' + taskProgressPercent(t) + '%' }}{{ taskEtaText(t.etaSeconds) }}
                   </template>
@@ -1493,8 +1465,8 @@ onUnmounted(() => {
                     失败于「{{ stageLabel(t.stage || 'error') }}」阶段：{{ t.error }}
                   </template>
                 </div>
-                <div v-if="t.status === 'running' || t.status === 'paused' || t.status === 'cancelling'" class="dl-bar" :class="{ 'is-indeterminate': t.indeterminate && t.status === 'running' }">
-                  <div class="dl-bar-fill" :style="{ width: t.indeterminate ? '35%' : taskProgressPercent(t) + '%' }"></div>
+                <div data-ui="App:c299fc9739a0" v-if="t.status === 'running' || t.status === 'paused' || t.status === 'cancelling'" class="dl-bar" :class="{ 'is-indeterminate': t.indeterminate && t.status === 'running' }">
+                  <div data-ui="App:21050ee2a501" class="dl-bar-fill" :style="{ width: t.indeterminate ? '35%' : taskProgressPercent(t) + '%' }"></div>
                 </div>
               </div>
             </div>
@@ -1503,9 +1475,9 @@ onUnmounted(() => {
       </header>
 
       <!-- 内容区（:duration 显式给出过渡时长：窗口被遮挡/最小化时 transitionend 不会触发，setTimeout 兜底防切换卡死） -->
-      <main class="content">
+      <main data-ui="App:4f03b68b3168" class="content">
         <Transition name="fade" mode="out-in" :duration="routeDuration">
-          <div :key="store.currentView" class="route-view">
+          <div data-ui="App:ece4739a5266" :key="store.currentView" class="route-view">
             <component :is="currentComponent" />
           </div>
         </Transition>
@@ -1534,33 +1506,31 @@ onUnmounted(() => {
     />
 
     <!-- 配置文件版本不兼容（回退后旧版读到新版配置） -->
-    <div v-if="configMismatch" class="menu-overlay cfg-mismatch-mask">
-      <div class="card cfg-mismatch-modal" role="dialog" aria-label="配置不兼容">
-        <h3 class="upd-modal-title">配置文件版本不兼容</h3>
-        <p class="muted">当前配置文件由更新版本的启动器创建，可能包含本版本不认识的格式。可以继续尝试使用（可能异常），或重置为默认设置（原配置会自动备份）。</p>
-        <div class="upd-modal-actions">
-          <button class="btn btn-ghost" @click="configMismatch = false">继续尝试</button>
-          <button class="btn btn-danger" @click="onConfigReset">重置设置</button>
+    <div data-ui="App:78cc4acb6895" v-if="configMismatch" class="menu-overlay cfg-mismatch-mask">
+      <div data-ui="App:242f0b62f9c2" class="card cfg-mismatch-modal" role="dialog" aria-label="配置不兼容">
+        <h3 data-ui="App:02fbfeb3a028" class="upd-modal-title">配置文件版本不兼容</h3>
+        <p data-ui="App:4de81003067a" class="muted">当前配置文件由更新版本的启动器创建，可能包含本版本不认识的格式。可以继续尝试使用（可能异常），或重置为默认设置（原配置会自动备份）。</p>
+        <div data-ui="App:296426110d1e" class="upd-modal-actions">
+          <button data-ui="App:84897164b21e" class="btn btn-ghost" @click="configMismatch = false">继续尝试</button>
+          <button data-ui="App:889590063f51" class="btn btn-danger" @click="onConfigReset">重置设置</button>
         </div>
       </div>
     </div>
 
-    <!-- 个性化编辑模式：右侧滑出编辑面板 -->
-    <Transition name="ep-slide">
-      <EditPanel v-if="store.editMode" />
-    </Transition>
   </div>
+  </Teleport>
+  <EditPanel v-if="store.editMode" />
 
   <!-- 整合包拖入：全屏遮罩（pointer-events:none 保证不干扰拖拽事件） -->
   <Teleport to="body">
-    <div v-if="dragActive" class="drop-mask">
-      <div class="drop-box">
+    <div data-ui="App:81cc45ec3106" v-if="dragActive" class="drop-mask">
+      <div data-ui="App:2a94454a8409" class="drop-box">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <path d="m7 8 5-5 5 5" />
           <path d="M12 3v12" />
         </svg>
-        <p class="drop-title">松开导入：存档 / 整合包 / MOD / 外置登录提供商</p>
+        <p data-ui="App:d7601e4e4d82" class="drop-title">松开导入：存档 / 整合包 / MOD / 外置登录提供商</p>
       </div>
     </div>
   </Teleport>
@@ -1577,13 +1547,13 @@ onUnmounted(() => {
 
   <!-- 启动失败：提示 + 导出错误日志 -->
   <Teleport to="body">
-    <div v-if="launchFail.open" class="modal-mask" @pointerdown.self="launchFail.open = false">
-      <div class="modal launchfail-modal">
-        <h3 class="modal-title">{{ launchFail.title }}</h3>
-        <p class="launchfail-text">{{ launchFail.text }}</p>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" @click="launchFail.open = false">关闭</button>
-          <button class="btn btn-gold" :disabled="launchFail.exporting" @click="onExportLogs">
+    <div data-ui="App:9d63fadc1ed6" v-if="launchFail.open" class="modal-mask" @pointerdown.self="launchFail.open = false">
+      <div data-ui="App:a55c730a5660" class="modal launchfail-modal">
+        <h3 data-ui="App:ffddaed1dca5" class="modal-title">{{ launchFail.title }}</h3>
+        <p data-ui="App:9ede176a5a84" class="launchfail-text">{{ launchFail.text }}</p>
+        <div data-ui="App:b5caea38dc55" class="modal-actions">
+          <button data-ui="App:bbc871d022c8" class="btn btn-ghost" @click="launchFail.open = false">关闭</button>
+          <button data-ui="App:43f37fe4338f" class="btn btn-gold" :disabled="launchFail.exporting" @click="onExportLogs">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11" /><path d="m7 10 5 5 5-5" /><path d="M4 21h16" /></svg>
             {{ launchFail.exporting ? '导出中…' : '导出错误日志' }}
           </button>
@@ -1594,90 +1564,90 @@ onUnmounted(() => {
 
   <!-- 整合包导入确认弹窗 -->
   <Teleport to="body">
-    <div v-if="mpModal.open" class="modal-mask" @pointerdown.self="closeModpackImport">
-      <div class="modal mp-modal">
-        <h3 class="mp-title">导入整合包</h3>
+    <div data-ui="App:597ca4365452" v-if="mpModal.open" class="modal-mask" @pointerdown.self="closeModpackImport">
+      <div data-ui="App:cac81d31c8a1" class="modal mp-modal">
+        <h3 data-ui="App:df7892dbbb9e" class="mp-title">导入整合包</h3>
 
         <!-- 解析中 -->
-        <div v-if="mpModal.probing" class="mp-loading">
-          <span class="spin"></span>
-          <span class="muted">解析中…</span>
+        <div data-ui="App:e3835fac276d" v-if="mpModal.probing" class="mp-loading">
+          <span data-ui="App:f629f7fbfbeb" class="spin"></span>
+          <span data-ui="App:5a2de4468a9a" class="muted">解析中…</span>
         </div>
 
         <!-- 解析成功：包信息 + 命名选项 -->
         <template v-else-if="mpModal.info">
-          <div class="mp-tags">
-            <span class="tag" :class="mpFormatTagClass">{{ mpFormatLabel }}</span>
-            <span class="tag">MC {{ mpModal.info.mcVersion }}</span>
-            <span v-if="mpModal.info.loader" class="tag tag-gold">
+          <div data-ui="App:13fbc913792f" class="mp-tags">
+            <span data-ui="App:01e576fd177a" class="tag" :class="mpFormatTagClass">{{ mpFormatLabel }}</span>
+            <span data-ui="App:efee1a142b01" class="tag">MC {{ mpModal.info.mcVersion }}</span>
+            <span data-ui="App:cbc7743772be" v-if="mpModal.info.loader" class="tag tag-gold">
               {{ mpModal.info.loader
               }}{{ mpModal.info.loaderVersion ? ' ' + mpModal.info.loaderVersion : '' }}
             </span>
-            <span
+            <span data-ui="App:84ba06a0c358"
               v-if="mpModal.info.version && mpModal.info.version !== mpModal.info.innerName"
               class="tag"
               >版本 {{ mpModal.info.version }}</span
             >
           </div>
-          <p class="mp-summary">
+          <p data-ui="App:94bfb09f6b96" class="mp-summary">
             {{ mpModal.info.fileCount }} 个清单文件 · {{ fmtPackBytes(mpModal.info.downloadBytes) }}
-            <span v-if="mpModal.info.hasOverrides"> · overrides</span>
-            <span v-if="mpModal.info.hasClientOverrides"> · client-overrides</span>
+            <span data-ui="App:b63322e9dda7" v-if="mpModal.info.hasOverrides"> · overrides</span>
+            <span data-ui="App:99b02870d974" v-if="mpModal.info.hasClientOverrides"> · client-overrides</span>
           </p>
 
-          <p class="mp-label">目标游戏文件夹</p>
-          <select v-model="mpModal.targetFolder" class="select" @change="onMpTargetFolderChange">
+          <p data-ui="App:596a49ffb57e" class="mp-label">目标游戏文件夹</p>
+          <select data-ui="App:274944e712ba" v-model="mpModal.targetFolder" class="select" @change="onMpTargetFolderChange">
             <option v-for="folder in store.settings?.folders || []" :key="folder.path" :value="folder.path">
               {{ folder.name }}{{ folder.isDefault ? '（默认）' : '' }} · {{ folder.path }}
             </option>
           </select>
 
-          <p class="mp-label">实例命名</p>
-          <div class="mp-name-opts">
-            <button
+          <p data-ui="App:7b097008a36b" class="mp-label">实例命名</p>
+          <div data-ui="App:72a2299fc011" class="mp-name-opts">
+            <button data-ui="App:3a719b866a06"
               class="mp-name-opt"
               :class="{ active: mpModal.nameSource === 'file' }"
               @click="setMpNameSource('file')"
             >
-              <span class="mp-radio"></span>
-              <span class="mp-name-text">
-                <span class="mp-name-label">使用压缩包文件名</span>
-                <span class="mp-name-value">{{ mpModal.info.fileName }}</span>
+              <span data-ui="App:b8da1ddfc48f" class="mp-radio"></span>
+              <span data-ui="App:ffd1edc7712c" class="mp-name-text">
+                <span data-ui="App:46b21df17f0a" class="mp-name-label">使用压缩包文件名</span>
+                <span data-ui="App:70d3893f031f" class="mp-name-value">{{ mpModal.info.fileName }}</span>
               </span>
             </button>
-            <button
+            <button data-ui="App:a2e1c9d8bd28"
               class="mp-name-opt"
               :class="{ active: mpModal.nameSource === 'inner' }"
               @click="setMpNameSource('inner')"
             >
-              <span class="mp-radio"></span>
-              <span class="mp-name-text">
-                <span class="mp-name-label">使用整合包名称</span>
-                <span class="mp-name-value">{{ mpModal.info.innerName }}</span>
+              <span data-ui="App:ebce50ef2232" class="mp-radio"></span>
+              <span data-ui="App:6471e9d8a5fe" class="mp-name-text">
+                <span data-ui="App:5e013419bf1c" class="mp-name-label">使用整合包名称</span>
+                <span data-ui="App:787ec3b759bb" class="mp-name-value">{{ mpModal.info.innerName }}</span>
               </span>
             </button>
           </div>
-          <input v-model="mpModal.customName" class="input mp-custom-name" maxlength="120" placeholder="自定义实例名称" @input="mpModal.confirmReplace = false; mpModal.error = ''" />
+          <input data-ui="App:2b301f17a937" v-model="mpModal.customName" class="input mp-custom-name" maxlength="120" placeholder="自定义实例名称" @input="mpModal.confirmReplace = false; mpModal.error = ''" />
 
-          <div v-if="mpRelatedExisting.length" class="mp-conflict">
-            <strong>检测到实例冲突或相同整合包版本</strong>
-            <span>
+          <div data-ui="App:fc46c9326814" v-if="mpRelatedExisting.length" class="mp-conflict">
+            <strong data-ui="App:e35ef0415ba0">检测到实例冲突或相同整合包版本</strong>
+            <span data-ui="App:e671a36e2cab">
               {{ mpRelatedExisting.map(item => `${item.id}${item.samePackVersion ? '（同包同版本）' : ''}`).join('、') }}
             </span>
-            <div class="mp-conflict-actions">
-              <label><input v-model="mpModal.conflictAction" type="radio" value="rename" @change="onMpConflictActionChange" /> 重新命名</label>
-              <label><input v-model="mpModal.conflictAction" type="radio" value="new" @change="onMpConflictActionChange" /> 作为新实例安装（自动加序号）</label>
-              <label><input v-model="mpModal.conflictAction" type="radio" value="update" @change="onMpConflictActionChange" /> 更新现有实例</label>
-              <label><input v-model="mpModal.conflictAction" type="radio" value="overwrite" @change="onMpConflictActionChange" /> 覆盖安装</label>
+            <div data-ui="App:109bf3c86358" class="mp-conflict-actions">
+              <label data-ui="App:f85325e79d42"><input data-ui="App:00222a19c9fa" v-model="mpModal.conflictAction" type="radio" value="rename" @change="onMpConflictActionChange" /> 重新命名</label>
+              <label data-ui="App:acbdff7eee51"><input data-ui="App:614b9af91bd3" v-model="mpModal.conflictAction" type="radio" value="new" @change="onMpConflictActionChange" /> 作为新实例安装（自动加序号）</label>
+              <label data-ui="App:89f12da61d4f"><input data-ui="App:6dc0ad1f778f" v-model="mpModal.conflictAction" type="radio" value="update" @change="onMpConflictActionChange" /> 更新现有实例</label>
+              <label data-ui="App:9a75f39d2361"><input data-ui="App:2e73bdfaa685" v-model="mpModal.conflictAction" type="radio" value="overwrite" @change="onMpConflictActionChange" /> 覆盖安装</label>
             </div>
 
             <template v-if="mpNeedsReplaceConfirm">
-              <select v-model="mpModal.existingId" class="select mp-existing-select">
+              <select data-ui="App:831130030ba1" v-model="mpModal.existingId" class="select mp-existing-select">
                 <option v-for="item in mpExistingInFolder" :key="item.id" :value="item.id">
                   {{ item.id }}{{ item.samePackVersion ? ' · 同一整合包版本' : '' }}
                 </option>
               </select>
-              <div class="mp-impact" :class="{ danger: mpModal.conflictAction === 'overwrite' }">
+              <div data-ui="App:5ea11cdf2f61" class="mp-impact" :class="{ danger: mpModal.conflictAction === 'overwrite' }">
                 <template v-if="mpModal.conflictAction === 'update'">
                   将重建包管理文件并恢复用户存档、配置及非包管理文件；同名的新包 MOD 优先。操作失败会恢复完整备份。
                 </template>
@@ -1685,35 +1655,35 @@ onUnmounted(() => {
                   将重建实例包文件；存档、配置、截图、资源包及可识别的用户 MOD 会保留，其他未知顶层内容可能被移除。操作失败会恢复完整备份。
                 </template>
               </div>
-              <label class="mp-replace-confirm">
-                <input v-model="mpModal.confirmReplace" type="checkbox" />
-                <span>我已确认上述影响范围，并同意{{ mpModal.conflictAction === 'update' ? '更新' : '覆盖' }}所选实例。</span>
+              <label data-ui="App:76acdea2ae5a" class="mp-replace-confirm">
+                <input data-ui="App:8c2c4f6d4693" v-model="mpModal.confirmReplace" type="checkbox" />
+                <span data-ui="App:84709e2c73a5">我已确认上述影响范围，并同意{{ mpModal.conflictAction === 'update' ? '更新' : '覆盖' }}所选实例。</span>
               </label>
             </template>
           </div>
 
           <!-- 默认按键冲突：检测到作者预设键位且已开启默认按键同步时，给出替换选项（默认不替换） -->
-          <label v-if="mpModal.info?.hasPresetKeys && store.settings?.keySync" class="mp-keysync-opt">
-            <input v-model="mpModal.keySyncOverride" type="checkbox" />
-            <span>该整合包含作者预设键位（options.txt）。用启动器默认按键替换预设键位；其余设置保留。不勾选则保留作者预设。</span>
+          <label data-ui="App:0e88d6c50d0d" v-if="mpModal.info?.hasPresetKeys && store.settings?.keySync" class="mp-keysync-opt">
+            <input data-ui="App:e3245af7e07a" v-model="mpModal.keySyncOverride" type="checkbox" />
+            <span data-ui="App:25de5e67e1b9">该整合包含作者预设键位（options.txt）。用启动器默认按键替换预设键位；其余设置保留。不勾选则保留作者预设。</span>
           </label>
 
-          <p v-if="mpNameConflict && mpModal.conflictAction === 'rename'" class="mp-error">
+          <p data-ui="App:9feeb075e091" v-if="mpNameConflict && mpModal.conflictAction === 'rename'" class="mp-error">
             名称「{{ mpModal.customName }}」已存在，请重新命名或选择其他处理方式。
           </p>
-          <p v-if="mpModal.error" class="mp-error">{{ mpModal.error }}</p>
+          <p data-ui="App:88ee270d21af" v-if="mpModal.error" class="mp-error">{{ mpModal.error }}</p>
 
-          <div class="mp-actions">
-            <button class="btn btn-ghost" @click="closeModpackImport">取消</button>
-            <button class="btn btn-gold" @click="confirmModpackImport">确认导入</button>
+          <div data-ui="App:ca67c0af2cc9" class="mp-actions">
+            <button data-ui="App:20064d25fb9e" class="btn btn-ghost" @click="closeModpackImport">取消</button>
+            <button data-ui="App:1cef44943a65" class="btn btn-gold" @click="confirmModpackImport">确认导入</button>
           </div>
         </template>
 
         <!-- 解析失败 -->
         <template v-else>
-          <p class="mp-error">{{ mpModal.error || '无法解析该整合包' }}</p>
-          <div class="mp-actions">
-            <button class="btn btn-ghost" @click="closeModpackImport">关闭</button>
+          <p data-ui="App:597453576b07" class="mp-error">{{ mpModal.error || '无法解析该整合包' }}</p>
+          <div data-ui="App:bea4b4fe18e5" class="mp-actions">
+            <button data-ui="App:4ff5fe62cac3" class="btn btn-ghost" @click="closeModpackImport">关闭</button>
           </div>
         </template>
       </div>
