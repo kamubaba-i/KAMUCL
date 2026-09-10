@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 22:04 ｜ 当前版本：**1.0.43**（已完成验证、打包和发布）
+> 更新时间：2026-09-10 22:42 ｜ 当前版本：**1.0.44**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,15 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.44 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.44 ，Release ID386367083。功能提交 master `4dad402` / main `3f3bac1`，标签 v1.0.44 指向 master 功能提交。EXE 67,616,046 字节、ZIP 103,187,304 字节；三个远端附件大小和 SHA256、源码标签核对后公开，latest 为 v1.0.44，误发 v1.0.41 仍未公开。EXE SHA256 `bfc6004bb723aafd567195390702939ff5eaf45e711c35695430293ae2cef31f`；ZIP SHA256 `4c78c5f551d8a4af27e0d6a79143d4db2073dbac029d9c58dfcd07e5fd41fff9`。
+
+**1.0.44 游戏选项与默认配置 UI**：默认配置分为游戏选项、按键配置、默认材质包。新增 defaultGameOptions 核心/IPC 和共享 gameOptions 定义；以 26.2 Esc → 选项两列入口排列，覆盖疾跑/潜行切换、自动跳跃、FOV、亮度、声音、鼠标、聊天、视频及辅助功能。数字支持滑块和直接输入；总同步默认关闭，只覆盖用户明确修改的项，每项可恢复跟随游戏。启动时从实例元数据及 client JAR version.json 确认实际版本，对 FOV/百分比/聊天尺寸等编码后写入实际 effectiveGameDir/options.txt，回读校验；未知版本停止同步，旧版不支持项跳过并记录。高对比度同时选择内置 high_contrast 包，保留其他资源包。详细验证范围见 docs/VOXLINK-UPSTREAM.md；未宣称逐个启动全部历史客户端。
+
+**1.0.44 皮肤与 VoxLink**：SkinsView 重命名用当前编辑 ID 防止 Enter 卸载输入框引发 blur 二次提交空名，Esc 也不会再保存。VoxLink 参考 AUGUHDAR/VoxLink 1.1.4 提交 40d03c6，同步适用的 STUN 可达节点优先、映射端口变化、重复 punch_info 短时去重和 update_room 429 冷却；修复 TS 打洞 ACK 热循环及计时器/取消收尾。公开上游是 MOD 仓库，没有原 app-desktop；MOD 专属 TURN 密钥重派和自动日志上传未移植，不能描述为完整独立桌面端升级。如用户提供独立桌面端更新链接需继续核对。
+
+**1.0.44 验证**：341/341 测试、TypeScript、生产构建通过。新增皮肤实际 SFC setup 重命名事件回归、本地 UDP/STUN/HTTP 联机验证、多版本选项编码与文件保留/幂等/不支持处理验证。实际 Electron UI 证据 out/default-config-ui-3WCJWK、out/design-ui-6g9mKQ（含真实生产渲染、隔离 IPC 核心配置持久化、小窗口与离开返回）。EXE 中文空格路径启动通过；冷启动粒子首帧419ms、缓存240ms，缓存复用通过；ZIP app.asar 与构建相同，包内主程序与构建逐字节一致。测试均使用隔离目录和本地网络，没有修改真实账号、实例选项或停止用户游戏。
+
 
 **1.0.43 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.43 ，Release ID386336943。EXE中文空格路径启动通过，ZIP内app.asar与构建一致；便携粒子首帧冷启动412ms、缓存启动250ms，缓存复用通过。三个远端附件大小、SHA256和源码标签核对后公开，latest为v1.0.43。EXE SHA256 `7e22cf1afff7fb3865c0b40e378d32573d9b6780e956e6a1bc709134e51bfa95`；ZIP SHA256 `4bce1e6ae559277351011eaf4b0213ac94fd82addfbdb278c3679a02a0d18f7c`。
 
