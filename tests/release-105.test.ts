@@ -39,11 +39,11 @@ test('home recent games: selection no longer pins to top; launch recency drives 
 test('personalization edit panel: opaque background, clear boundary, avoids top tip bar', () => {
   const panel = read('src/renderer/src/components/EditPanel.vue')
   // 接近不透明（--bg 在所有主题下不透明）
-  assert.match(panel, /background:#19232df5/)
+  assert.match(panel, /background:var\(--card-solid\)/)
   // 明确边界
-  assert.match(panel, /border:1px solid #70859e66/)
+  assert.match(panel, /border-left:1px solid var\(--border\)/)
   // 避开顶部提示栏（提示栏 top:14px + 高约40px + ≥12px 间距）
-  assert.match(panel, /top:78px/)
+  assert.match(panel, /grid-template-rows:66px minmax\(0,1fr\)/)
 })
 
 test('new/changed Vue components compile', () => {

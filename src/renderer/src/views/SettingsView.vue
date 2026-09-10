@@ -634,7 +634,6 @@ async function onRemovePlugin(p: PluginInfo) {
 
           <p class="muted group-hint">先选择喜欢的基础主题，再进入外观工作台，直接点选页面上的卡片、按钮与文字，自由调整布局与样式。</p>
           <button
-            v-if="store.settings.theme === 'custom'"
             class="btn personalize-btn"
             @click="enterEditMode"
           >

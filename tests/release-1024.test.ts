@@ -7,7 +7,7 @@ const read = (file: string) => fs.readFileSync(file, 'utf8')
 
 test('visual editor controls remain inside a bounded scrollable panel', () => {
  const ep=read('src/renderer/src/components/EditPanel.vue')
- assert.match(ep,/bottom:12px/)
+ assert.match(ep,/grid-template-columns:230px minmax\(0,1fr\) 310px/)
  assert.match(ep,/overflow:auto/)
  assert.match(ep,/class="designer-toolbar"/)
  assert.match(ep,/复制完整主题码/)

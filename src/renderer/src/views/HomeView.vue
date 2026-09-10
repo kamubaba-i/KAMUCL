@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { appearancePreview } from '../visualDesign'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { carouselImages, carouselDuration } from '@shared/appearancePolicy'
 import { CarouselPlayback } from '@shared/carouselPlayback'
@@ -77,7 +78,7 @@ const customBanners = computed(() => {
       fit: version.thumbnailFit ?? ('crop' as ImageFit)
     }]
   }
-  const global = store.settings?.launchThumbnail
+  const global = appearancePreview.value?.launchThumbnail
   return carouselImages(global).map(path => ({ path, src: managedImageUrl(path), fit: global?.fit ?? 'crop' as ImageFit }))
 })
 
@@ -119,7 +120,7 @@ function startBannerTimer() {
   playbackKey = 'kamucl.carousel.' + bannerScope.value
   let saved
   try { saved = JSON.parse(localStorage.getItem(playbackKey) ?? 'null') } catch { /* invalid bookmark */ }
-  const settings = store.settings?.launchThumbnail
+  const settings = appearancePreview.value?.launchThumbnail
   playback = new CarouselPlayback(banners.value.map(item => ({ path: item.path, durationMs: 1000 * carouselDuration(settings?.durations?.[item.path] ?? settings?.intervalSeconds) })), Date.now(), saved)
   bannerIndex.value = playback.index
   // 预加载全部轮播图：避免切到下一张时因图片未加载而短暂露出第一张
@@ -134,7 +135,7 @@ function startBannerTimer() {
 }
 
 watch(
-  () => JSON.stringify([bannerScope.value, customBanners.value.map(item => item.path), store.settings?.launchThumbnail.intervalSeconds, store.settings?.launchThumbnail.durations]),
+  () => JSON.stringify([bannerScope.value, customBanners.value.map(item => item.path), appearancePreview.value?.launchThumbnail.intervalSeconds, appearancePreview.value?.launchThumbnail.durations]),
   () => {
     failedBanners.value = new Set()
     startBannerTimer()

@@ -9,8 +9,8 @@ import { sniffImageFormat } from './imageAssetPolicy'
 import { cleanDesign } from '../../shared/visualDesign'
 import { DEFAULT_CUSTOM_THEME, DEFAULT_BACKGROUND, DEFAULT_LAUNCH_THUMBNAIL, DEFAULT_HOME_LAYOUT, type Settings } from '../../shared/types'
 const MAX=64*1024*1024
-export function exportVisualTheme():string {
- const s=getSettings(),assets:Record<string,string>={}
+export function exportVisualTheme(preview?:Partial<Settings>):string {
+ const s={...getSettings(),...preview},assets:Record<string,string>={}
  function image(file:string,purpose:'background'|'launch-thumbnail'){
   if(!file)return '';const managed=ensureGlobalImage(file,purpose);if(!managed)return ''
   const bytes=fs.readFileSync(managed);const id='image-'+crypto.createHash('sha256').update(bytes).digest('hex')
@@ -24,7 +24,7 @@ export function exportVisualTheme():string {
  if(Buffer.byteLength(payload)>MAX)throw new Error('主题图片过大，请减少图片后导出（上限64MiB）')
  return 'KAMUCL2.'+gzipSync(payload).toString('base64')
 }
-export async function importVisualTheme(code:string):Promise<Settings>{
+export async function importVisualTheme(code:string,preview=false):Promise<Settings>{
  if(typeof code!=='string'||code.length>MAX*2)throw new Error('主题码无效或过大')
  const value=code.trim();let p:any
  if(value.startsWith('KAMUCL2.'))p=JSON.parse(gunzipSync(Buffer.from(value.slice(8),'base64'),{maxOutputLength:MAX}).toString('utf8'))
@@ -45,7 +45,7 @@ export async function importVisualTheme(code:string):Promise<Settings>{
   if(p.homeLayout){const layout=structuredClone(DEFAULT_HOME_LAYOUT);for(const group of ['main','side'] as const){const valid=new Set(layout[group].map(x=>x.key));const seen=new Set();if(Array.isArray(p.homeLayout[group])){const rows=p.homeLayout[group].filter((x:any)=>valid.has(x?.key)&&!seen.has(x.key)&&(seen.add(x.key),true)).map((x:any)=>({key:x.key,visible:x.visible!==false}));layout[group]=[...rows,...layout[group].filter(x=>!seen.has(x.key))]}}patch.homeLayout=layout}
   if(p.background){const b={...current.background,...p.background};b.image=await image(b.image,'background');b.images=await Promise.all((Array.isArray(b.images)?b.images:[]).slice(0,12).map((id:string)=>image(id,'background')));patch.background=b}
   if(p.launchThumbnail){const b={...current.launchThumbnail,...p.launchThumbnail};b.image=await image(b.image,'launch-thumbnail');b.images=await Promise.all((Array.isArray(b.images)?b.images:[]).slice(0,12).map((id:string)=>image(id,'launch-thumbnail')));if(b.durations)b.durations=Object.fromEntries(await Promise.all(Object.entries(b.durations).slice(0,12).map(async([id,d])=>[await image(id,'launch-thumbnail'),d])));patch.launchThumbnail=b}
-  return saveSettings(patch)
+  return preview?{...current,...patch}:saveSettings(patch)
  }finally{await fs.promises.rm(temp,{recursive:true,force:true})}
 }
 

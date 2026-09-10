@@ -2,26 +2,28 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { IPC, type InstalledVersion, type LoaderName } from '@shared/types'
 import type { ModMigrationPlan } from '@shared/modMigration'
-import { getManifest, getModIcons, errText } from '../api'
+import MinecraftVersionPicker from './MinecraftVersionPicker.vue'
+import SelectMenu from './SelectMenu.vue'
+import { getModIcons, errText } from '../api'
 import { store, toast } from '../store'
 const props=defineProps<{source:InstalledVersion}>(),emit=defineEmits<{(e:'close'):void}>()
-const mc=ref(''),loader=ref<LoaderName>(props.source.loader||'fabric'),versions=ref<string[]>([]),plan=ref<ModMigrationPlan>(),checking=ref(false),starting=ref(false),error=ref(''),confirmed=ref(false),icons=ref<Record<string,string>>({})
+const mc=ref(''),loader=ref<LoaderName>(props.source.loader||'fabric'),plan=ref<ModMigrationPlan>(),checking=ref(false),starting=ref(false),error=ref(''),confirmed=ref(false),icons=ref<Record<string,string>>({})
 const folder=props.source.folder||store.settings!.activeFolder||store.settings!.gameDir
 const unavailable=computed(()=>plan.value?.entries.filter(e=>e.status==='unavailable')||[])
 const attention=computed(()=>unavailable.value.length+(plan.value?.warnings.length||0)),query=ref(''),onlyMissing=ref(false)
 const rows=computed(()=>plan.value?.entries.filter(e=>(!onlyMissing.value||e.status==='unavailable')&&(e.fileName+e.name).toLowerCase().includes(query.value.toLowerCase()))||[])
 let generation=0
-watch([mc,loader],()=>{generation++;plan.value=undefined;confirmed.value=false;error.value=''})
+watch([mc,loader],()=>{generation++;checking.value=false;plan.value=undefined;confirmed.value=false;error.value=''})
 onUnmounted(()=>generation++)
-onMounted(async()=>{try{versions.value=(await getManifest()).map(v=>v.id)}catch{error.value='版本列表加载失败，仍可手动输入游戏版本号'}})
-async function inspect(){if(checking.value)return;const current=++generation;checking.value=true;error.value='';confirmed.value=false;try{const result=await window.kamucl.invoke(IPC.modsMigrationPlan,props.source.id,folder,mc.value.trim(),loader.value) as ModMigrationPlan;if(current!==generation)return;plan.value=result;icons.value={};const names=result.entries.filter(e=>e.fileName).map(e=>e.fileName);for(let i=0;i<names.length;i+=100)void getModIcons(props.source.id,names.slice(i,i+100),folder).then(v=>{if(current===generation)icons.value={...icons.value,...v}}).catch(()=>{})}catch(e){if(current===generation)error.value=errText(e)}finally{checking.value=false}}
+
+async function inspect(){if(checking.value)return;const current=++generation;checking.value=true;error.value='';confirmed.value=false;try{const result=await window.kamucl.invoke(IPC.modsMigrationPlan,props.source.id,folder,mc.value.trim(),loader.value) as ModMigrationPlan;if(current!==generation)return;plan.value=result;icons.value={};const names=result.entries.filter(e=>e.fileName).map(e=>e.fileName);for(let i=0;i<names.length;i+=100)void getModIcons(props.source.id,names.slice(i,i+100),folder).then(v=>{if(current===generation)icons.value={...icons.value,...v}}).catch(()=>{})}catch(e){if(current===generation)error.value=errText(e)}finally{if(current===generation)checking.value=false}}
 async function start(){if(!plan.value||starting.value||(attention.value&&!confirmed.value))return;starting.value=true;try{await window.kamucl.invoke(IPC.modsMigrationApply,plan.value.id,confirmed.value);toast('版本迁移已开始，可在下载中心查看进度或取消','success');emit('close')}catch(e){error.value=errText(e)}finally{starting.value=false}}
 </script>
 <template>
 <Teleport to="body"><div class="modal-mask" @pointerdown.self="!starting && emit('close')"><section class="modal migration-modal" role="dialog" aria-modal="true" aria-labelledby="migration-title">
 <header><div><h2 id="migration-title">版本迁移</h2><p class="muted">将当前模组迁移到新的隔离实例，原版本保持完整。</p></div><button class="btn btn-ghost" aria-label="关闭版本迁移" :disabled="starting" @click="emit('close')">×</button></header>
 <div class="migration-body">
-<div class="migration-route"><div><small class="muted">当前版本</small><strong>{{source.name||source.id}}</strong><span class="muted">{{source.mcVersion}} · {{source.loader}}</span></div><span aria-hidden="true">→</span><div><label>目标 Minecraft 版本<input v-model="mc" class="input" list="migration-versions" placeholder="例如 1.21.11，可升级或降级" :disabled="checking||starting"/></label><datalist id="migration-versions"><option v-for="v in versions" :value="v"/></datalist><label>加载器<select v-model="loader" class="input" :disabled="checking||starting"><option value="fabric">Fabric</option><option value="forge">Forge</option><option value="neoforge">NeoForge</option><option value="quilt">Quilt</option></select></label></div></div>
+<div class="migration-route"><div><small class="muted">当前版本</small><strong>{{source.name||source.id}}</strong><span class="muted">{{source.mcVersion}} · {{source.loader}}</span></div><span aria-hidden="true">→</span><div><label>目标 Minecraft 版本<MinecraftVersionPicker v-model="mc" :disabled="starting"/></label><label>加载器<SelectMenu v-model="loader" :disabled="starting" :options="[{value:'fabric',label:'Fabric'},{value:'forge',label:'Forge'},{value:'neoforge',label:'NeoForge'},{value:'quilt',label:'Quilt'}]"/></label></div></div>
 <p class="migration-hint">迁移模组及必要前置，保留启停状态。新实例自动安装游戏与加载器；存档、资源包和配置文件仍保留在原实例。</p>
 <div v-if="error" class="migration-error" role="alert">{{error}}</div><div v-if="checking" class="migration-loading"><span class="spin"/> 正在检查每个模组的适配版本与前置依赖…</div>
 <template v-if="plan"><div class="migration-summary"><strong>检查完成</strong><span>{{plan.entries.filter(e=>e.status==='compatible').length}} 个可迁移</span><span>{{plan.entries.filter(e=>e.status==='dependency').length}} 个新增前置</span><button class="btn btn-ghost btn-sm" @click="onlyMissing=!onlyMissing">{{unavailable.length}} 个未匹配{{onlyMissing?' · 显示全部':''}}</button></div><input v-model="query" class="input" placeholder="搜索本地文件名或模组名称"/>
