@@ -294,6 +294,8 @@ export const openPluginsDir = () => invoke<void>(IPC.pluginsOpenDir)
 
 // ---------------- 默认按键 ----------------
 export const getDefaultKeys = () => invoke<Record<string, string>>(IPC.keysGetDefault)
+export const getDefaultGameOptions = () => invoke<import('@shared/gameOptions').DefaultGameOptions>(IPC.gameOptionsGet)
+export const setDefaultGameOptions = (change: { enabled?: boolean; id?: string; value?: import('@shared/gameOptions').GameOptionValue | null }) => invoke<import('@shared/gameOptions').DefaultGameOptions>(IPC.gameOptionsSet, change)
 export const setDefaultKey = (id: string, bind: string) =>
   invoke<Record<string, string>>(IPC.keysSetDefault, id, bind)
 export const resetDefaultKeys = () => invoke<Record<string, string>>(IPC.keysReset)

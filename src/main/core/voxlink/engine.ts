@@ -142,6 +142,7 @@ export interface JoinRoomResult {
 // ---- 引擎 ----
 
 interface HostPeer {
+  lastPunchInfoAt?: number
   id: string
   puncher: Puncher | null
   rudp: RudpConn | null
@@ -511,7 +512,7 @@ export class ConnEngine extends EventEmitter {
     const d = this.gMappedDelta
     this.gMappedCh.push(m)
     this.emit('mapped', m)
-    if (puncher && d) {
+    if (puncher) {
         puncher.setTarget({ address: ip, port })
         puncher.setPredictedPorts(predictedPortsAround(port, d))
     }
@@ -659,7 +660,11 @@ export class ConnEngine extends EventEmitter {
     const port = typeof data.joinerMappedPort === 'number' ? data.joinerMappedPort : 0
     const peer = this.hPeers.get(from)
     if (!peer) return
-    if (ip && port > 0) peer.mapped = { ip, port }
+    const unchanged = peer.mapped?.ip === ip && peer.mapped?.port === port
+    if (ip && port > 0 && port <= 65535) peer.mapped = { ip, port }
+    // 重复映射信令不重置预测；新的漂移端口仍立即接收。
+    if (unchanged && Date.now() - (peer.lastPunchInfoAt ?? 0) < 2000) return
+    peer.lastPunchInfoAt = Date.now()
 
     const mappedData: Record<string, unknown> = {}
     if (peer.hostMapped) {
@@ -671,6 +676,7 @@ export class ConnEngine extends EventEmitter {
     const lip = getLocalIP()
     if (lip) mappedData.hostLocalIp = lip
     try { await this.sendSignal('holepunch_mapped', mappedData, from) } catch (e) {
+      peer.lastPunchInfoAt = 0
       this.deps.netLog('warn', `发送 holepunch_mapped 失败: ${(e as Error).message}`)
     }
     if (peer.puncher && peer.mapped) peer.puncher.setTarget({ address: peer.mapped.ip, port: peer.mapped.port })

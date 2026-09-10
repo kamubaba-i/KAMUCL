@@ -7,7 +7,8 @@
  */
 import { URL } from 'node:url'
 
-export const APP_VERSION = '1.1.4-beta'
+/** Protocol review: AUGUHDAR/VoxLink 40d03c6 (1.1.4, 2026-09-10). */
+export const APP_VERSION = '1.1.4'
 export const DEFAULT_SERVER_URL = 'https://p2p.wuhui.icu'
 export const HTTP_TIMEOUT_MS = 10_000
 export const MAX_RESPONSE_LEN = 4 << 20
@@ -66,6 +67,7 @@ export interface ApiClientOptions {
 export class ApiClient {
   readonly userAgent: string
   readonly timeoutMs: number
+  private updateCooldown = new Map<string, number>()
 
   constructor(opts: ApiClientOptions = {}) {
     this.userAgent = opts.userAgent ?? `KAMUCL-App/${APP_VERSION}`
@@ -79,6 +81,9 @@ export class ApiClient {
     query: Record<string, QueryValue | QueryValue[]>,
     body: unknown
   ): Promise<unknown> {
+    const cooldownKey = route === '/room/update' ? baseURL + ':' + String((body as { code?: string } | null)?.code ?? '') : ''
+    const remaining = (this.updateCooldown.get(cooldownKey) ?? 0) - Date.now()
+    if (cooldownKey && remaining > 0) throw new APIError('RATE_LIMITED', `请求过于频繁，请 ${Math.ceil(remaining / 1000)} 秒后重试`, 429)
     let url: string
     try {
       url = buildRequestUrl(baseURL, route, query)
@@ -129,6 +134,11 @@ export class ApiClient {
       const code = env.error || 'RATE_LIMITED'
       let msg = env.message || '请求过于频繁，请稍后重试'
       const ra = resp.headers.get('Retry-After')
+      if (cooldownKey) {
+        const seconds = Number(ra)
+        const delay = ra && Number.isFinite(seconds) ? Math.max(1, seconds) * 1000 : Math.max(1000, Date.parse(ra ?? '') - Date.now() || 30_000)
+        this.updateCooldown.set(cooldownKey, Date.now() + delay)
+      }
       if (ra) msg += `（请 ${ra} 秒后重试）`
       throw new APIError(code, msg, resp.status)
     }
