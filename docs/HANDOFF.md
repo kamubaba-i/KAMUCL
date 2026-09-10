@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 04:02 ｜ 当前版本：**1.0.52**（已验证、打包和发布）
+> 更新时间：2026-09-11 04:26 ｜ 当前版本：**1.0.53**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,25 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.53 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.53 ，Release ID 386600614。master 功能提交 `0bef8f9`、长度修复 `74021af`；main 对应 `a986140`、`53a263f`。标签指向最终修复提交74021af，三个附件大小与SHA256核对后公开发布。
+
+**模组操作**：列表启用/禁用改为主题开关，checked表示启用；异步失败维持真实文件状态。更新检测行以本地外置文件名为主、内部名称为辅，并按完整更新列表分批获取社区图标，支持超过当前页的更新项。
+
+**版本迁移入口与语义**：资源管理→模组→版本迁移。选择目标Minecraft和Fabric/Forge/NeoForge/Quilt，先检查再确认。以Modrinth SHA1及CurseForge指纹加SHA1识别来源，严格匹配目标游戏和加载器，解析必要依赖。安装目标游戏及加载器到新隔离实例；原实例不修改，保留原有禁用状态。未匹配项与依赖警告必须勾选确认；未匹配原文件复制到新实例并禁用。只迁移模组，不复制存档、配置或材质包，界面已说明。
+
+**迁移保护与边界**：最多500项，计划有效30分钟；执行前和下载完成后校验源目录文件列表与SHA1，拒绝符号链接/变化的源文件。下载使用HTTPS、可信哈希与安全JAR文件名，暂存完成后安装并提交；下载失败/取消清理本次暂存目录，原实例不受影响。游戏安装阶段失败可能保留安装器正常的未完成目标目录。新实例名限制64个UTF16字符兼容Forge安装器，避免截断Unicode代理对。无法保证第三方模组之间语义兼容，缺失前置/版本冲突明确提示。
+
+**验证**：364/364 tests、TypeScript、最终生产构建通过。自动测试覆盖降级、缺失确认、必要前置、禁用保留、源变化、网络失败、取消、哈希/协议/目标版本校验、长名称。生产renderer验证开关、图标与外置名称、缺失确认门禁及执行IPC；真实Fabric API 26.2→1.21.11来源/适配检查通过，使用隔离副本。测试中的完整安装为模拟，不声称已启动所有迁移后的真实游戏。日志 out/tests-all-1053-final.log、out/tsc-1053-final.log、out/ui-migration-1053-final.log、out/migration-live-1053.log；截图 out/network-ui-nF8EFe/mod-switch-and-update.png、out/network-ui-55Todt/migration-confirmation.png。
+
+**最终成品目录**：release/final-1.0.53。顶层release/KAMUCL-1.0.53.exe是补入长度修复前的中间包，因用户正在运行而被锁定，未结束用户进程；不能用作最终交付。独立目录EXE基于最终win-unpacked打包，ZIP为最终构建副本。两种包ASAR与最终构建一致，版本及后台worker已检查。正常压缩便携包在中文空格路径冷/缓存启动通过，原生反馈首帧340/234ms（ElectronRunAsNode探针，非完整首页时间），out/startup-1.0.53.log。
+
+```text
+96c0db173801ba8fc36af4136815f3d7d57c8fbb6b083f029f10a36ce34fe24c  KAMUCL-1.0.53.exe
+59d1bfb991d52cee349f5376658d588ce41f5ebb44a340b27e56c1c094d94a71  KAMUCL-1.0.53-windows-x64.zip
+```
+
+
 
 **1.0.52 发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.52 ，Release ID386583373。三项附件大小与SHA256 digest核对后发布，latest已确认。
 
