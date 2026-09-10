@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 18:54 ｜ 当前版本：**1.0.38**（已完成验证、打包和发布）
+> 更新时间：2026-09-10 19:44 ｜ 当前版本：**1.0.39**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,12 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.39 启动动画60帧**：用户要求开场加载动画改为60帧。原生 StartupFeedback 从 WinForms Timer 改为高精度60Hz截止时间调度，临时申请1ms计时精度并在退出释放；每次最多一个UI绘制请求，过期帧跳过，避免积压。渲染改为复用 top-down DIB 和内存DC，Graphics直接绘入预乘透明像素缓冲，去掉每帧整屏Bitmap分配及GetHbitmap复制，退出释放所有GDI资源。粒子位置仍按真实时间计算，聚合620ms、停留2000ms、淡出320ms不变。Electron备用动画以BOOT_FRAME_MS控制requestAnimationFrame绘制，在高刷新屏也以60帧为目标。
+
+**1.0.39 验证**：328/328测试、TypeScript、生产构建通过。原生实测59.659帧/秒，中位帧间隔15.798ms、p95为30.829ms（当前机器实际呈现调用统计，不承诺所有硬件无掉帧），证据out/startup-fps-guQ3Oa/result.json，工具scripts/verify-startup-framerate.cjs。仅改定时调度、未复用绘图缓冲的中间版本约30.96帧，说明主要绘制开销确实来自整屏分配/复制。实际生产备用splash在模拟60Hz/144Hz时钟下绘制约60/59.97帧，证据out/fallback-fps-1.0.39.log。实际原生场景到Electron窗口衔接通过：首帧160ms、聚合及停留2677ms、同一个原生PID、仅一个主窗口且最终opacity=1（out/unified-startup-BcOtJL）；验证脚本在屏外消耗PowerShell SW_HIDE提示，并等待首帧探针写完，避免测试启动方式干扰判断。
+
+**1.0.39 交付**：功能提交master `b29d71c` / main `f5e5d5a`，标签v1.0.39指向b29d71c。EXE、ZIP已完成，中文空格路径启动通过；ZIP内app.asar与已验证构建一致，内含原生helper与本批最终编译产物一致。便携冷启动粒子首帧419ms、缓存启动277ms，缓存标记未变化（out/startup-1.0.39.log）。Release ID386231318，EXE、ZIP、SHA256SUMS.txt远端大小和SHA256核对后已公开，latest确认为v1.0.39：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.39 。EXE SHA256 `1f7cab0704934bfd3d0de174dbadfad2469baf1a4d670dfdd98e47fe1f4facff`；ZIP SHA256 `eb2e7e5fa6c2e4ed3aaf8571fe7dd7968cf53cc00b9724d08070ce1be2038988`。
 
 **1.0.38 侧栏气泡与下载停滞**：按用户反馈恢复共享移动气泡，使用 useNavigationBubble.ts 测量导航容器内的真实位置，鼠标连续滑过、键盘焦点、资源子菜单展开和滚动均保持对齐；当前页面 aria-current 与左侧标记独立保留。气泡采用300ms平滑位移及柔和渐变，鼠标离开回到当前页，减少动态效果时关闭过渡。保留1.0.36的其他布局、可访问性及主题改进。
 
