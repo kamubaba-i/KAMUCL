@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 03:24 ｜ 当前版本：**1.0.51**（已验证、打包和发布）
+> 更新时间：2026-09-11 04:02 ｜ 当前版本：**1.0.52**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,22 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.52 发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.52 ，Release ID386583373。三项附件大小与SHA256 digest核对后发布，latest已确认。
+
+**1.0.52 外观工作台与实例同步**：master `864cb77` / main `8f6cfb0`，tag v1.0.52 指向 master 功能提交。全局当前实例使用 activeFolder + resourceVersionId；首页、资源文件管理、社区实例选择、服务器启动/绑定与模组导入选择同步。仅在当前文件夹缺失该版本时回退可用实例。资源包/光影 ZIP 复用社区 SHA1/CF 指纹匹配和缓存，未匹配时读取 pack.png；目录包或无社区记录的文件不能保证社区图标。
+
+**外观实现**：Vite 编译模板注入 data-ui 稳定结构标识；运行时按页面/子页区分组件覆盖，侧栏/顶栏作为 global。支持拖拽、单角缩放与精确数值、8px 吸附及对齐辅助、颜色/透明度/圆角/模糊/字体/文字/显隐/顺序，撤销重做50步。浏览模式操作原界面，选取模式阻止业务按钮误触。隐藏组件在编辑时可见并可从图层恢复。入口：设置→个性化→打开外观工作台；Ctrl+Shift+E 保留恢复入口。
+
+**主题码**：KAMUCL2.gzip-base64 包含 visualDesign 全部页面、主题、旧首页布局、背景/横幅图片与轮播配置；图片 SHA256 校验后导入独立缓存，不改游戏/账户设置。旧 KAMUCL. 颜色码兼容。导出前等待布局保存队列。位置为 CSS 像素；相同窗口尺寸还原最一致，不承诺不同窗口/字体/未来结构升级后逐像素一致。外显文字覆盖直接文字层，不修改业务数据。动态列表同结构组件按出现序号标识，随列表内容变化保持槽位样式。
+
+**验证**：360/360 tests；tsc、生产构建、生产 renderer 的拖动/文字/宽度/撤销/重做/重进/隐藏恢复/首页和资源页双向实例同步；三类资源分页图标；主题完整往返、图片、保留游戏设置、ZIP身份与 pack.png；ASAR后台worker。日志 out/tests-all-1052.log、out/ui-editor-1052-final.log、out/ui-pack-icons-1052.log、out/theme-roundtrip-1052.log、out/packaged-worker-1052.log。ZIP、便携解压 ASAR 与最终构建一致。隔离便携冷/缓存启动首帧337/262ms（ElectronRunAsNode入口验证，非完整首页时间），out/startup-1.0.52.log。
+
+```text
+720128046aa5633093470e7f68342243e77509ce5cc3cb0edbe9a2f56696e035  KAMUCL-1.0.52.exe
+5ee122ddb4fe8999594378fa713cda49f7e24dfc751c84d62a5e7cb4b919704b  KAMUCL-1.0.52-windows-x64.zip
+```
+
 
 **1.0.51 交付**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.51 ，Release ID386560537，latest已核对。EXE/ZIP/SHA256SUMS.txt远端大小与digest逐项通过后发布。release目录成品、ZIP ASAR、便携解压ASAR均等于最终构建。中文空格路径便携冷/缓存启动通过（首帧351/242ms，隔离ElectronRunAsNode验证，不是完整用户首页启动），out/startup-1.0.51.log。
 
