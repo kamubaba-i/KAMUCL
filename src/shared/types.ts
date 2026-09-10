@@ -788,6 +788,8 @@ export const IPC = {
   modsInstall: 'mods:install', // (files: string[], targetVersionId: string) => ModInstallResult[]  装入目标版本 mods 目录（遵循版本隔离）
   modsDuplicates: 'mods:duplicates', // (versionId: string) => ModDuplicateGroup[]  单版本查重
   modsCrossDuplicates: 'mods:crossDuplicates', // (versionIds: string[]) => ModCrossDuplicate[]  跨版本查重
+  modsMigrationPlan: 'mods:migrationPlan',
+  modsMigrationApply: 'mods:migrationApply',
   modsCheckUpdates: 'mods:checkUpdates', // (versionId: string) => ModUpdateReport  按 sha1 反查 Modrinth 可更新项
   modsApplyUpdates: 'mods:applyUpdates', // (versionId: string, items: ModUpdateTarget[]) => { fileName, ok, error? }[]
   // 默认按键（启动时同步进实例 options.txt）

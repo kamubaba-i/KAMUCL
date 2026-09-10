@@ -6,6 +6,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { getModIcons, importResources, applyModUpdates, checkModUpdates, copyText, errText, listFs, openDir, removeFs, toggleDisableFs } from '../api'
 import { activeInstalled, selectedInstance, refreshInstalled, store, toast } from '../store'
+import ModMigrationModal from './ModMigrationModal.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import DupCleanModal from './DupCleanModal.vue'
 import SelectMenu from './SelectMenu.vue'
@@ -87,13 +88,15 @@ onMounted(async () => {
   void load()
 })
 
-watch([effectiveRel, activeFolder], () => { dupOpen.value = false; delModal.open = false; updatePanel.open = false; void load() })
+watch([effectiveRel, activeFolder], () => { dupOpen.value = false; delModal.open = false; updatePanel.open = false; migrationOpen.value=false; void load() })
 onUnmounted(() => { loadGeneration++ })
 watch(() => store.fsRefreshTick, () => void load())
 
 // ---------------- 路径显示（超长中间省略 + 点击复制） ----------------
 /** 清理重复 MOD 弹窗 */
 const dupOpen = ref(false)
+const migrationOpen=ref(false)
+const updateIcons=ref<Record<string,string>>({})
 
 /** 中间省略的路径：versions/neo…2.0.75/mods */
 const displayPath = computed(() => {
@@ -165,7 +168,8 @@ const isModEntry = (e: FsEntry) =>
 const isDisabledMod = (e: FsEntry) => /\.jar\.disabled$/i.test(e.name)
 const toggling = ref('')
 
-async function onToggleDisable(entry: FsEntry) {
+async function onToggleDisable(entry: FsEntry, event?: Event) {
+  if(event?.target)(event.target as HTMLInputElement).checked = !isDisabledMod(entry)
   if (!currentVersion.value) return
   if (toggling.value) return
   toggling.value = entry.name
@@ -238,13 +242,18 @@ async function onCheckUpdates() {
   updatePanel.open = true
   updatePanel.itemState = {}
   updatePanel.itemError = {}
+  const generation=loadGeneration
   try {
     const report = await checkModUpdates(v.id, v.folder)
+    if(generation!==loadGeneration)return
     updatePanel.report = report
+    updateIcons.value={}
+    const names=report.entries.filter(e=>e.update).map(e=>e.fileName)
+    for(let i=0;i<names.length;i+=100)void getModIcons(v.id,names.slice(i,i+100),v.folder||activeFolder.value).then(icons=>{if(generation===loadGeneration)updateIcons.value={...updateIcons.value,...icons}}).catch(()=>{})
     updatePanel.selected = new Set(report.entries.filter((e) => e.update).map((e) => e.fileName))
     if (!report.entries.length) toast('该实例 mods 目录为空', 'info')
   } catch (e) {
-    updatePanel.error = errText(e)
+    if(generation===loadGeneration)updatePanel.error = errText(e)
   } finally {
     updatePanel.checking = false
   }
@@ -332,6 +341,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
           </svg>
           检测更新
         </button>
+        <button v-if="props.rel === 'mods'" class="btn btn-ghost" :disabled="!currentVersion" @click="migrationOpen=true">版本迁移</button>
         <button v-if="props.rel === 'mods'" class="btn btn-ghost" :disabled="!currentVersion" @click="dupOpen = true">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6Z" />
@@ -380,7 +390,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
               :disabled="updatePanel.applying"
               @change="toggleUpdateSelect(e.fileName, ($event.target as HTMLInputElement).checked)"
             />
-            <span class="upd-name" :title="e.fileName">{{ e.name }}</span>
+            <span class="fm-file-icon"><img v-if="updateIcons[e.fileName] || modIcons[e.fileName]" :src="updateIcons[e.fileName] || modIcons[e.fileName]" alt=""/><span v-else>◇</span></span><span class="upd-name" :title="e.fileName"><strong>{{ e.fileName }}</strong><small class="muted">{{ e.name }}</small></span>
             <span class="muted upd-ver">{{ e.currentVersion || '未知' }} → <b>{{ e.update!.versionNumber }}</b></span>
             <span v-if="updatePanel.itemState[e.fileName] === 'start'" class="spin upd-spin"></span>
             <span v-else-if="updatePanel.itemState[e.fileName] === 'error'" class="upd-err" :title="updatePanel.itemError[e.fileName]">失败</span>
@@ -431,17 +441,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
           <span v-if="isDisabledMod(e)" class="tag fm-disabled-tag">已禁用</span>
           <span class="muted fm-meta">{{ e.isDir ? '文件夹' : fmtSize(e.size) }}</span>
           <span class="muted fm-meta fm-date">{{ fmtDate(e.mtime) }}</span>
-          <button
-            v-if="isModEntry(e)"
-            class="btn btn-sm fm-toggle"
-            :class="isDisabledMod(e) ? 'btn-gold' : 'btn-ghost'"
-            :disabled="toggling === e.name"
-            :title="isDisabledMod(e) ? '恢复为 .jar，重新加载该模组' : '改名为 .jar.disabled，游戏将不再加载该模组'"
-            @click="onToggleDisable(e)"
-          >
-            <span v-if="toggling === e.name" class="spin"></span>
-            {{ isDisabledMod(e) ? '启用' : '禁用' }}
-          </button>
+          <label v-if="isModEntry(e)" class="switch fm-toggle" :title="isDisabledMod(e)?'启用模组':'禁用模组'"><input type="checkbox" role="switch" :aria-label="(isDisabledMod(e)?'启用 ':'禁用 ')+e.name" :checked="!isDisabledMod(e)" :disabled="!!toggling" @change="onToggleDisable(e, $event)"/><span class="switch-ui"></span></label>
           <button class="btn btn-danger btn-sm fm-remove" @click="onRemove(e)">删除</button>
         </div>
       </div>
@@ -453,6 +453,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       <span>{{ page }} / {{ pageCount }}</span>
       <button class="btn btn-ghost btn-sm" :disabled="page >= pageCount" @click="page++">下一页</button>
     </nav>
+    <ModMigrationModal v-if="migrationOpen && currentVersion" :source="currentVersion" @close="migrationOpen=false"/>
     <!-- 删除文件二次确认 -->
     <ConfirmModal
       :open="delModal.open"
@@ -477,6 +478,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 </template>
 
 <style scoped>
+.upd-name {display:flex;flex-direction:column;min-width:0;gap:3px}.upd-name strong{font-weight:600;overflow:hidden;text-overflow:ellipsis}.upd-name small{font-size:12px}.fm-toggle{flex-shrink:0}
+
 .fm-pagination { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; padding:8px 0; font-size:13px }
 .fm-pagination .muted { margin-right:auto }
 .page {

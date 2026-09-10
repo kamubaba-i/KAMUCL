@@ -1,3 +1,4 @@
+import { planModMigration, applyModMigration } from './core/modMigration'
 import { resolveResourceDirectory, listResourceEntries, requireResourceVersion } from './core/resourceDirectory'
 import { importResourceFiles } from './core/resourceFiles'
 import { exitHistory } from './core/exitHistory'
@@ -819,6 +820,15 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   )
   ipcMain.handle(IPC.modsIcons, (_e, versionId: string, names: string[], folder?: string, kind?: string) =>
     getModIcons(String(versionId ?? ''), folder || folderOfVersion(String(versionId ?? '')), Array.isArray(names) ? names : [], kind || 'mods'))
+  ipcMain.handle(IPC.modsMigrationPlan, (_e, sourceId: string, folder: string, mc: string, loader: any) => planModMigration(sourceId, folder, mc, loader))
+  ipcMain.handle(IPC.modsMigrationApply, (_e, planId: string, confirmed: boolean) => {
+    const task=registerTask('版本迁移','version')
+    void applyModMigration(planId,confirmed,e=>emit({...e,taskId:task.id,taskTitle:task.title}),task.controller.signal)
+      .then(r=>{send(IPC_EVENT.taskDone,{taskId:task.id,ok:true});send(IPC_EVENT.installDone,{taskId:task.id,versionId:r.versionId,installedId:r.versionId,ok:true})})
+      .catch(e=>send(IPC_EVENT.taskDone,{taskId:task.id,ok:false,error:errText(e),cancelled:isCancelError(e)}))
+      .finally(()=>finishTask(task.id))
+    return task.id
+  })
   ipcMain.handle(IPC.modsCheckUpdates, (_e, versionId: string, folder?: string) =>
     withGameFolder(folder || folderOfVersion(String(versionId ?? '')), () =>
       modUpdates.checkModUpdates(String(versionId ?? ''))
