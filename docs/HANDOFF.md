@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 22:56 ｜ 当前版本：**1.0.45**（已完成验证、打包和发布）
+> 更新时间：2026-09-11 01:32 ｜ 当前版本：**1.0.46**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,26 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.46 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.46 ，Release ID386487076。功能提交 master `62fba23` / main `fd98c2d`；标签 v1.0.46 指向 master 功能提交。EXE 67,631,370 字节、ZIP 103,222,824 字节；三个远端附件大小与 SHA256、源码标签验证后公开。
+
+```text
+c552ac46212cf41b473742456609b6670477163998b7179c8c2458cbbebcae15  KAMUCL-1.0.46.exe
+fc874c4ca3a98c724aad9ec612c1f3b94a4472c57b35f82d8f6098fa81dedb7b  KAMUCL-1.0.46-windows-x64.zip
+```
+
+**资源页问题根因及修复**：FileManager 原本在模组页面始终挂载 DupCleanModal，其 onMounted 即调用同步解析目录内全部 JAR，即使弹窗未打开也会阻塞主进程；无版本仍会构造 versions/.json，且跨 IPC 丢失 folder 导致同名版本串目录。弹窗改为打开且存在版本才挂载；所有资源操作携带当前 folder+id，resourceDirectory 只读取当前版本 JSON、按 effectiveGameDir 解析目录，异步单层读取（不递归），页面每页100项，切换版本失效旧响应；JAR解析与哈希转 worker_threads。检查更新也复用 worker。空版本三页禁用按钮且不发文件扫描，错误显示友好引导。
+
+**默认配置**：鼠标灵敏度 0–200% 已有正确 options.txt 编码，本轮在游戏选项根页面添加明确快捷入口，在控制页与鼠标设置页使用同一设置，支持数值输入及滑动。
+
+**联机修复**：陶瓦改为显式点击下载，包 SHA256 与 EXE SHA256 分开（旧版拿 EXE 摘要验证压缩包必失败）。Windows 官方 --hmcl 包装程序会正常退出，改为拥有实际 --hmcl2 服务进程；ready 对齐官方 host-ok/guest-ok，避免 host-starting 过早完成。支持取消下载/连接，不操作用户游戏。VoxLink 对照上游 1.1.5/6b11d93，移植 TURN 节点测速、分配/BIND、票据信令、认证、数据封装、keepalive/UNBIND/release；固定退出按钮，加入/打洞/连接中均可取消，20秒手动TURN，允许中继时60秒自动后备/失败隔60秒重试，防止离房晚响应复活。修复可靠UDP累计ACK相等时错误删除未确认包、ACK/data等待未唤醒和TCP大块截断。FRP提供可复制/跳转网址与访问密钥引导，Bearer读取已有隧道并选择，节点+游戏端口创建TCP隧道，启动前验证选中隧道并使用其实际本地端口。
+
+**验证**：345/345 测试、TypeScript、构建通过；3000个有效JAR+损坏JAR+嵌套目录验证非递归/目录隔离及后台解析期间主线程继续响应；真实UDP本地TURN节点验证BIND重试、票据错误、MAC篡改、512KB真实TCP双向字节一致与退出清理、晚到分配释放。实际生产Vue UI验证100项分页/切页、无隐藏重复扫描、三个资源页空版本不发IPC、灵敏度125%保存、陶瓦手动安装、TURN20秒和离房、FRP向导（out/network-ui-FZWar3）。打包ASAR内worker实际运行通过（out/packaged-mod-worker-KILHji）。官方陶瓦0.4.2真实包隔离安装/摘要/服务/state/停止通过（out/terracotta-verify-qxg882）。官方VoxLink只读探测 enabled=true、1节点、UDP约35ms（out/live-turn-1046.log）；未创建公网测试房间、未用真实FRP账号创建隧道、未完成两端真实跨NAT游戏联调。支持范围见 docs/VOXLINK-UPSTREAM.md，不宣称语音、日志上传、TURN成功后无缝切回P2P等全部MOD功能已移植。
+
+**成品验证**：ZIP app.asar 与已验证生产构建一致，版本1.0.46；中文空格路径通过，便携冷启动首帧347ms/缓存209ms，缓存启动未重复解压。日志 out/portable-path-1.0.46.log、out/startup-1.0.46.log。发布脚本改为读取真实更新日志模块，兼容单双引号和条目中括号，缺少当前版本或分钟时间则拒绝发布。
+
+**复验入口**：scripts/verify-resource-network-ui.cjs（先生产构建，使用Electron运行）；scripts/verify-packaged-mod-worker.cjs（先打包，使用Electron运行）；scripts/verify-terracotta.cjs（Node，先将官方 https://github.com/burningtnt/Terracotta/releases/download/v0.4.2/terracotta-0.4.2-windows-x86_64-pkg.tar.gz 存至 out/terracotta-official-0.4.2.tar.gz，脚本校验官方摘要并仅启动隔离本地服务，不建房）。
+
 
 **1.0.45 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.45 ，Release ID386379123。功能提交 master `b6f5b41` / main `190e5a1`，标签 v1.0.45 指向 master 功能提交。三个附件大小、SHA256与源码标签核对后公开。校验值：
 
