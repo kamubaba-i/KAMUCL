@@ -20,6 +20,7 @@ export class DownloadLimiter {
   get isThrottling(): boolean {
     return this.limits.downloadSpeedKBps > 0
   }
+  get maxConcurrent(): number { return this.limits.downloadThreads }
   configure(limits: DownloadLimits): void {
     validateDownloadLimits(limits)
     this.limits = { ...limits }

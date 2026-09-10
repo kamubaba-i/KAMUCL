@@ -606,6 +606,8 @@ export interface SkinHistoryEntry extends SkinHistoryItem {
   dataUrl: string
 }
 export interface ProgressEvent {
+  /** 版本安装任务的原始 Minecraft 版本；列表按任务独立展示进度。 */
+  versionId?: string
   /** 当前阶段，如 'version-json' | 'client' | 'libraries' | 'assets' | 'java' | 'loader' */
   stage: string
   /** 0-1 */

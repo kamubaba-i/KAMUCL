@@ -315,7 +315,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     const taskEmit = (e: ProgressEvent): void => {
       const normalized = progressGuard.normalize(e)
       lastStage = normalized.stage
-      emit({ ...normalized, taskId: task.id, taskTitle: task.title })
+      emit({ ...normalized, versionId: vid, taskId: task.id, taskTitle: task.title })
     }
     const taskDone = (ok: boolean, error?: string, cancelled = false): void =>
       send(IPC_EVENT.taskDone, {
@@ -336,17 +336,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
           const cancelled = isCancelError(err)
           const text = cancelled ? '已取消' : errText(err)
           if (!cancelled) taskEmit({ stage: 'error', progress: 0, text: `安装失败: ${text}` })
-          // 事务清理：删除安装失败产生的文件（.installing 标记在则目录是失败产物）
-          try {
-            versions.cleanupPartialInstall(vid)
-            // 加载器实例目录（若已生成）一并清理
-            const installed = versions.listInstalled()
-            for (const v of installed) {
-              if (v.failed) versions.cleanupPartialInstall(v.id)
-            }
-          } catch {
-            /* 清理失败不阻断错误上报 */
-          }
+          // 保留本任务的 .installing 标记供续传/显式清理；绝不扫描删除其他并行任务的目录。
           taskDone(false, text, cancelled)
           send(IPC_EVENT.installDone, {
             versionId: vid,

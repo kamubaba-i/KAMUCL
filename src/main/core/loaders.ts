@@ -5,6 +5,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { downloadLimiter } from './downloadLimits'
+import { withFileJob } from './fileJobs'
 import { copyRuntimeProfile } from './packRuntime'
 import { fmlArgument, missingNeoRuntime, reuseExternalRuntimeLibraries } from './externalRuntime'
 import type { FabricApiVersion, LoaderName, ProgressEvent } from '../../shared/types'
@@ -146,6 +148,12 @@ async function pickJavaForInstaller(mcVersion: string, emit: ProgressEmit): Prom
 
 /** 运行 forge/neoforge 安装器：全量输出落盘 installer.log；失败带最后 30 行；--mirror= 等号形式，失败降级去 mirror 重试；signal 取消时杀掉安装器进程 */
 function runInstaller(javaPath: string, jar: string, emit: ProgressEmit, signal?: AbortSignal, target = gameDir()): Promise<void> {
+  // External Java installers rewrite launcher_profiles.json in their target folder.
+  // Only this final installer phase is serialized; version/file downloads remain concurrent.
+  return withFileJob(path.join(target, '.kamucl-installer'), signal, () => runInstallerUnlocked(javaPath, jar, emit, signal, target))
+}
+
+function runInstallerUnlocked(javaPath: string, jar: string, emit: ProgressEmit, signal: AbortSignal | undefined, target: string): Promise<void> {
   const useMirror = getSettings().mirror === 'bmclapi'
 
   const buildArgs = (withMirror: boolean): string[] => {
@@ -362,7 +370,7 @@ async function installLoaderInternal(
           bytesTotal: detail.bytesTotal ?? undefined,
           indeterminate: detail.indeterminate
         }),
-      8,
+      downloadLimiter.maxConcurrent,
       mirror,
       signal
     )
@@ -466,7 +474,7 @@ async function installLoaderInternal(
             bytesTotal: detail.bytesTotal ?? undefined,
             indeterminate: detail.indeterminate
           }),
-        8,
+        downloadLimiter.maxConcurrent,
         getSettings().mirror,
         signal
       )

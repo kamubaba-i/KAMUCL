@@ -84,6 +84,7 @@ export const store = reactive({
   progress: null as ProgressEvent | null,
   /** 正在后台下载/安装的版本 id 集合（installDone 事件到达后移除） */
   installing: new Set<string>(),
+  installProgress: {} as Record<string, ProgressEvent>,
   /** 最近一次安装失败的版本 id 集合（已安装页显示重试入口） */
   failedInstalls: new Set<string>(),
   /** 首页 Banner 文字对齐（localStorage 持久化） */

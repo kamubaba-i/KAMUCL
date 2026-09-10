@@ -1088,6 +1088,7 @@ onMounted(async () => {
     window.kamucl.on('window:caption-pointerdown', closeTopDropdowns),
     onProgress((e) => {
       store.progress = e
+      if (e.versionId) store.installProgress[e.versionId] = e
       upsertTaskProgress(e)
     }),
     onTaskDone((r) => {
@@ -1120,7 +1121,8 @@ onMounted(async () => {
     }),
     onInstallDone((r) => {
       store.installing.delete(r.versionId)
-      store.progress = null
+      delete store.installProgress[r.versionId]
+      if (store.progress?.taskId === r.taskId) store.progress = null
       finalizeTask(r)
       resetProgressMono(r.taskId)
       if (r.ok) {

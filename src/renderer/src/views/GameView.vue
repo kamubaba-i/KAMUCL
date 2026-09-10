@@ -311,14 +311,15 @@ const typeTagClass = (t: RemoteVersion['type']) =>
 const keyword = computed(() => store.searchKeyword.trim().toLowerCase())
 
 /** ETA 由主进程基于字节速度指数平滑；未知总量/暂停时不伪造。 */
-const etaText = computed(() => {
-  const p = store.progress
+function progressEta(id: string) {
+  const p = versionProgress(id)
   const eta = p?.etaSeconds
   if (eta == null || !Number.isFinite(eta) || eta <= 3) return ''
   if (eta >= 3600) return `约剩 ${Math.ceil(eta / 3600)}h`
   if (eta >= 60) return `约剩 ${Math.ceil(eta / 60)}min`
   return `约剩 ${Math.round(eta)}s`
-})
+}
+function versionProgress(id: string) { return store.installProgress[id] ?? { stage: 'version-json', progress: 0, text: '等待下载' } }
 
 const filtered = computed(() =>
   manifest.value.filter((v) => {
@@ -463,7 +464,7 @@ const canConfirm = computed(
 
 async function confirmInstall() {
   const v = modal.version
-  if (!v || !canConfirm.value) return
+  if (!v || !canConfirm.value || store.installing.has(v.id)) return
   const opts: InstallOptions = modal.loader
     ? {
         loader: modal.loader,
@@ -1008,22 +1009,22 @@ async function confirmIsolation() {
             <span class="muted version-date">{{ formatDate(v.releaseTime) }}</span>
           </div>
           <div class="version-actions">
-            <div v-if="store.installing.has(v.id) && store.progress" class="row-progress">
+            <div v-if="store.installing.has(v.id) && versionProgress(v.id)" class="row-progress">
               <div class="row-bar">
-                <div class="row-bar-fill" :style="{ width: Math.round(progressMono(store.progress) * 100) + '%' }"></div>
+                <div class="row-bar-fill" :style="{ width: Math.round(progressMono(versionProgress(v.id)) * 100) + '%' }"></div>
               </div>
               <span class="muted row-progress-text">
-                {{ Math.round(progressMono(store.progress) * 100) }}%
-                {{ store.progress.speed ? '· ' + formatSpeed(store.progress.speed) : '' }}
-                {{ etaText ? '· ' + etaText : '' }}
-                {{ store.progress.source ? '· ' + store.progress.source : '' }}
+                {{ Math.round(progressMono(versionProgress(v.id)) * 100) }}%
+                {{ versionProgress(v.id).speed ? '· ' + formatSpeed(versionProgress(v.id).speed) : '' }}
+                {{ progressEta(v.id) ? '· ' + progressEta(v.id) : '' }}
+                {{ versionProgress(v.id).source ? '· ' + versionProgress(v.id).source : '' }}
               </span>
             </div>
             <span v-if="isInstalled(v)" class="tag tag-success">已安装</span>
             <button
               class="btn btn-sm"
               :class="isInstalled(v) ? 'btn-ghost' : 'btn-gold'"
-              :disabled="store.installing.size > 0"
+              :disabled="store.installing.has(v.id)"
               @click="openInstall(v)"
             >
               {{ store.installing.has(v.id) ? '下载中' : isInstalled(v) ? '再安装' : '安装' }}
@@ -1041,13 +1042,13 @@ async function confirmIsolation() {
             <span class="version-id">{{ id }}</span>
             <span class="muted">正在下载安装…</span>
           </div>
-          <div v-if="store.progress" class="row-progress">
+          <div v-if="versionProgress(id)" class="row-progress">
             <div class="row-bar">
-              <div class="row-bar-fill" :style="{ width: Math.round(progressMono(store.progress) * 100) + '%' }"></div>
+              <div class="row-bar-fill" :style="{ width: Math.round(progressMono(versionProgress(id)) * 100) + '%' }"></div>
             </div>
             <span class="muted row-progress-text">
-              {{ Math.round(progressMono(store.progress) * 100) }}%
-              {{ store.progress.speed ? '· ' + formatSpeed(store.progress.speed) : '' }}
+              {{ Math.round(progressMono(versionProgress(id)) * 100) }}%
+              {{ versionProgress(id).speed ? '· ' + formatSpeed(versionProgress(id).speed) : '' }}
             </span>
           </div>
         </div>
