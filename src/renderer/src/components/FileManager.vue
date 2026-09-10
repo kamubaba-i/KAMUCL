@@ -528,7 +528,10 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 }
 .fm-remove {
   flex-shrink: 0;
+  background: transparent;
+  border-color: transparent;
 }
+.fm-remove:hover { border-color: var(--danger-border); }
 .fm-toggle {
   flex-shrink: 0;
 }
@@ -636,5 +639,12 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 }
 .upd-foot .muted {
   font-size: var(--text-xs);
+}
+
+@media (max-width: 1180px) {
+  .fm-head { flex-wrap: wrap; align-items: flex-start; }
+  .fm-head-left { flex-basis: 100%; }
+  .fm-actions { width: 100%; flex-wrap: wrap; flex-shrink: 1; gap: 8px; }
+  .fm-ver-select { flex: 1; max-width: none; min-width: 180px; }
 }
 </style>

@@ -1815,6 +1815,7 @@ async function confirmIsolation() {
   border-radius: var(--radius-md);
   border-bottom: 1px solid var(--border);
 }
+.installed-row:hover { background: var(--hover); }
 .installed-row:last-child {
   border-bottom: none;
 }
@@ -1864,7 +1865,7 @@ async function confirmIsolation() {
   background: var(--card-2);
   flex-shrink: 0;
 }
-/* 滑动指示块：跟随激活 Tab（弹簧动效，与导航水滴同源） */
+/* Indicator follows the active tab without spring overshoot. */
 .game-tabs-blob {
   position: absolute;
   top: var(--space-1);
@@ -1872,7 +1873,7 @@ async function confirmIsolation() {
   border-radius: 999px;
   background: var(--accent-grad);
   box-shadow: 0 2px 8px var(--accent-soft);
-  transition: left 0.32s cubic-bezier(0.3, 1.2, 0.4, 1), width 0.32s cubic-bezier(0.3, 1.2, 0.4, 1), opacity 0.15s ease;
+  transition: left var(--motion-normal) var(--ease-out), width var(--motion-normal) var(--ease-out), opacity 0.15s ease;
   pointer-events: none;
   z-index: 0;
 }
@@ -1976,6 +1977,16 @@ async function confirmIsolation() {
 }
 .installed-remove {
   flex-shrink: 0;
+  background: transparent;
+  border-color: transparent;
+}
+.installed-remove:hover { border-color: var(--danger-border); }
+
+@media (max-width: 1180px) {
+  .installed-row { flex-wrap: wrap; gap: 8px; padding-block: 12px; }
+  .inst-names { flex-basis: calc(100% - 100px); }
+  .row-actions { margin-left: auto; }
+  .played-text { flex: 1; }
 }
 
 /* 模态框 */

@@ -178,37 +178,11 @@ const inResourceGroup = computed(() =>
   ['mods', 'packs', 'shaders', 'keys', 'bridge', 'servers', 'friends'].includes(store.currentView)
 )
 
-// ---- 导航水滴：单一高亮块随指针在按钮间弹性滑动（iOS 液态感） ----
-const navEl = ref<HTMLElement | null>(null)
-const navHoverKey = ref('')
-const navBlob = reactive({ top: 0, height: 0, on: false, stretch: false })
-let blobStretchTimer: ReturnType<typeof setTimeout> | undefined
-let blobRecalcTimer: ReturnType<typeof setTimeout> | undefined
-const navBlobStyle = computed(() => ({
-  height: navBlob.height + 'px',
-  transform: `translateY(${navBlob.top}px) scale(${navBlob.stretch ? '0.96, 1.12' : '1, 1'})`
-}))
-function updateNavBlob() {
-  const root = navEl.value
-  if (!root) { navBlob.on = false; return }
-  const key = navHoverKey.value || store.currentView
-  let target = root.querySelector<HTMLElement>(`[data-nav="${key}"]`)
-  // 资源子项在子菜单折叠时不可见（v-show），回退到父级「资源管理」
-  if (target && target.offsetHeight === 0) target = root.querySelector<HTMLElement>('[data-nav="resources"]')
-  if (!target) { navBlob.on = false; return }
-  navBlob.top = target.offsetTop
-  navBlob.height = target.offsetHeight
-  navBlob.on = true
-  navBlob.stretch = true
-  clearTimeout(blobStretchTimer)
-  blobStretchTimer = setTimeout(() => { navBlob.stretch = false }, 430)
-}
-watch([navHoverKey, () => store.currentView, resourceExpanded, visibleNavItems, visibleResourceSubItems], () => {
-  nextTick(updateNavBlob)
-  // 子列表展开/收起动画结束后二次校准水滴位置（动画期间元素位移尚未稳定）
-  clearTimeout(blobRecalcTimer)
-  blobRecalcTimer = setTimeout(updateNavBlob, 420)
-})
+// Route timings also respect the OS preference when Vue uses explicit timeout fallback.
+const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+const reducedMotion = ref(motionQuery.matches)
+const onMotionChange = () => { reducedMotion.value = motionQuery.matches }
+const routeDuration = computed(() => reducedMotion.value ? 0 : { enter: 180, leave: 80 })
 
 /** 关闭启动器不影响游戏：游戏在跑时点关闭先提示一次，再真正关闭 */
 let closeHintShown = false
@@ -965,7 +939,7 @@ function applyCustomVars(custom: CustomTheme, theme: ThemeName) {
   const cardOpacity = dark ? 44 : 62
   const raisedOpacity = dark ? 36 : 52
   const sideOpacity = dark ? 26 : 38
-  const accent2 = `color-mix(in srgb, ${accent} 72%, white)`
+  const accent2 = `color-mix(in srgb, ${accent} ${dark ? 72 : 84}%, ${dark ? 'white' : 'black'})`
   const accentDeep = `color-mix(in srgb, ${accent} 78%, black)`
   st.setProperty('--accent', accent)
   st.setProperty('--accent-2', accent2)
@@ -997,7 +971,7 @@ function applyCustomVars(custom: CustomTheme, theme: ThemeName) {
   st.setProperty('--ok-soft', dark ? 'rgba(104, 220, 136, 0.13)' : 'rgba(22, 138, 66, 0.1)')
   st.setProperty('--cyan', dark ? '#9ed7e9' : '#0e7490')
   st.setProperty('--cyan-soft', dark ? 'rgba(158, 215, 233, 0.13)' : 'rgba(14, 116, 144, 0.1)')
-  st.setProperty('--shadow', dark ? '0 8px 24px rgba(0, 0, 0, 0.22)' : '0 8px 24px rgba(31, 50, 85, 0.09)')
+  st.setProperty('--shadow', dark ? '0 2px 8px rgba(0, 0, 0, 0.16)' : '0 2px 8px rgba(31, 50, 85, 0.045)')
   st.setProperty('--shadow-lg', dark ? '0 20px 55px rgba(0, 0, 0, 0.42)' : '0 20px 55px rgba(31, 50, 85, 0.18)')
   st.setProperty(
     '--shell-surface',
@@ -1078,7 +1052,7 @@ const offs: Array<() => void> = []
 
 onMounted(async () => {
   applyTheme(store.settings?.theme, store.settings?.custom)
-  nextTick(updateNavBlob)
+  motionQuery.addEventListener('change', onMotionChange)
   // 每次上线自动切换一张背景图（按顺序/随机）；off 模式固定第一张
   {
     const mode = store.settings?.background.switchMode ?? 'off'
@@ -1238,6 +1212,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  motionQuery.removeEventListener('change', onMotionChange)
   stopDragWatchdog()
   clearInterval(bgSwitchTimer)
   window.removeEventListener('keydown', onEditKeydown)
@@ -1266,14 +1241,13 @@ onUnmounted(() => {
       </div>
 
       <!-- 导航 -->
-      <nav class="nav" ref="navEl" @mouseleave="navHoverKey = ''">
-        <div class="nav-blob" :class="{ on: navBlob.on }" :style="navBlobStyle" aria-hidden="true"></div>
+      <nav class="nav" aria-label="主导航">
         <template v-for="item in visibleNavItems" :key="item.key">
           <button
             class="nav-item"
             :data-nav="item.key"
             :class="{ active: store.currentView === item.key }"
-            @mouseenter="navHoverKey = item.key"
+            :aria-current="store.currentView === item.key ? 'page' : undefined"
             @click="store.currentView = item.key"
           >
             <span class="nav-icon" v-html="item.icon"></span>
@@ -1285,8 +1259,9 @@ onUnmounted(() => {
             <button
               class="nav-item nav-parent"
               data-nav="resources"
-              :class="{ active: inResourceGroup }"
-              @mouseenter="navHoverKey = 'resources'"
+              :class="{ 'group-active': inResourceGroup }"
+              :aria-expanded="resourceExpanded || inResourceGroup"
+              aria-controls="resource-navigation"
               @click="resourceExpanded = !resourceExpanded"
             >
               <span class="nav-icon">
@@ -1301,17 +1276,16 @@ onUnmounted(() => {
                 <path d="m9 6 6 6-6 6" />
               </svg>
             </button>
-            <!-- 资源管理子级菜单：grid 0fr→1fr 高度展开 + 子项错落渐入（插在「游戏版本」之后） -->
-            <div class="nav-sub" :class="{ open: resourceExpanded || inResourceGroup }">
+            <!-- 收起时 inert，键盘导航不会落入隐藏的资源菜单。 -->
+            <div id="resource-navigation" class="nav-sub" :class="{ open: resourceExpanded || inResourceGroup }" :inert="!(resourceExpanded || inResourceGroup)">
               <div class="nav-sub-inner">
                 <button
-                  v-for="(sub, subIndex) in visibleResourceSubItems"
+                  v-for="sub in visibleResourceSubItems"
                   :key="sub.key"
                   class="nav-item nav-sub-item"
                   :data-nav="sub.key"
-                  :style="{ '--sub-i': subIndex }"
                   :class="{ active: store.currentView === sub.key }"
-                  @mouseenter="navHoverKey = sub.key"
+                  :aria-current="store.currentView === sub.key ? 'page' : undefined"
                   @click="store.currentView = sub.key"
                 >
                   <span class="nav-icon" v-html="sub.icon"></span>
@@ -1516,7 +1490,7 @@ onUnmounted(() => {
 
       <!-- 内容区（:duration 显式给出过渡时长：窗口被遮挡/最小化时 transitionend 不会触发，setTimeout 兜底防切换卡死） -->
       <main class="content">
-        <Transition name="fade" mode="out-in" :duration="250">
+        <Transition name="fade" mode="out-in" :duration="routeDuration">
           <div :key="store.currentView" class="route-view">
             <component :is="currentComponent" />
           </div>
@@ -1797,7 +1771,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  height: 104px;
+  height: 88px;
   padding: 0 var(--space-4);
   flex-shrink: 0;
 }
@@ -1840,29 +1814,6 @@ onUnmounted(() => {
   overflow-y: auto;
   position: relative;
 }
-/* 水滴高亮块：随指针在导航项间弹性滑动并拉伸形变 */
-.nav-blob {
-  position: absolute;
-  left: var(--space-3);
-  right: var(--space-3);
-  top: 0;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent) 15%, var(--card-2));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 9%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    transform 0.42s cubic-bezier(0.3, 1.5, 0.4, 1),
-    height 0.42s cubic-bezier(0.3, 1.5, 0.4, 1),
-    opacity 0.16s ease;
-  will-change: transform;
-}
-.nav-blob.on {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .nav-blob { transition: none; }
-}
 .nav-item {
   display: flex;
   align-items: center;
@@ -1876,15 +1827,18 @@ onUnmounted(() => {
   font-size: var(--text-md);
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.16s ease;
+  transition: color var(--motion-fast) ease, background var(--motion-fast) ease;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
 }
 .nav-item:hover {
+  background: var(--hover);
   color: var(--text);
 }
 .nav-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
   color: color-mix(in srgb, var(--text) 84%, var(--accent));
 }
 .nav-icon {
@@ -1906,6 +1860,7 @@ onUnmounted(() => {
 .nav-item.active .nav-label {
   font-weight: 600;
 }
+.nav-parent.group-active { color: var(--text); }
 
 /* 资源管理子级菜单 */
 .nav-parent .nav-caret {
@@ -1919,13 +1874,13 @@ onUnmounted(() => {
 .nav-parent .nav-caret.open {
   transform: rotate(90deg);
 }
-/* 资源管理子级菜单：grid 0fr→1fr 高度过渡（打开/收起都有动画），子项自上而下错落渐入 */
+/* 子菜单统一展开，避免多次延迟让最后几项迟迟不可用。 */
 .nav-sub {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
   margin: 0;
-  transition: grid-template-rows 0.34s cubic-bezier(0.32, 0.72, 0.35, 1), opacity 0.22s ease, margin 0.34s cubic-bezier(0.32, 0.72, 0.35, 1);
+  transition: grid-template-rows var(--motion-normal) var(--ease-out), opacity 0.22s ease, margin var(--motion-normal) var(--ease-out);
 }
 .nav-sub.open {
   grid-template-rows: 1fr;
@@ -1941,15 +1896,14 @@ onUnmounted(() => {
 }
 .nav-sub .nav-sub-item {
   opacity: 0;
-  transform: translateY(-8px) scale(0.98);
-  transition: opacity 0.22s ease, transform 0.3s cubic-bezier(0.22, 0.9, 0.32, 1.1);
+  transform: translateY(-4px);
+  transition: opacity var(--motion-fast) ease, transform var(--motion-normal) var(--ease-out);
   transition-delay: 0s;
 }
 .nav-sub.open .nav-sub-item {
   opacity: 1;
   transform: translateY(0) scale(1);
-  /* 错落：第 i 项比前一项晚 28ms 入场 */
-  transition-delay: calc(var(--sub-i) * 28ms + 60ms);
+  transition-delay: 0s;
 }
 @media (prefers-reduced-motion: reduce) {
   .nav-sub, .nav-sub .nav-sub-item { transition: none; }
@@ -2046,7 +2000,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  height: 78px;
+  height: 72px;
   flex-shrink: 0;
   padding: 0 var(--space-5);
   border-bottom: 1px solid var(--border);
@@ -2452,6 +2406,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: var(--space-5);
 }
 

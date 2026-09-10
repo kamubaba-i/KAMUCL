@@ -1,0 +1,87 @@
+// Real production renderer, isolated IPC fixtures: no accounts, games or downloads are touched.
+// Run after build: node_modules/electron/dist/electron.exe scripts/verify-design-ui.cjs
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict')
+const { app, BrowserWindow, ipcMain, session } = require('electron')
+const { buildSync } = require('esbuild')
+const root = fs.mkdtempSync(path.resolve('out/design-ui-'))
+app.setPath('userData', path.join(root, 'userData'))
+app.commandLine.appendSwitch('enable-unsafe-swiftshader')
+buildSync({ entryPoints: ['src/shared/types.ts'], bundle: true, platform: 'node', format: 'cjs', outfile: path.join(root, 'types.cjs') })
+const types = require(path.join(root, 'types.cjs'))
+const folder = 'C:/Design fixture/.minecraft'
+const versions = ['26.2-Fabric 0.19.5', '1.21.11-NeoForge Adventures', '1.21.10-Forge Survival', '26.2 Creative'].map((name, i) => ({ id: name, name, mcVersion: i === 1 ? '1.21.11' : '26.2', loader: i === 3 ? undefined : 'fabric', loaderVersion: '0.19.5', folder, isolated: true }))
+let settings = { gameDir: folder, activeFolder: folder, folders: [{ path: folder, name: '我的游戏', isDefault: true }], javaPath: '', javaAuto: true, javaCustom: [], javaHidden: [], memoryMB: 4096, memoryAuto: true, jvmArgs: '', resolution: { width: 854, height: 480, mode: 'windowed' }, mirror: 'bmclapi', theme: 'blue-white', custom: types.DEFAULT_CUSTOM_THEME, disabledFeatures: [], favoriteVersions: [], homeLayout: types.DEFAULT_HOME_LAYOUT, background: types.DEFAULT_BACKGROUND, launchThumbnail: types.DEFAULT_LAUNCH_THUMBNAIL, configVersion: 1 }
+const account = { id: 'fixture', type: 'offline', username: 'KaMuaMua', uuid: '00000000000000000000000000000000' }
+const calls = [], errors = []
+ipcMain.handle('design:invoke', (_event, channel, ...args) => {
+  calls.push(channel)
+  switch (channel) {
+    case 'settings:get': return settings
+    case 'settings:set': return settings = { ...settings, ...args[0] }
+    case 'accounts:list': return [account]
+    case 'accounts:selected': return account
+    case 'versions:installed': return versions
+    case 'versions:manifest': return [{ id: '26.2', type: 'release', releaseTime: '2026-09-10' }]
+    case 'folders:list': return { folders: settings.folders, active: folder }
+    case 'folders:scan': return { folder: settings.folders[0], structure: 'minecraft', status: 'ready', versions, errors: [], durationMs: 12, scannedAt: '2026-09-10' }
+    case 'mods:targets': return { versions, errors: [] }
+    case 'skin:profile': return { skins: [], capes: [] }
+    case 'skin:avatar': return null
+    case 'update:getPending':
+    case 'update:getState': return null
+    case 'app:systemInfo': return { totalMemoryMB: 32768, freeMemoryMB: 16384, platform: 'win32' }
+    case 'community:search': return { total: 44, offset: args[0].offset, limit: 20, items: Array.from({ length: 20 }, (_, i) => ({ projectId: String(i), source: i % 2 ? 'curseforge' : 'modrinth', slug: 'fixture', title: ['Sodium', 'Fresh Animations', 'Complementary Shaders', '高清材质与自然光影'][i % 4], author: 'Minecraft Community', description: '更流畅的冒险，更细腻的世界。支持当前游戏版本，轻松管理你的个性化体验。', downloads: 1250000, updatedAt: '2026-09-10', categories: [], iconUrl: '' })) }
+    case 'community:files': return [{ fileId: 'fixture', fileName: 'example.jar', version: '1.0', gameVersions: ['26.2'], loaders: ['fabric'], date: '2026-09-10', size: 1024 }]
+    default: return []
+  }
+})
+fs.writeFileSync(path.join(root, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('kamucl',{invoke:(c,...a)=>ipcRenderer.invoke('design:invoke',c,...a),on:()=>()=>{},send:()=>{},getFilePath:()=>'',platform:'win32'});`)
+app.whenReady().then(async () => {
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_d, cb) => cb({ cancel: true }))
+  const win = new BrowserWindow({ show: false, width: 1440, height: 960, backgroundColor: '#edf0f7', webPreferences: { preload: path.join(root, 'preload.cjs'), backgroundThrottling: false, offscreen: true } })
+  win.webContents.on('console-message', (_e, level, message) => { if (level >= 3) errors.push(message) })
+  const run = code => win.webContents.executeJavaScript(code), wait = ms => new Promise(r => setTimeout(r, ms))
+  const shot = async name => {
+    await wait(450)
+    const overflow = await run(`(()=>{const e=document.querySelector('.content');return {width:e.clientWidth,scroll:e.scrollWidth}})()`)
+    assert(overflow.scroll <= overflow.width + 1, name + ': ' + JSON.stringify(overflow))
+    fs.writeFileSync(path.join(root, name + '.png'), (await win.webContents.capturePage()).toPNG())
+  }
+  const navigate = async key => { await run(`document.querySelector('[data-nav="${key}"]').click()`); await wait(600) }
+  await win.loadFile(path.resolve('out/renderer/index.html')); await wait(1800)
+  await shot('home-wide')
+  await navigate('game'); await run(`document.querySelectorAll('.game-tab')[1].click()`); await shot('versions-wide')
+  await navigate('community'); await shot('community-wide')
+  await run(`document.querySelector('.result-dl').click()`); await shot('download-dialog')
+  await run(`document.querySelector('.modal-actions button').click()`)
+  win.setSize(1024, 760); await navigate('home'); await shot('home-compact')
+  await navigate('game'); await run(`document.querySelectorAll('.game-tab')[1].click()`); await shot('versions-compact')
+  await navigate('community'); await shot('community-compact')
+  const overflow = await run(`(()=>{const e=document.querySelector('.content');return {width:e.clientWidth,scroll:e.scrollWidth}})()`)
+  assert(overflow.scroll <= overflow.width + 1, JSON.stringify(overflow))
+  if (!process.argv.includes('--baseline')) {
+    await run(`document.querySelector('[data-nav="game"]').dispatchEvent(new MouseEvent('mouseenter'));`)
+    assert.equal(await run(`document.querySelector('[aria-current="page"]').dataset.nav`), 'community')
+    await navigate('home')
+    await run(`document.querySelector('.nav-parent').click()`); await wait(400)
+    await run(`document.querySelector('.nav-parent').click()`); await wait(400)
+    assert(await run(`document.querySelector('.nav-sub').inert`), 'Collapsed navigation must not receive keyboard focus')
+    await win.webContents.debugger.attach('1.3')
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    await navigate('community')
+    assert.equal(await run(`getComputedStyle(document.querySelector('.result-card')).animationDuration`), '1e-05s')
+    win.webContents.debugger.detach()
+    await navigate('settings'); await shot('settings-compact')
+    for (const theme of ['black-orange', 'white-pink', 'black-pink', 'transparent']) {
+      settings.theme = theme
+      win.setSize(1440, 960)
+      win.setBackgroundColor(types.THEME_PRESETS[theme].colors.bg)
+      await win.reload(); await wait(900)
+      await navigate('community'); await shot('community-' + theme)
+    }
+  }
+  fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ overflow, errors, calls: [...new Set(calls)] }, null, 2))
+  assert.deepEqual(errors, [])
+  console.log('PASS production design UI: ' + root)
+  win.destroy(); app.quit()
+}).catch(e => { console.error(e); fs.writeFileSync(path.join(root, 'error.txt'), e.stack); app.exit(1) })

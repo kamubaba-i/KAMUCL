@@ -759,13 +759,13 @@ async function confirmDownload() {
   background: var(--card-2);
   width: fit-content;
 }
-/* 类型筛选滑动指示块：弹簧动效跟随激活胶囊 */
+/* Selection follows the active category with the shared deceleration curve. */
 .capsule-blob {
   position: absolute;
   border-radius: 999px;
   background: var(--accent-grad);
   box-shadow: 0 2px 8px var(--accent-soft);
-  transition: left 0.32s cubic-bezier(0.3, 1.2, 0.4, 1), top 0.32s cubic-bezier(0.3, 1.2, 0.4, 1), width 0.32s cubic-bezier(0.3, 1.2, 0.4, 1), height 0.32s ease, opacity 0.15s ease;
+  transition: left var(--motion-normal) var(--ease-out), top var(--motion-normal) var(--ease-out), width var(--motion-normal) var(--ease-out), height 0.32s ease, opacity 0.15s ease;
   pointer-events: none;
   z-index: 0;
 }
@@ -832,13 +832,16 @@ async function confirmDownload() {
 
 /* ---------------- 结果列表（卡片横向网格，窄窗口自动换行） ---------------- */
 .list-card {
-  padding: var(--space-3);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 .pagination { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-2); padding: var(--space-4) 0 var(--space-2); }
 .search-warning { color: var(--text-dim); font-size: var(--text-xs); padding: var(--space-2); }
 .result-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   gap: var(--space-3);
 }
 .result-card {
@@ -849,20 +852,15 @@ async function confirmDownload() {
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--card-2);
-  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.22s ease;
-  /* 入场：自下而上渐入 + 按序错落 */
-  animation: community-card-in 0.4s cubic-bezier(0.22, 0.9, 0.32, 1) backwards;
+  background: var(--card);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-normal) ease;
+  /* A single fade keeps filtering and paging visually immediate. */
+  animation: community-card-in var(--motion-enter) var(--ease-out) backwards;
 }
-.result-card:nth-child(3n+1) { animation-delay: 0ms; }
-.result-card:nth-child(3n+2) { animation-delay: 50ms; }
-.result-card:nth-child(3n) { animation-delay: 100ms; }
-@keyframes community-card-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes community-card-in { from { opacity: 0; } to { opacity: 1; } }
 .result-card:hover {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  background: var(--hover);
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 13%, transparent);
+  box-shadow: var(--shadow);
 }
 
 .result-top {
@@ -907,7 +905,13 @@ async function confirmDownload() {
 }
 .result-title {
   flex: 1 1 100%;
-  font-weight: 700;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  font-weight: 650;
   font-size: var(--text-md);
 }
 /* CurseForge 橙（Modrinth 绿复用 tag-success） */
