@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 02:54 ｜ 当前版本：**1.0.49**（已完成验证、打包和发布）
+> 更新时间：2026-09-11 03:12 ｜ 当前版本：**1.0.50**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,27 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+
+**1.0.50 交付**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.50 ，Release ID 386553343。release/KAMUCL-1.0.50.exe（67634926字节）、release/KAMUCL-1.0.50-windows-x64.zip（103225860字节）、SHA256SUMS.txt 已上传并按GitHub资产digest/大小逐项核对后公开为latest。最终ASAR等于生产构建，ZIP及便携解出ASAR相同。中文空格路径冷/缓存启动通过，冷首帧337ms、缓存首帧233ms；此验证使用隔离ElectronRunAsNode，不是完整用户配置首页启动。out/startup-1.0.50.log、out/publish-1.0.50.log。
+
+```text
+0daf190b04530c96459e590eed35afa9916aeed6d931d474bdbef7d18222d363  KAMUCL-1.0.50.exe
+a2eaffe0f173a67ac885b4d00580ac69463618087123c499b917e236b5e4aa79  KAMUCL-1.0.50-windows-x64.zip
+```
+
+**1.0.50 本批改动**：默认配置 keys 从资源子菜单移至侧栏一级，折叠资源管理后仍可访问，原页面与配置保留。功能提交 master `076fd60` / main `76b126a`，tag v1.0.50 指向 master 功能提交。
+
+**整合包下载**：模组 CDN 在镜像模式按 MCIM 官方文档转换 cdn.modrinth.com 和 edge/mediafilez.forgecdn.net 的文件路径（https://docs.mcimirror.top/），官方模式不转换；保留原源回退。Range 独立 HTTP/1.1 连接，避免多个 H2 流挤在单连接；可信哈希、已知长度 >=8MiB 四路，>=64MiB 最多八路，服从全局并发和限速。整合包大文件优先，并在仅剩一两项时显示真实文件名。
+
+**缓存与续传**：defaultFolderPath()/.kamucl/modpack-cache，以可信 SHA512/SHA1 的哈希生成缓存键；完成后独立复制到实例（非硬链接），重试校验缓存完整性。缓存位于实例回滚目录外，失败不会抹掉成功文件；.segments-cache 保存分段与大小/数量/哈希标识，取消或网络失败保留分段，重试从段内偏移继续，合并后完整哈希验证。无可信哈希的下载不进入共享内容缓存。缓存目前无自动容量清理。
+
+**红框结论**：用户原ZIP只带 EuphoriaPatcher-1.10.0-r5.9-fabric.jar，未包含 Complementary 基础光影，overrides/shaderpacks 为空。因此游戏内 SHADER NOT FOUND 不是启动器漏解压；需按补丁要求添加 Complementary r5.9 原始光影到所选实例 shaderpacks。官方安装说明 https://www.euphoriapatches.com/how-to-install/ 。没有自动改用户游戏或把未列入清单的光影装入实例。
+
+**验证与性能证据**：356/356测试、tsc、生产构建通过；生产renderer隔离IPC验证一级默认配置、资源展开/折叠与页面访问，截图 out/network-ui-TVcpsV。原附件仍识别59项下载，4097个override逐一比较通过（网络与运行库模拟），out/nested-pack-tbcPxJ/report.json。新增真实本地HTTP测试覆盖取消续传、哈希去重、失败后缓存复用、实例改动不污染缓存、损坏缓存重下。旧进度测试四个相同内容文件原断言4次请求，调整为1次请求且保留四个最终文件校验。
+
+**真实大文件比较**：同机独立空目录，Flashback-0.39.5-for-MC1.21.11.jar，211524256字节；旧版20,009ms仅接收24051310字节后按预算取消，新版5798ms完整下载，SHA1/SHA512通过。out/flashback-benchmark-result.json / out/benchmark-flashback-1050.log。单次顺序测试，未测试所有网络或与PCL同场比较，不承诺固定倍数；MCIM与官方当前均重定向cdn-alt.modrinth.com，主要改善来自独立分段连接。
+
 
 **1.0.49 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.49 ，Release ID 386542085。功能提交 master `f8c2fb1` / main `4f489a3`；标签指向 master 功能提交。EXE、ZIP、SHA256SUMS.txt 已核对远端大小与 SHA256 后发布，latest=v1.0.49。
 
