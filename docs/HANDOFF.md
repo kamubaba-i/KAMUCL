@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 19:44 ｜ 当前版本：**1.0.39**（已完成验证、打包和发布）
+> 更新时间：2026-09-10 20:32 ｜ 当前版本：**1.0.40**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,12 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.40 启动可靠性**：依赖库按 Maven group/artifact/classifier/extension 去重，子版本优先覆盖父版本，规则过滤先于去重，native 与普通库保持区分，下载列表和最终 classpath 共用解析。启动前校验 client JAR 和依赖库的大小、SHA1；缺少哈希的 JAR 检查 ZIP 结构及 CRC。损坏文件重新下载并复验，没有下载地址的缺失或损坏生成库明确报错，避免静默漏入 classpath。
+
+**1.0.40 异常退出记忆**：用户明确要求同时覆盖游戏和启动器。新增 userData/exit-history.json，独立 UUID 跟踪每次启动，保存最近30条记录、已读状态与诊断目录。正常退出和主动停止不报崩溃，未收到游戏退出状态时标为未知，仍存活的游戏不误报。重开启动器后通知面板可查看、标记已读和清空。不保存启动命令或令牌，不结束用户游戏。
+
+**1.0.40 验证和交付**：333/333测试、TypeScript、生产构建通过；生产界面验证历史记录跨刷新、已读与清空持久化（out/design-ui-vjBFw7）；独立 Node 子进程异常退出后重新打开记录文件验证通过（out/exit-reopen-24U4r4）。EXE 中文空格路径启动通过，ZIP 内 app.asar 与已验证构建一致；便携冷启动粒子首帧381ms、缓存启动229ms，缓存标记保持不变（out/startup-1.0.40.log）。功能提交 master `12395cb` / main `47a48f7`，标签 v1.0.40 指向12395cb。Release ID386266227，三个附件远端大小、SHA256及标签核对后公开，latest确认为v1.0.40，误发v1.0.41仍未公开：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.40 。EXE SHA256 `658a1bf77e8b94927493cf5b066c489b9a955ee42c61fc42ee704bf6b85dac8e`；ZIP SHA256 `a326df21aba8326eb4d37958a195a57179ea46455701d1a3a38c21d7d89b44a3`。
 
 **1.0.39 启动动画60帧**：用户要求开场加载动画改为60帧。原生 StartupFeedback 从 WinForms Timer 改为高精度60Hz截止时间调度，临时申请1ms计时精度并在退出释放；每次最多一个UI绘制请求，过期帧跳过，避免积压。渲染改为复用 top-down DIB 和内存DC，Graphics直接绘入预乘透明像素缓冲，去掉每帧整屏Bitmap分配及GetHbitmap复制，退出释放所有GDI资源。粒子位置仍按真实时间计算，聚合620ms、停留2000ms、淡出320ms不变。Electron备用动画以BOOT_FRAME_MS控制requestAnimationFrame绘制，在高刷新屏也以60帧为目标。
 
