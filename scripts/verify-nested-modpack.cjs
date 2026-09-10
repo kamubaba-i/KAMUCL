@@ -7,7 +7,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  global.__nestedPackFixture={game,downloads}
  const output=await build({stdin:{contents:"export * from './src/main/core/modpacks'; export {saveSettings} from './src/main/core/settings'",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',packages:'external',plugins:[{name:'isolated-runtime-network',setup(b){
   b.onResolve({filter:/^\.\/versions$/},a=>a.importer.endsWith('modpacks.ts')?({path:'versions',namespace:'fixture'}):undefined)
-  b.onResolve({filter:/^\.\/download$/},a=>a.importer.endsWith('modpacks.ts')?({path:'download',namespace:'fixture'}):undefined)
+  b.onResolve({filter:/^\.\/download$/},a=>/modpack(?:s|Downloads)\.ts$/.test(a.importer)?({path:'download',namespace:'fixture'}):undefined)
   b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='versions'?`
    import fs from 'node:fs';import path from 'node:path';
    export const listAllInstalled=()=>[];export const flattenInstance=()=>{};

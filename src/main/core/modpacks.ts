@@ -15,7 +15,8 @@ import type {
   ModpackInstallRequest,
   ProgressEvent
 } from '../../shared/types'
-import { downloadAll, fetchSignal, type DownloadTask } from './download'
+import { fetchSignal, type DownloadTask } from './download'
+import { downloadModpackFiles } from './modpackDownloads'
 import { getSettings } from './settings'
 import { registerVersionFolder, versionDir, versionJsonPath, versionsDir } from './paths'
 import { gameDir, withGameFolder } from './paths'
@@ -1029,6 +1030,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
       const dest = safeJoin(instDir, f.rel)
       if (!dest) throw new Error(`整合包文件路径不安全：${f.rel}`)
       tasks.push({
+        label: f.rel,
         url: f.url,
         urls: f.urls,
         dest,
@@ -1040,7 +1042,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
 
     if (tasks.length) {
       try {
-        await downloadAll(
+        await downloadModpackFiles(
           tasks,
           (d, t, speed, detail) => {
             const doneBytes = detail.bytesDone
@@ -1050,7 +1052,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
               progress: 0.52 + ratio * 0.43,
               text:
                 detail.bytesTotal != null
-                  ? `下载整合包文件 ${d}/${t}（${fmtMB(doneBytes)}/${fmtMB(detail.bytesTotal)}）`
+                  ? `下载整合包文件 ${d}/${t}（${fmtMB(doneBytes)}/${fmtMB(detail.bytesTotal)}）${detail.activeFiles?.length && detail.activeFiles.length <= 2 ? ' · ' + detail.activeFiles.join('、') : ''}`
                   : `下载整合包文件 ${d}/${t}`,
               speed,
               etaSeconds: detail.etaSeconds ?? undefined,
@@ -1059,7 +1061,6 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
               indeterminate: detail.indeterminate
             })
           },
-          8,
           getSettings().mirror,
           opts?.signal
         )

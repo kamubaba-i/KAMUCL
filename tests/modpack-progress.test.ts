@@ -47,7 +47,7 @@ test('社区 mrpack 从压缩包下载到模组及覆盖文件落盘，总进度
     const normalized = guard.normalize(event)
     events.push(normalized)
     if (event.stage === 'done') {
-      assert.equal(downloads, 4)
+      assert.equal(downloads, 1, '相同哈希的四个文件只下载一次，再分别复制到实例')
       assert.equal(fs.readFileSync(path.join(game, 'versions', id, 'config/test.txt'), 'utf8'), 'config proof')
     } else {
       assert(normalized.overall! < 1, `${event.stage}: prematurely reached 100%`)
