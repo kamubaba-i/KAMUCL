@@ -6,21 +6,12 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { bridgeInstall, bridgeInstalled, bridgeManifest, bridgeReset, bridgeSet, bridgeStatus, errText } from '../api'
-import { refreshInstalled, store, toast } from '../store'
+import { refreshInstalled, store, toast, selectedInstance } from '../store'
 import SelectMenu from '../components/SelectMenu.vue'
 import type { BridgeParam, BridgeStatus } from '@shared/types'
 
 /** 面板面向正在运行的实例（游戏在哪台实例上跑就配置哪台）；未运行时跟随首页选中实例 */
-const currentVersion = computed(() => {
-  const list = store.installed
-  if (!list.length) return null
-  const runningId = store.launchingVersionId
-  if (runningId && store.launchState?.status === 'running') {
-    const running = list.find((v) => v.id === runningId)
-    if (running) return running
-  }
-  return list.find((v) => v.id === store.selectedId) ?? list[0]
-})
+const currentVersion = selectedInstance
 
 const status = ref<BridgeStatus | null>(null)
 const params = ref<BridgeParam[]>([])

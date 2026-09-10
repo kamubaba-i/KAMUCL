@@ -141,7 +141,7 @@ onUnmounted(stopCapture)
 </script>
 
 <template>
-  <div class="page cfg-page">
+  <div class="page cfg-page" :data-design-page="section">
     <div class="page-head">
       <h1 class="page-title">默认配置</h1>
       <p class="page-sub">让每个世界，都保留你熟悉的操作习惯。</p>

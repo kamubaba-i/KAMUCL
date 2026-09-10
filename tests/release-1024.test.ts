@@ -5,17 +5,12 @@ import { parse, compileScript, compileTemplate } from '@vue/compiler-sfc'
 
 const read = (file: string) => fs.readFileSync(file, 'utf8')
 
-test('fix-1: edit panel footer pinned at bottom, body pure scrollable (个性化面板溢出)', () => {
-  const ep = read('src/renderer/src/components/EditPanel.vue')
-  // 主题码+恢复默认移出滚动区，钉在底部
-  assert.match(ep, /class="ep-foot"/)
-  const footIdx = ep.indexOf('ep-foot')
-  const bodyIdx = ep.indexOf('ep-body')
-  assert.ok(footIdx > bodyIdx, 'ep-foot 必须在 ep-body 之后（底部）')
-  assert.match(ep, /\.ep-foot \{[\s\S]*?flex-shrink: 0/)
-  assert.match(ep, /border-top: 1px solid var\(--border\)/)
-  // 滚动区保持 overflow-y auto
-  assert.match(ep, /\.ep-body \{[\s\S]*?overflow-y: auto/)
+test('visual editor controls remain inside a bounded scrollable panel', () => {
+ const ep=read('src/renderer/src/components/EditPanel.vue')
+ assert.match(ep,/bottom:12px/)
+ assert.match(ep,/overflow:auto/)
+ assert.match(ep,/class="designer-toolbar"/)
+ assert.match(ep,/复制完整主题码/)
 })
 
 test('fix-2: game process CWD wired through CreateProcessW lpCurrentDirectory (启动 CWD)', () => {

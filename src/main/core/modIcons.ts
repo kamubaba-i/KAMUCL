@@ -62,10 +62,10 @@ async function imageData(url: string): Promise<string> {
   } finally { await reader.cancel().catch(() => undefined) }
 }
 let queue: Promise<unknown> = Promise.resolve()
-export function getModIcons(version: string, folder: string, requested: string[]): Promise<Record<string, string>> {
-  const names = [...new Set(requested)].filter(n => typeof n === 'string' && path.basename(n) === n && !/[\\/:\0]/.test(n) && /\.jar(?:\.disabled)?$/i.test(n)).slice(0, 100)
+export function getModIcons(version: string, folder: string, requested: string[], kind = 'mods'): Promise<Record<string, string>> {
+  const names = [...new Set(requested)].filter(n => typeof n === 'string' && path.basename(n) === n && !/[\\/:\0]/.test(n) && /\.(?:jar(?:\.disabled)?|zip)$/i.test(n)).slice(0, 100)
   const job = queue.catch(() => undefined).then(async () => {
-    const dir = await resolveResourceDirectory(folder, version, 'mods')
+    const dir = await resolveResourceDirectory(folder, version, kind)
     const cacheDir = path.join(app.getPath('userData'), 'cache', 'mod-icons-v1')
     await fs.promises.mkdir(cacheDir, { recursive: true })
     const result: Record<string, string> = Object.create(null), todo: string[] = [], keys = new Map<string, string>()

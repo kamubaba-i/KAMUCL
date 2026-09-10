@@ -1,7 +1,7 @@
 /**
  * 轻量全局状态（Vue reactive），跨视图共享。
  */
-import { reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { trackLaunchState } from '@shared/launchTracking'
 import type {
   Account,
@@ -11,7 +11,7 @@ import type {
   Settings,
   YggdrasilProviderInput
 } from '@shared/types'
-import { errText, getInstalled, getSelectedAccount, listAccounts, saveSettings, getExitHistory, acknowledgeExitHistory, clearExitHistory } from './api'
+import { errText, getInstalled, getSelectedAccount, listAccounts, saveSettings, setActiveFolder, getSettings, getExitHistory, acknowledgeExitHistory, clearExitHistory } from './api'
 
 export type ViewName =
   | 'home'
@@ -120,6 +120,25 @@ export const store = reactive({
   tasks: [] as TaskItem[],
   toasts: [] as ToastItem[]
 })
+
+const normalizeFolder = (value = '') => value.replaceAll('\\', '/').replace(/\/$/, '').toLowerCase()
+export const activeInstalled = computed(() => store.installed.filter(v => !v.folder || normalizeFolder(v.folder) === normalizeFolder(store.settings?.activeFolder || store.settings?.gameDir)))
+export const selectedInstance = computed(() => activeInstalled.value.find(v => v.id === store.resourceVersionId) ?? activeInstalled.value[0])
+export async function selectInstance(id: string, folder?: string) {
+  if (folder && normalizeFolder(folder) !== normalizeFolder(store.settings?.activeFolder || store.settings?.gameDir)) {
+    await setActiveFolder(folder); store.settings = await getSettings()
+  }
+  store.resourceVersionId = id
+}
+watch([activeInstalled, () => store.settings?.activeFolder], () => {
+  if (!store.settings) return
+  const list = activeInstalled.value
+  if (!list.some(v => v.id === store.resourceVersionId)) {
+    const saved = localStorage.getItem('kamucl.lastVersion') || ''
+    store.resourceVersionId = list.find(v => v.id === saved)?.id || list[0]?.id || ''
+  }
+}, { flush: 'sync' })
+watch(() => store.resourceVersionId, id => { if (id) localStorage.setItem('kamucl.lastVersion', id) }, { flush: 'sync' })
 
 export const applyLaunchState = (state: LaunchState) => trackLaunchState(store, state)
 
@@ -342,14 +361,6 @@ export function setBannerAlign(a: BannerAlign) {
 /** 进入编辑模式：确保主题为 custom（custom 保持现有值或默认），然后停留在当前界面 */
 export async function enterEditMode() {
   if (store.editMode) return
-  if (store.settings && store.settings.theme !== 'custom') {
-    try {
-      store.settings = await saveSettings({ theme: 'custom' })
-    } catch (e) {
-      toast('切换自定义主题失败：' + errText(e), 'error')
-      return
-    }
-  }
   store.editTarget = ''
   store.editMode = true
 }

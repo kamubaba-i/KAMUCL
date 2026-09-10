@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { communityDownload, communityFiles, communitySearch, errText, getManifest, getModTargets } from '../api'
-import { store, toast } from '../store'
+import { store, toast, selectedInstance, selectInstance } from '../store'
 import { instanceKey } from '@shared/modCompatibility'
 import { communityFileMatchesInstance, usesCommunityLoader } from '@shared/communityPolicy'
 import { mcmodSearchUrl } from '@shared/communityLinks'
@@ -41,7 +41,7 @@ function openMcmod(item: CommunityResult) {
 function openExternal(url: string) {
   window.open(url, '_blank')
 }
-const currentInstance = computed(() => store.installed.find(v => v.id === localStorage.getItem('kamucl.lastVersion')) ?? store.installed[0])
+const currentInstance = selectedInstance
 const allTargets = ref<InstalledVersion[]>([])
 const modRequest = ref<{ target: InstalledVersion; input: { file: CommunityFile } } | null>(null)
 
@@ -274,8 +274,9 @@ versionInput.value = query.mcVersion
 
 /** 按具体实例筛选：选中实例即带入其 MC 版本与 Loader */
 function useInstance(id: string) {
-  const v = store.installed.find((x) => x.id === id)
+  const v = store.installed.find((x) => instanceKey(x) === id)
   if (!v) return
+  void selectInstance(v.id, v.folder)
   query.mcVersion = v.mcVersion === '未知' ? '' : v.mcVersion
   query.loader = v.loader ?? ''
   versionInput.value = query.mcVersion
@@ -449,10 +450,12 @@ async function confirmDownload() {
     modal.downloading = false
   }
 }
+function selectDownloadInstance() { const target = targetOptions.value.find(v => instanceKey(v) === modal.versionId); if (target) void selectInstance(target.id, target.folder) }
+
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :data-design-page="query.kind">
     <!-- 标题 -->
     <div class="page-head">
       <h1 class="page-title">社区资源</h1>
@@ -466,12 +469,12 @@ async function confirmDownload() {
         <select
           v-if="store.installed.length"
           class="select filter-select instance-filter"
-          :value="''"
+          :value="currentInstance ? instanceKey(currentInstance) : ''"
           title="按已安装实例带入其 MC 版本与 Loader"
-          @change="useInstance(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
+          @change="useInstance(($event.target as HTMLSelectElement).value)"
         >
           <option value="" disabled selected>选择实例…</option>
-          <option v-for="v in store.installed.filter((x) => !x.failed && !x.incomplete)" :key="v.id" :value="v.id">
+          <option v-for="v in store.installed.filter((x) => !x.failed && !x.incomplete)" :key="instanceKey(v)" :value="instanceKey(v)">
             {{ v.id }}（{{ v.mcVersion }}{{ v.loader ? ` · ${v.loader}` : '' }}）
           </option>
         </select>
@@ -698,7 +701,7 @@ async function confirmDownload() {
           <!-- 目标版本（整合包安装即新实例，无需选择） -->
           <template v-if="!isModpack">
             <p class="modal-label">下载到版本</p>
-            <select v-if="targetOptions.length" v-model="modal.versionId" class="select">
+            <select v-if="targetOptions.length" v-model="modal.versionId" class="select" @change="selectDownloadInstance">
               <option v-for="v in targetOptions" :key="instanceKey(v)" :value="instanceKey(v)">
                 {{ v.id }} · {{ v.mcVersion }} / {{ v.loader }} {{ v.loaderVersion }} · {{ v.folder }}
               </option>

@@ -36,7 +36,7 @@ import {
 import type { ReleaseInfo } from '@shared/types'
 import { QQ_GROUP_NUMBER } from '@shared/branding'
 import UpdateModal from './components/UpdateModal.vue'
-import { applyLaunchState, dismissTask, exitEditMode, finalizeTask, markNoticesRead, recordLastPlayed, refreshAccounts, refreshInstalled, resetProgressMono, stageLabel, store, toast, upsertTaskProgress } from './store'
+import { applyLaunchState, dismissTask, enterEditMode, exitEditMode, finalizeTask, markNoticesRead, recordLastPlayed, refreshAccounts, refreshInstalled, resetProgressMono, stageLabel, store, toast, upsertTaskProgress } from './store'
 import type { ViewName } from './store'
 import type {
   CustomTheme,
@@ -49,6 +49,7 @@ import { DEFAULT_CUSTOM_THEME, THEME_PRESETS } from '@shared/types'
 import { readableCustomColors } from '@shared/themeContrast'
 import { managedImageUrl } from './managedAssets'
 import Toasts from './components/Toasts.vue'
+import { installVisualDesign } from './visualDesign'
 import EditPanel from './components/EditPanel.vue'
 import { waitForBootTasks, sealBootTasks } from './bootTasks'
 import { acceptsImportDrag, showsImportOverlay } from '@shared/dropIntent'
@@ -1032,6 +1033,7 @@ function onEditClick(e: MouseEvent) {
 
 /** Esc 退出编辑模式 */
 function onEditKeydown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); void enterEditMode() }
   if (e.key === 'Escape' && store.editMode) exitEditMode()
 }
 
@@ -1058,6 +1060,7 @@ watch(
 const offs: Array<() => void> = []
 
 onMounted(async () => {
+  offs.push(installVisualDesign())
   void loadExitNotices()
   applyTheme(store.settings?.theme, store.settings?.custom)
   motionQuery.addEventListener('change', onMotionChange)
@@ -1237,7 +1240,7 @@ onUnmounted(() => {
   <div
     class="shell"
     :class="{ 'edit-mode': store.editMode, 'has-bg': !!bgStyle }"
-    @click.capture="onEditClick"
+
   >
     <!-- ============ 左侧边栏（宽度 --sidebar-w） ============ -->
     <aside class="sidebar" data-edit="sidebar">
@@ -1716,20 +1719,6 @@ onUnmounted(() => {
       </div>
     </div>
   </Teleport>
-
-  <!-- 编辑模式顶部悬浮提示条（fixed 居中，accent 底） -->
-  <Teleport to="body">
-    <Transition name="edit-tip">
-      <div v-if="store.editMode" class="edit-tip">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67A2.5 2.5 0 0 1 12 22Z" />
-        </svg>
-        <span>个性化编辑中 · 点击板块自定义颜色</span>
-        <button class="edit-tip-done" @click="exitEditMode">完成</button>
-      </div>
-    </Transition>
-  </Teleport>
-
 
 </template>
 

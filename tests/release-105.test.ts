@@ -33,17 +33,17 @@ test('home recent games: selection no longer pins to top; launch recency drives 
   // recent 不再把 selected 提前
   const recent = home.slice(home.indexOf('const recent = computed'), home.indexOf('const sortedInstalled'))
   assert(!recent.includes('selected'), 'recent must not reference selected for pinning')
-  assert.match(recent, /sortWithFavorite\(store\.installed\)\.slice\(0, 4\)/)
+  assert.match(recent, /sortWithFavorite\(activeInstalled\.value\)\.slice\(0, 4\)/)
 })
 
 test('personalization edit panel: opaque background, clear boundary, avoids top tip bar', () => {
   const panel = read('src/renderer/src/components/EditPanel.vue')
   // 接近不透明（--bg 在所有主题下不透明）
-  assert.match(panel, /background: var\(--bg\)/)
+  assert.match(panel, /background:#19232df5/)
   // 明确边界
-  assert.match(panel, /border-left: 1px solid var\(--border-strong\)/)
+  assert.match(panel, /border:1px solid #70859e66/)
   // 避开顶部提示栏（提示栏 top:14px + 高约40px + ≥12px 间距）
-  assert.match(panel, /top: 72px/)
+  assert.match(panel, /top:78px/)
 })
 
 test('new/changed Vue components compile', () => {

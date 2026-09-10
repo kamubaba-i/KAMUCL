@@ -358,6 +358,7 @@ export function normalizeThemeName(value: unknown): ThemeName {
 }
 
 export interface Settings {
+  visualDesign?: import('./visualDesign').VisualDesign
   gameDir: string
   /** 游戏文件夹登记列表（每个文件夹独立 versions/；libraries/assets/runtimes 共享于默认文件夹） */
   folders: GameFolder[]
@@ -775,6 +776,9 @@ export const IPC = {
   serversPrepareLaunch: 'servers:prepareLaunch', // (id: string, versionId?: string, folder?: string) => ServerLaunchPreparation
 
   // MOD 拖入即装
+  appearanceResetTheme: 'appearance:resetTheme',
+  appearanceExportTheme: 'appearance:exportTheme',
+  appearanceImportTheme: 'appearance:importTheme',
   modsIcons: 'mods:icons',
   modsTargets: 'mods:targets', // Scan all registered folders; folder + id identify each target.
   modsParse: 'mods:parse', // (paths: string[]) => ModInfo[]  支持文件/文件夹路径，静默解析元数据

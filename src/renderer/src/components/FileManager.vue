@@ -5,7 +5,7 @@
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { getModIcons, importResources, applyModUpdates, checkModUpdates, copyText, errText, listFs, openDir, removeFs, toggleDisableFs } from '../api'
-import { refreshInstalled, store, toast } from '../store'
+import { activeInstalled, selectedInstance, refreshInstalled, store, toast } from '../store'
 import ConfirmModal from './ConfirmModal.vue'
 import DupCleanModal from './DupCleanModal.vue'
 import SelectMenu from './SelectMenu.vue'
@@ -34,7 +34,7 @@ const opening = ref(false)
 // ---------------- 版本上下文（模组/资源包/光影包按游戏版本管理） ----------------
 /** 当前选中版本（默认第一个已装版本；store.resourceVersionId 三页共享） */
 const activeFolder = computed(() => store.settings?.activeFolder || store.settings?.gameDir || '')
-const availableVersions = computed(() => store.installed.filter(v => !v.folder || v.folder.toLowerCase() === activeFolder.value.toLowerCase()))
+const availableVersions = activeInstalled
 const currentVersion = computed(() => {
   const list = availableVersions.value
   if (!list.length) return null
@@ -127,12 +127,12 @@ watch([visibleEntries, effectiveRel, activeFolder], () => {
   const generation = ++iconGeneration
   clearTimeout(iconTimer); modIcons.value = {}
   const version = currentVersion.value
-  if (props.rel !== 'mods' || !version) return
-  const names = visibleEntries.value.filter(e => !e.isDir && /\.jar(?:\.disabled)?$/i.test(e.name)).map(e => e.name)
+  if (!version) return
+  const names = visibleEntries.value.filter(e => !e.isDir && /\.(?:jar(?:\.disabled)?|zip)$/i.test(e.name)).map(e => e.name)
   if (!names.length) return
   const folder = version.folder || activeFolder.value
   iconTimer = setTimeout(() => {
-    void getModIcons(version.id, names, folder).then(icons => {
+    void getModIcons(version.id, names, folder, props.rel).then(icons => {
       if (generation === iconGeneration) modIcons.value = icons
     }).catch(() => {})
   }, 120)
@@ -418,7 +418,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       <div v-else class="fm-list">
         <div v-for="e in visibleEntries" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
           <span class="fm-file-icon">
-            <img v-if="props.rel === 'mods' && modIcons[e.name]" :src="modIcons[e.name]" alt="" @error="delete modIcons[e.name]" />
+            <img v-if="modIcons[e.name]" :src="modIcons[e.name]" alt="" @error="delete modIcons[e.name]" />
             <svg v-else-if="e.isDir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
             </svg>

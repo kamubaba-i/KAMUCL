@@ -30,7 +30,7 @@ import {
   setVersionJava,
   setVersionResolution
 } from '../api'
-import { applyLaunchState, displayVersionName, displayVersionSub, fmtLastPlayed, isFavorite, progressMono, refreshInstalled, renameLastPlayed, sortWithFavorite, store, toast, toggleFavorite, versionIconUrl } from '../store'
+import { selectInstance, applyLaunchState, displayVersionName, displayVersionSub, fmtLastPlayed, isFavorite, progressMono, refreshInstalled, renameLastPlayed, sortWithFavorite, store, toast, toggleFavorite, versionIconUrl } from '../store'
 import { instanceLaunchBusy } from '@shared/launchTracking'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import IconPickerModal from '../components/IconPickerModal.vue'
@@ -534,6 +534,7 @@ async function openVersionFolder(v: InstalledVersion) {
 
 /** 版本列表条目的主操作：直接用该版本启动游戏（与首页最近游戏卡片行为一致） */
 async function launchVersion(v: InstalledVersion) {
+  await selectInstance(v.id, v.folder)
   const folder = v.folder ?? store.settings?.activeFolder ?? store.settings?.gameDir
   if (instanceLaunchBusy(store.launchStates, v.id, folder)) return
   applyLaunchState({ status: 'launching', text: '正在准备启动…', versionId: v.id, folder })
@@ -850,7 +851,7 @@ async function confirmIsolation() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :data-design-page="tab">
     <!-- 标题 -->
     <div class="page-head">
       <h1 class="page-title">游戏版本</h1>
