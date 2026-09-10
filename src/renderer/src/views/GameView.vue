@@ -1123,7 +1123,7 @@ async function confirmIsolation() {
           <span v-if="v.modpackName" class="tag tag-accent">整合包 · {{ v.modpackName }}</span>
           <span v-else-if="!v.loader" class="tag">纯净版</span>
           <span
-            v-if="v.isolated"
+            v-if="v.isolated && v.modpackName"
             class="tag"
             :title="`实际游戏目录：${v.gameDirectory || '版本独立目录'}（${v.isolationReason || '已配置'}）`"
           >已隔离</span>
