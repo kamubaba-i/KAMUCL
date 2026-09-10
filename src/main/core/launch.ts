@@ -22,15 +22,15 @@ import { getSettings } from './settings'
 import { getValidAccount, selectedAccount } from './accounts'
 import { ensureJava, requiredMajor, scanJava, resolveJavaExecutable } from './java'
 import {
-  assetIndexPath,
   assetsDir,
+  allFolders,
+  folderOfVersion,
   baseVersionJarPath,
   gameDir,
   librariesDir,
   nativesDir,
   versionJarPath,
-  versionJsonPath,
-  virtualLegacyDir
+  versionJsonPath
 } from './paths'
 import { withGameFolder } from './paths'
 import {
@@ -47,6 +47,7 @@ import {
 } from './versions'
 import { downloadAll } from './download'
 import { instanceDirectoryState } from './instances'
+import { prepareLaunchAssets } from './launchAssets'
 import { buildGameWindowArguments, resolveGameResolution } from './gameWindow'
 import { supportsQuickPlayMultiplayer } from './serverUtils'
 import * as yggdrasil from './yggdrasil'
@@ -484,18 +485,20 @@ async function launchOwned(
   }
   const classpath = [...new Set([...artifacts, ...natives, clientJar])].join(path.delimiter)
 
-  // assets（legacy 版本使用虚拟资源目录）
-  const indexId = merged.assetIndex?.id ?? merged.assets ?? 'legacy'
-  let assetsRoot = assetsDir()
-  try {
-    const idx = JSON.parse(fs.readFileSync(assetIndexPath(indexId), 'utf-8')) as {
-      virtual?: boolean
-      map_to_resources?: boolean
+  // Existing installations may belong to another repository. Languages and sounds must
+  // use its asset index/objects, not an unrelated launcher's empty default cache.
+  const launchAssets = await prepareLaunchAssets(
+    merged,
+    [path.join(folderOfVersion(versionId), 'assets'), assetsDir(), ...allFolders().map(folder => path.join(folder, 'assets'))],
+    assetsDir(),
+    effectiveGameDir,
+    async tasks => {
+      emit({ stage: 'repair', progress: 0, text: `补全游戏资源（含语言文件）${tasks.length} 项` })
+      await downloadAll(tasks, (done, total, speed) =>
+        emit({ stage: 'repair', progress: total ? done / total : 1, text: `补全游戏资源 ${done}/${total}`, speed }), 8, settings.mirror)
     }
-    if (idx.virtual === true || idx.map_to_resources === true) assetsRoot = virtualLegacyDir()
-  } catch {
-    /* 索引缺失时使用默认 assets 根目录 */
-  }
+  )
+  log(`[KAMUCL] 游戏资源：${launchAssets.root}；索引：${launchAssets.indexId}`)
 
   // f) 变量替换表
   const selectedJavaPath = javaPath
@@ -506,8 +509,9 @@ async function launchOwned(
     auth_player_name: validAccount.username,
     version_name: versionId,
     game_directory: effectiveGameDir,
-    assets_root: assetsRoot,
-    assets_index_name: merged.assets ?? indexId,
+    assets_root: launchAssets.root,
+    assets_index_name: launchAssets.indexId,
+    game_assets: launchAssets.gameAssets,
     auth_uuid:
       validAccount.type === 'yggdrasil'
         ? validAccount.uuid.replace(/-/g, '')

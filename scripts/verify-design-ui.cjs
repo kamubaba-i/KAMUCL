@@ -9,7 +9,7 @@ app.commandLine.appendSwitch('enable-unsafe-swiftshader')
 buildSync({ entryPoints: ['src/shared/types.ts'], bundle: true, platform: 'node', format: 'cjs', outfile: path.join(root, 'types.cjs') })
 const types = require(path.join(root, 'types.cjs'))
 const folder = 'C:/Design fixture/.minecraft'
-const versions = ['26.2-Fabric 0.19.5', '1.21.11-NeoForge Adventures', '1.21.10-Forge Survival', '26.2 Creative'].map((name, i) => ({ id: name, name, mcVersion: i === 1 ? '1.21.11' : '26.2', loader: i === 3 ? undefined : 'fabric', loaderVersion: '0.19.5', folder, isolated: true }))
+const versions = ['26.2-Fabric 0.19.5', '1.21.11-NeoForge Adventures', '1.21.10-Forge Survival', '26.2 Creative'].map((name, i) => ({ id: name, name, mcVersion: i === 1 ? '1.21.11' : '26.2', loader: i === 3 ? undefined : 'fabric', loaderVersion: '0.19.5', folder, isolated: true, modpackName: i === 3 ? 'Creative 整合包' : undefined }))
 let settings = { gameDir: folder, activeFolder: folder, folders: [{ path: folder, name: '我的游戏', isDefault: true }], javaPath: '', javaAuto: true, javaCustom: [], javaHidden: [], memoryMB: 4096, memoryAuto: true, jvmArgs: '', resolution: { width: 854, height: 480, mode: 'windowed' }, mirror: 'bmclapi', theme: 'blue-white', custom: types.DEFAULT_CUSTOM_THEME, disabledFeatures: [], favoriteVersions: [], homeLayout: types.DEFAULT_HOME_LAYOUT, background: types.DEFAULT_BACKGROUND, launchThumbnail: types.DEFAULT_LAUNCH_THUMBNAIL, configVersion: 1 }
 const account = { id: 'fixture', type: 'offline', username: 'KaMuaMua', uuid: '00000000000000000000000000000000' }
 const calls = [], errors = []
@@ -51,6 +51,10 @@ app.whenReady().then(async () => {
   await win.loadFile(path.resolve('out/renderer/index.html')); await wait(1800)
   await shot('home-wide')
   await navigate('game'); await run(`document.querySelectorAll('.game-tab')[1].click()`); await shot('versions-wide')
+  assert(await run(`Array.from(document.querySelectorAll('.installed-row')).every(row => {
+    const tags = Array.from(row.querySelectorAll('.tag')).filter(tag => tag.textContent.trim() === '已隔离');
+    return row.querySelector('.iso-switch') ? tags.length === 0 : tags.length === 1;
+  })`), 'Isolation status is shown once, including modpacks without a toggle')
   await navigate('community'); await shot('community-wide')
   await run(`document.querySelector('.result-dl').click()`); await shot('download-dialog')
   await run(`document.querySelector('.modal-actions button').click()`)
