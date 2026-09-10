@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-10 20:32 ｜ 当前版本：**1.0.40**（已完成验证、打包和发布）
+> 更新时间：2026-09-10 21:32 ｜ 当前版本：**1.0.42**（已完成验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,12 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.42 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.42 ，Release ID386311212。EXE中文空格路径启动通过，ZIP内app.asar与构建一致；便携粒子首帧冷启动433ms、缓存启动276ms，缓存复用通过。三个远端附件大小、SHA256和源码标签核对后公开，latest为v1.0.42，v1.0.41仍为撤回状态。EXE SHA256 `8403da51f26809dd8282ab087f8b34a3dbbdc2c55c42e52e6ac39ac9c4947ef5`；ZIP SHA256 `13685c85f57d3619d9891e290b58dce26e95cb508cea0fe270f3d96a3029f8aa`。
+
+**1.0.42 游戏本体慢速换源**：用户反馈本体只有约0.1MB/s。本机设置downloadSpeedKBps=0；旧慢速门槛仅15秒16KiB（约1KiB/s），无法处理持续有数据但很慢的连接。对至少8MiB且首轮仍有备用来源的文件增加8秒滑窗、256KiB/s门槛，触发后复用.part续传；最后一个来源及第二轮不套新门槛，避免所有来源较慢时不断断开。暂停重置窗口，主动限速跳过检测，仍保留原有停滞检测、大小及哈希校验。下载中心38%原为包含依赖库阶段的总进度，文案明确为“总进度”。用户明确同意跳过已误发撤回的1.0.41，保留旧标签，以1.0.42交付。
+
+**1.0.42 验证**：334/334测试、TypeScript、构建和生产UI通过（out/design-ui-fACfLV）。新增本地HTTP慢速→快速来源续传测试，验证最终字节一致及唯一慢来源不被新门槛反复中断。使用真实下载模块、隔离用户目录下载1.21.9，本体30,591,861字节耗时48,916ms，平均约0.6MiB/s，SHA1 ce92fd8d1b2460c41ceda07ae7b3fe863a80d045 与元数据一致。日志确认官方来源慢速后切镜像完成；此为当时实测，不保证固定网速。证据out/live-client-1.0.42.log、out/live-client-AZZqQi/logs/launcher-current.log。没有修改真实实例或启动/停止用户游戏。功能提交master `e1c11b4` / main `cbadc96`。
 
 **1.0.40 启动可靠性**：依赖库按 Maven group/artifact/classifier/extension 去重，子版本优先覆盖父版本，规则过滤先于去重，native 与普通库保持区分，下载列表和最终 classpath 共用解析。启动前校验 client JAR 和依赖库的大小、SHA1；缺少哈希的 JAR 检查 ZIP 结构及 CRC。损坏文件重新下载并复验，没有下载地址的缺失或损坏生成库明确报错，避免静默漏入 classpath。
 
