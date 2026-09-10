@@ -8,6 +8,47 @@ import test from 'node:test'
 import { downloadFile, transferTimeouts, slowSpeedThresholds, resetHostHealthForTest } from '../src/main/core/download'
 import { downloadLimiter, DEFAULT_DOWNLOAD_LIMITS } from '../src/main/core/downloadLimits'
 
+test('大文件持续约0.1MB/s时换源续传；最后来源较慢仍能完成', { timeout: 6000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-slow-source-'))
+  const payload = Buffer.alloc(256 * 1024, 37)
+  const previous = { ...slowSpeedThresholds }
+  Object.assign(slowSpeedThresholds, { largeFileBytes: 128 * 1024, largeWindowMs: 150 })
+  const requests: string[] = [], ranges: number[] = []
+  const server = http.createServer((req, res) => {
+    requests.push(req.url!)
+    let offset = Number(req.headers.range?.match(/bytes=(\d+)-/)?.[1] ?? 0)
+    ranges.push(offset)
+    res.writeHead(offset ? 206 : 200, { 'content-length': payload.length - offset, ...(offset ? { 'content-range': `bytes ${offset}-${payload.length - 1}/${payload.length}` } : {}) })
+    if (req.url === '/fast') return res.end(payload.subarray(offset))
+    const timer = setInterval(() => {
+      const end = Math.min(offset + 8192, payload.length)
+      res.write(payload.subarray(offset, end)); offset = end
+      if (offset === payload.length) { clearInterval(timer); res.end() }
+    }, 50)
+    res.on('close', () => clearInterval(timer))
+  })
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  const hash = crypto.createHash('sha1').update(payload).digest('hex')
+  try {
+    resetHostHealthForTest()
+    await downloadFile(base + '/slow', path.join(root, 'first.jar'), undefined, hash, 'official', undefined, [base + '/fast'], { size: payload.length })
+    assert.deepEqual(requests, ['/slow', '/fast'])
+    assert(ranges[1] > 0, '换源应保留已下载字节')
+    assert.deepEqual(fs.readFileSync(path.join(root, 'first.jar')), payload)
+    requests.length = 0
+    await downloadFile(base + '/slow-only', path.join(root, 'last.jar'), undefined, hash, 'official', undefined, [], { size: payload.length })
+    assert.deepEqual(requests, ['/slow-only'], '唯一来源不能因新速度门槛反复重连')
+    assert.deepEqual(fs.readFileSync(path.join(root, 'last.jar')), payload)
+  } finally {
+    Object.assign(slowSpeedThresholds, previous)
+    resetHostHealthForTest()
+    server.closeAllConnections()
+    await new Promise<void>(r => server.close(() => r()))
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 for (const stall of ['headers', 'empty-body', 'partial-body', 'trickle-before-warmup'] as const) {
   test(`下载 ${stall} 停滞会退出并续传换源，释放唯一并发名额`, { timeout: 6000 }, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-stall-'))

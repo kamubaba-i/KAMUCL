@@ -152,6 +152,10 @@ export const transferTimeouts = { inactivityMs: 15_000 }
 
 /** 慢速检测阈值，模块级导出便于测试注入。 */
 export const slowSpeedThresholds = {
+  /** 大文件有备用源时，8秒持续低于256KiB/s就续传换源；最后来源不套此门槛。 */
+  largeFileBytes: 8 * 1024 * 1024,
+  largeWindowMs: 8_000,
+  largeMinBps: 256 * 1024,
   /** 滑动窗口时长 */
   windowMs: 15_000,
   /** 窗口内最少接收字节，低于该值视为慢速 */
@@ -164,6 +168,7 @@ export const slowSpeedThresholds = {
 
 /** 每个连接独立的滑动窗口；暂停恢复时 reset，限速时整体跳过检测。 */
 class SlowWindow {
+  constructor(private preferFaster = false) {}
   private samples: Array<{ at: number; bytes: number }> = []
   private receivedTotal = 0
   private startedAt = Date.now()
@@ -181,6 +186,15 @@ class SlowWindow {
 
   shouldAbort(now = Date.now()): boolean {
     if (downloadLimiter.isThrottling) return false
+    if (this.preferFaster) {
+      const window = slowSpeedThresholds.largeWindowMs
+      while (this.samples.length > 1 && this.samples[1].at <= now - window) this.samples.shift()
+      if (now - this.startedAt >= window) {
+        const bytes = this.samples.filter(s => s.at > now - window).reduce((n, s) => n + s.bytes, 0)
+        return bytes / (window / 1000) < slowSpeedThresholds.largeMinBps
+      }
+      return false
+    }
     if (this.receivedTotal < slowSpeedThresholds.warmupBytes && now - this.startedAt < slowSpeedThresholds.warmupMs) return false
     const first = this.samples[0]
     if (!first || now - first.at < slowSpeedThresholds.windowMs) return false
@@ -381,7 +395,8 @@ async function doDownload(
   onProgress?: ProgressFn,
   extSignal?: AbortSignal,
   expectedSize?: number,
-  allowSizeProbe = false
+  allowSizeProbe = false,
+  preferFaster = false
 ): Promise<TransferResult> {
   fs.mkdirSync(path.dirname(dest), { recursive: true })
   if (extSignal?.aborted) throw new Error('已取消')
@@ -471,7 +486,7 @@ async function doDownload(
         ws.destroy(requestController.signal.reason as Error | undefined)
       }
       requestController.signal.addEventListener('abort', onAbort, { once: true })
-      const slowWindow = new SlowWindow()
+      const slowWindow = new SlowWindow(preferFaster)
       let received = offset
       onProgress?.(received, total)
       try {
@@ -533,9 +548,10 @@ async function startTransfer(
   dest: string,
   onProgress: ProgressFn | undefined,
   extSignal: AbortSignal | undefined,
-  expectedSize: number | undefined
+  expectedSize: number | undefined,
+  preferFaster = false
 ): Promise<TransferResult> {
-  return doDownload(url, dest, onProgress, extSignal, expectedSize, expectedSize == null)
+  return doDownload(url, dest, onProgress, extSignal, expectedSize, expectedSize == null, preferFaster)
 }
 
 // ---------------- 本地文件复用（PCL2 CheckExistingFiles） ----------------
@@ -704,7 +720,8 @@ for (let round = 0; round < 2; round++) {
         if (extSignal?.aborted) throw new Error('已取消')
         transferTries++
         try {
-          const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size)
+          const preferFaster = round === 0 && candidate !== candidates[candidates.length - 1] && (expected.size ?? 0) >= slowSpeedThresholds.largeFileBytes
+          const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size, preferFaster)
           // 远端总长不写回 expected，避免污染后续候选来源。
           const verifyTarget = expected
           const invalid = await verifyFile(transfer.tmp, verifyTarget, extSignal)

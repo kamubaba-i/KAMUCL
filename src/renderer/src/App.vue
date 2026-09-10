@@ -1477,7 +1477,7 @@ onUnmounted(() => {
                 </div>
                 <div class="dl-sub muted">
                   <template v-if="t.status === 'running'">
-                    {{ taskSubText(t) }} · {{ t.indeterminate ? '正在计算总量' : taskProgressPercent(t) + '%' }}{{ taskEtaText(t.etaSeconds) }}
+                    {{ taskSubText(t) }} · {{ t.indeterminate ? '正在计算总量' : '总进度 ' + taskProgressPercent(t) + '%' }}{{ taskEtaText(t.etaSeconds) }}
                   </template>
                   <template v-else-if="t.status === 'paused'">已暂停 · {{ t.indeterminate ? '总量未知' : taskProgressPercent(t) + '%' }}</template>
                   <template v-else-if="t.status === 'cancelling'">正在停止网络与后台任务…</template>
