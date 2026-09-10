@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import UpdateDialogShell from '../components/UpdateDialogShell.vue'
 import {
   addCustomJava,
   applyLocalUpdate,
@@ -75,8 +76,7 @@ async function onCheckUpdate() {
     const r = await checkUpdate(true)
     if (r.ok && r.hasUpdate && r.release) {
       updateCheckState.value = 'idle'
-      // 明确反馈：发现新版本 + 更新入口弹窗
-      toast(`发现新版本 v${r.release.version}，是否更新？`, 'success')
+      // 更新弹窗已经给出结果，避免再叠加同内容通知。
       store.updatePrompt = { release: r.release, rollback: false }
     } else if (r.ok) {
       updateCheckState.value = 'latest'
@@ -123,8 +123,14 @@ function confirmRollback() {
   store.updatePrompt = { release, rollback: true }
 }
 function releaseSummary(body: string): string {
-  const first = (body || '').split(/\r?\n/).map((s) => s.replace(/^#+\s*/, '').trim()).filter(Boolean)[0] ?? ''
+  const first = (body || '').split(/\r?\n/).map((s) => s.replace(/^(?:#+|[-*])\s*/, '').trim()).filter(s => s && !/^KAMUCL\s+v?[\d.]+$/i.test(s))[0] ?? ''
   return first.length > 60 ? first.slice(0, 60) + '…' : first
+}
+function releaseDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 // 还原到更新前的版本
@@ -1110,14 +1116,16 @@ async function onRemovePlugin(p: PluginInfo) {
     </template>
 
     <!-- 版本回退：历史版本列表 -->
-    <div v-if="rollback.open" class="menu-overlay upd-modal-mask" @click.self="rollback.open = false">
-      <div class="card upd-modal-card" role="dialog" aria-label="版本回退">
+    <UpdateDialogShell v-if="rollback.open" label="版本回退" @dismiss="rollback.open = false">
+      <template #header>
         <div class="upd-modal-head">
           <h3 class="upd-modal-title">版本回退</h3>
           <button class="icon-btn" title="关闭" @click="rollback.open = false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
+        <p class="upd-modal-subtitle muted">当前 v{{ appVersion }} · 选择要恢复的历史版本</p>
+      </template>
         <p class="upd-risk">⚠ 旧版本可能不兼容新配置格式。回退前将自动备份当前版本，可随时还原。</p>
         <div v-if="rollback.loading" class="empty"><span class="spin"></span></div>
         <div v-else class="upd-release-list">
@@ -1125,28 +1133,28 @@ async function onRemovePlugin(p: PluginInfo) {
             <input v-model="rollback.selected" type="radio" name="rollback-version" :value="r.version" />
             <span class="upd-release-main">
               <span class="upd-release-ver">v{{ r.version }}</span>
-              <span class="muted upd-release-date">{{ r.publishedAt.slice(0, 10) }}</span>
-              <span class="muted upd-release-summary">{{ releaseSummary(r.body) }}</span>
+              <span class="muted upd-release-date">{{ releaseDate(r.publishedAt) }}</span>
+              <span v-if="releaseSummary(r.body)" class="muted upd-release-summary">{{ releaseSummary(r.body) }}</span>
             </span>
           </label>
           <div v-if="!rollback.list.length" class="empty"><span>没有可回退的历史版本</span></div>
         </div>
-        <div class="upd-modal-actions">
+      <template #footer><div class="upd-modal-actions">
           <button class="btn btn-ghost" @click="rollback.open = false">取消</button>
           <button class="btn btn-gold" :disabled="!rollback.selected" @click="confirmRollback">回退到选中版本</button>
-        </div>
-      </div>
-    </div>
+        </div></template>
+    </UpdateDialogShell>
 
     <!-- 本地文件安装更新确认 -->
-    <div v-if="localUpdate?.confirming" class="menu-overlay upd-modal-mask" @click.self="localUpdate = null">
-      <div class="card upd-modal-card" role="dialog" aria-label="安装本地更新包">
+    <UpdateDialogShell v-if="localUpdate?.confirming" label="安装本地更新包" @dismiss="localUpdate = null">
+      <template #header>
         <div class="upd-modal-head">
           <h3 class="upd-modal-title">安装本地更新包</h3>
           <button class="icon-btn" title="关闭" @click="localUpdate = null">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
+      </template>
         <p class="upd-local-file">{{ localUpdate.check.fileName }} · {{ (localUpdate.check.fileSize / 1048576).toFixed(1) }} MB</p>
         <div class="upd-local-check">
           <span>版本校验</span>
@@ -1159,16 +1167,15 @@ async function onRemovePlugin(p: PluginInfo) {
           <span v-else-if="localUpdate.check.sha256 === 'mismatch'" class="upd-warn">⚠ SHA256 不一致！文件可能被篡改（{{ localUpdate.check.detail }}）</span>
           <span v-else class="upd-warn">⚠ 无法联网校验，请确认文件来自官方渠道，风险自担</span>
         </div>
-        <div class="upd-modal-actions">
+      <template #footer><div class="upd-modal-actions">
           <button class="btn btn-ghost" @click="localUpdate = null">取消</button>
           <button
             class="btn"
             :class="localUpdate.check.versionOk && localUpdate.check.sha256 === 'match' ? 'btn-gold' : 'btn-danger'"
             @click="confirmLocalUpdate"
           >确认安装</button>
-        </div>
-      </div>
-    </div>
+        </div></template>
+    </UpdateDialogShell>
 
   </div>
 </template>
@@ -1195,31 +1202,30 @@ async function onRemovePlugin(p: PluginInfo) {
 }
 .upd-failed-text { font-size: var(--text-xs); color: var(--danger); }
 /* 回退/本地安装弹窗 */
-.upd-modal-mask { z-index: 9400; display: grid; place-items: center; }
-.upd-modal-card { width: min(560px, 92vw); max-height: 82vh; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5) var(--space-6); }
+.upd-modal-subtitle { margin:10px 0 0; font-size:12px; }
 .upd-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
-.upd-modal-title { margin: 0; font-size: var(--text-lg); }
+.upd-modal-title { margin: 0; font-size:22px; line-height:1.4; }
 .upd-risk {
-  margin: 0; padding: 9px 12px; border-radius: var(--radius-md); font-size: var(--text-xs); font-weight: 600;
+  margin: 0 0 18px; padding: 12px 14px; border-radius: var(--radius-md); font-size: var(--text-xs); font-weight: 500;
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--danger) 26%, transparent);
   color: var(--danger);
 }
-.upd-release-list { overflow-y: auto; max-height: 46vh; display: flex; flex-direction: column; gap: var(--space-2); }
+.upd-release-list { display:flex; flex-direction:column; gap:10px; }
 .upd-release-item {
-  display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-3); cursor: pointer;
+  display: flex; gap:14px; align-items:flex-start; padding:16px; cursor:pointer;
   border: 1px solid var(--border); border-radius: var(--radius-md); transition: border-color 0.15s ease, background 0.15s ease;
 }
 .upd-release-item:hover { border-color: var(--accent-deep); }
 .upd-release-item.selected { border-color: var(--accent); background: var(--accent-soft); }
-.upd-release-item input { margin-top: 3px; accent-color: var(--accent); }
+.upd-release-item input { margin-top:5px; accent-color:var(--accent); flex-shrink:0; }
 .upd-release-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .upd-release-ver { font-weight: 650; }
 .upd-release-date { font-size: var(--text-xs); }
 .upd-release-summary { font-size: var(--text-xs); flex-basis: 100%; }
-.upd-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-3); }
+.upd-modal-actions { display:flex; justify-content:flex-end; gap:var(--space-3); flex-wrap:wrap; }
 .upd-local-file { margin: 0; font-weight: 600; font-size: var(--text-sm); word-break: break-all; }
-.upd-local-check { display: flex; gap: var(--space-3); font-size: var(--text-sm); align-items: baseline; }
+.upd-local-check { display:flex; gap:var(--space-3); font-size:var(--text-sm); align-items:baseline; margin-top:16px; }
 .upd-local-check > span:first-child { width: 72px; flex-shrink: 0; color: var(--text-dim); }
 .upd-ok { color: var(--accent-2); }
 .upd-warn { color: var(--danger); }

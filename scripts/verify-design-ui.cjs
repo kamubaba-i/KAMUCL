@@ -19,9 +19,14 @@ const versions = ['26.2-Fabric 0.19.5', '1.21.11-NeoForge Adventures', '1.21.10-
 let settings = { gameDir: folder, activeFolder: folder, folders: [{ path: folder, name: '我的游戏', isDefault: true }], javaPath: '', javaAuto: true, javaCustom: [], javaHidden: [], memoryMB: 4096, memoryAuto: true, jvmArgs: '', resolution: { width: 854, height: 480, mode: 'windowed' }, mirror: 'bmclapi', theme: 'blue-white', custom: types.DEFAULT_CUSTOM_THEME, disabledFeatures: [], favoriteVersions: [], homeLayout: types.DEFAULT_HOME_LAYOUT, background: types.DEFAULT_BACKGROUND, launchThumbnail: types.DEFAULT_LAUNCH_THUMBNAIL, configVersion: 1 }
 const account = { id: 'fixture', type: 'offline', username: 'KaMuaMua', uuid: '00000000000000000000000000000000' }
 const calls = [], errors = []
+const updateRelease = { version:'1.0.46', tag:'v1.0.46', publishedAt:'2026-09-10T14:04:00Z', assetSize:67616046, body:'KAMUCL v1.0.46\n\n- 修复：皮肤重命名后恢复默认名称的问题\n- 优化：默认配置的分组、数值输入和同步状态', assetUrl:'https://example.invalid/test.exe' }
 ipcMain.handle('design:invoke', (_event, channel, ...args) => {
   calls.push(channel)
   switch (channel) {
+    case 'update:check': return {ok:true,hasUpdate:true,release:updateRelease}
+    case 'update:start': return {taskId:'fixture-update'}
+    case 'update:pickLocalFile': return {fileName:'KAMUCL-1.0.46.exe',fileSize:67616046,version:'1.0.46',versionOk:true,sha256:'match'}
+    case 'update:listReleases': return Array.from({length:18},(_,i)=>({...updateRelease,version:'1.0.'+(43-i),body:'KAMUCL v1.0.'+(43-i)+'\n\n- 改善下载体验，修复界面显示问题'}))
     case 'gameOptions:get': return gameOptions.getDefaultGameOptions()
     case 'gameOptions:set': return gameOptions.setDefaultGameOptions(args[0])
     case 'exitHistory:list': return journal.list()
@@ -46,7 +51,7 @@ ipcMain.handle('design:invoke', (_event, channel, ...args) => {
     default: return []
   }
 })
-fs.writeFileSync(path.join(root, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('kamucl',{invoke:(c,...a)=>ipcRenderer.invoke('design:invoke',c,...a),on:()=>()=>{},send:()=>{},getFilePath:()=>'',platform:'win32'});`)
+fs.writeFileSync(path.join(root, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('kamucl',{invoke:(c,...a)=>ipcRenderer.invoke('design:invoke',c,...a),on:(c,fn)=>{const h=(_,p)=>fn(p);ipcRenderer.on(c,h);return ()=>ipcRenderer.removeListener(c,h)},send:()=>{},getFilePath:()=>'',platform:'win32'});`)
 app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_d, cb) => cb({ cancel: true }))
   const win = new BrowserWindow({ show: false, width: 1440, height: 960, backgroundColor: '#edf0f7', webPreferences: { preload: path.join(root, 'preload.cjs'), backgroundThrottling: false, offscreen: true } })
@@ -59,6 +64,49 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(root, name + '.png'), (await win.webContents.capturePage()).toPNG())
   }
   const navigate = async key => { await run(`document.querySelector('[data-nav="${key}"]').click()`); await wait(600) }
+  const updateDialogs = async theme => {
+    await navigate('settings')
+    await run(`document.querySelector('.content').style.background='repeating-linear-gradient(35deg,#faa 0px,#faa 40px,#bde 40px,#bde 80px)'; const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='检查更新'); b.scrollIntoView({block:'center'}); b.click()`); await wait(300)
+    const check = await run(`(()=>{const panel=document.querySelector('.update-dialog'),backdrop=panel.parentElement,r=panel.getBoundingClientRect(),f=panel.querySelector('footer').getBoundingClientRect();return {color:getComputedStyle(panel).backgroundColor,mask:getComputedStyle(backdrop).backgroundColor,portal:backdrop.parentElement===document.body,modal:panel.getAttribute('aria-modal'),inside:r.top>=0&&r.bottom<=innerHeight,footer:f.bottom<=innerHeight,repeat:[...document.querySelectorAll('.toast')].some(e=>e.textContent.includes('发现新版本'))}})()`)
+    assert(check.portal && check.modal==='true' && check.inside && check.footer,JSON.stringify(check))
+    assert(!check.color.includes('rgba') && check.color!=='transparent', 'Dialog must have a solid surface: '+check.color)
+    assert.notEqual(check.mask,'rgba(0, 0, 0, 0)'); assert.equal(check.repeat,false)
+    assert.equal(await run(`document.querySelector('.upd-help').open`),false)
+    await shot('update-'+theme)
+    assert(await run(`(()=>{const p=document.querySelector('.update-dialog'),buttons=p.querySelectorAll('button');buttons[buttons.length-1].focus();buttons[buttons.length-1].dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));return document.activeElement===buttons[0]})()`),'Tab wraps inside the dialog')
+    await run(`document.querySelector('.update-dialog').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`); await wait(100)
+    assert.equal(await run(`document.querySelectorAll('.update-dialog').length`),0)
+    await run(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('版本回退')).click()`); await wait(250)
+    assert.equal(await run(`document.querySelectorAll('.upd-release-item').length`),18)
+    assert.equal(await run(`document.querySelector('.upd-release-summary').textContent`),'改善下载体验，修复界面显示问题')
+    await run(`document.querySelectorAll('.upd-release-item')[1].click()`)
+    assert.equal(await run(`document.querySelector('.upd-modal-actions .btn-gold').disabled`),false)
+    const scroll = await run(`(()=>{const c=document.querySelector('.update-dialog-content'),f=document.querySelector('.update-dialog-footer').getBoundingClientRect();return {scroll:c.scrollHeight>c.clientHeight,footer:f.bottom<=innerHeight}})()`)
+    assert(scroll.scroll && scroll.footer,JSON.stringify(scroll))
+    await shot('rollback-'+theme)
+    await run(`document.querySelector('.upd-modal-actions .btn-ghost').click()`)
+    if(theme==='blue-white-compact') {
+      const original=updateRelease.body
+      updateRelease.body=Array.from({length:30},(_,i)=>'- 更新项目 '+(i+1)+'：检查长更新说明在小窗口下的滚动与底部按钮').join('\n')
+      await run(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='检查更新').click()`);await wait(200)
+      assert(await run(`(()=>{const c=document.querySelector('.update-dialog-content');return c.scrollHeight>c.clientHeight})()`))
+      await shot('update-long-compact')
+      await run(`document.querySelector('.upd-actions .btn-gold').click()`);await wait(200)
+      win.webContents.send('event:updateSlowHint',{taskId:'fixture-update'});await wait(100)
+      assert(await run(`document.querySelector('.upd-help').open`))
+      await shot('update-downloading')
+      win.webContents.send('event:taskDone',{taskId:'fixture-update',ok:true});await wait(150)
+      assert(await run(`document.querySelector('.upd-title').textContent.includes('准备安装')`))
+      await shot('update-ready')
+      await run(`document.querySelector('.update-dialog').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
+      updateRelease.body=original
+      await run(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('从本地文件安装更新')).click()`);await wait(150)
+      await shot('update-local')
+      assert.equal(await run(`document.querySelector('.update-dialog').getAttribute('aria-label')`),'安装本地更新包')
+      await run(`document.querySelector('.upd-modal-actions .btn-ghost').click()`)
+    }
+    await run(`document.querySelector('.content').style.background=''`)
+  }
   await win.loadFile(path.resolve('out/renderer/index.html')); await wait(1800)
   assert(await run(`!!document.querySelector('.bell-dot')`), 'Previous abnormal exits have an unread indicator')
   await run(`document.querySelector('[title="通知"]').click()`); await wait(200)
@@ -134,12 +182,14 @@ app.whenReady().then(async () => {
     assert(parseFloat(await run(`getComputedStyle(document.querySelector('.nav-bubble')).transitionDuration`)) < 0.001)
     win.webContents.debugger.detach()
     await navigate('settings'); await shot('settings-compact')
+    await updateDialogs('blue-white-compact')
     for (const theme of ['black-orange', 'white-pink', 'black-pink', 'transparent']) {
       settings.theme = theme
       win.setSize(1440, 960)
       win.setBackgroundColor(types.THEME_PRESETS[theme].colors.bg)
       await win.reload(); await wait(900)
       await navigate('community'); await shot('community-' + theme)
+      if(theme==='white-pink'||theme==='black-orange'||theme==='transparent') await updateDialogs(theme)
     }
   }
   fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ overflow, errors, calls: [...new Set(calls)] }, null, 2))
