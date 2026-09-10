@@ -2,9 +2,7 @@
  * 下载模块：流式写盘 + sha1 校验 + BMCLAPI 镜像回退 + 并发池
  * 移植 PCL2 下载引擎优化：
  * - 本地文件复用（CheckExistingFiles）：大小预筛 + sha1 校验，命中直接复制
- * - 大文件分块多线程下载：8MB/块、最多 8 连接、每块独立重试、可断点续传
- *   （块组失败保留已完成块的 .partN 断点；整体看门狗只在「有块传输中」停滞时才回退单连接，
- *    排队等并发名额不算停滞——否则并发闸门饥饿会误杀健康分块组）
+ * - 单连接流式续传，多文件共享并发闸门；排队、暂停和本地限速不计入网络停滞
  * - 慢速连接主动掐断：滑动窗口内字节过少即断开换源（限速时跳过）
  * - 会话级源健康度（NetSource.FailCount/IsFailed）：连续 transient 失败的 host 冷却沉底
  * - 磁盘空间预检：≥50MB 文件下载前检查剩余空间
@@ -14,7 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { once } from 'node:events'
-import { pipeline } from 'node:stream/promises'
+import { finished } from 'node:stream/promises'
 import { downloadLimiter } from './downloadLimits'
 import { launcherLog } from './launcherLog'
 import { httpFetch } from './httpClient'
@@ -149,6 +147,8 @@ function fmtBytes(n: number): string {
 
 /** 单次传输的响应体超时（慢速/挂起兜底） */
 const DOWNLOAD_BODY_TIMEOUT_MS = 120_000
+/** Only time spent waiting for the network counts; local throttling and pause do not. */
+export const transferTimeouts = { inactivityMs: 15_000 }
 
 /** 慢速检测阈值，模块级导出便于测试注入。 */
 export const slowSpeedThresholds = {
@@ -157,13 +157,16 @@ export const slowSpeedThresholds = {
   /** 窗口内最少接收字节，低于该值视为慢速 */
   minWindowBytes: 16 * 1024,
   /** 累计接收达到该字节数后才开始判定，避免对正常慢启动误判 */
-  warmupBytes: 1024 * 1024
+  warmupBytes: 1024 * 1024,
+  /** 预热同时有时间上限，防止首个 MB 极慢时永久绕过慢速检测。 */
+  warmupMs: 15_000
 }
 
 /** 每个连接独立的滑动窗口；暂停恢复时 reset，限速时整体跳过检测。 */
 class SlowWindow {
   private samples: Array<{ at: number; bytes: number }> = []
   private receivedTotal = 0
+  private startedAt = Date.now()
 
   add(bytes: number, now = Date.now()): void {
     this.receivedTotal += bytes
@@ -173,11 +176,12 @@ class SlowWindow {
   /** 暂停恢复后调用：丢弃暂停前的样本，避免暂停时间被计入窗口。 */
   reset(): void {
     this.samples = []
+    this.startedAt = Date.now()
   }
 
   shouldAbort(now = Date.now()): boolean {
     if (downloadLimiter.isThrottling) return false
-    if (this.receivedTotal < slowSpeedThresholds.warmupBytes) return false
+    if (this.receivedTotal < slowSpeedThresholds.warmupBytes && now - this.startedAt < slowSpeedThresholds.warmupMs) return false
     const first = this.samples[0]
     if (!first || now - first.at < slowSpeedThresholds.windowMs) return false
     while (this.samples.length > 1 && now - this.samples[0].at > slowSpeedThresholds.windowMs) {
@@ -267,8 +271,7 @@ export function setStatfsProbeForTest(probe: ((dir: string) => { bavail: number;
 }
 
 /**
- * 下载前磁盘空间预检：分块路径需 ≥2×size（.partN + 拼接用的 .part），
- * 单连接需 ≥size+16MB；不足时抛出不可重试的友好错误。statfs 失败则跳过检查。
+ * 下载前磁盘空间预检：需 ≥size+16MB；不足时直接失败。statfs 失败则跳过检查。
  */
 function assertDiskSpace(dest: string, size: number): void {
   if (size < DISK_CHECK_MIN_BYTES) return
@@ -365,8 +368,7 @@ interface TransferResult {
 }
 /**
  * 单次下载到 .part；支持 HTTP Range 续传，最终校验与原子改名由 downloadFile 负责。
- * allowSizeProbe：大小未知时在首个请求携带 Range: bytes=0- 顺带探测总长，
- * 服务端支持 Range 且总长 ≥8MB 时升级为分块下载（不产生额外请求）。
+ * allowSizeProbe：大小未知时在首个请求携带 Range: bytes=0- 顺带探测总长。
  */
 async function doDownload(
   url: string,
@@ -401,13 +403,16 @@ async function doDownload(
   const armInactivity = (): void => {
     clearInactivity()
     inactivityTimer = setTimeout(
-      () => requestController.abort(new DOMException('网络读取超时', 'TimeoutError')),
-      30_000
+      () => {
+        if (isTaskPaused(extSignal)) armInactivity()
+        else requestController.abort(new DOMException('网络读取超时', 'TimeoutError'))
+      },
+      transferTimeouts.inactivityMs
     )
   }
 
   try {
-    // 并发闸门覆盖连接的实际传输期；分块时每个连接各占一个名额，避免外层占槽导致饿死
+    // 并发闸门覆盖连接的实际传输期，等待名额不计入网络超时。
     const releaseSlot = await downloadLimiter.acquire(extSignal)
     try {
       await waitIfTaskPaused(extSignal)
@@ -450,7 +455,11 @@ async function doDownload(
       }
 
       const ws = fs.createWriteStream(tmp, { flags: append ? 'a' : 'w' })
-      ws.on('error', () => undefined)
+      // Subscribe before a timeout can destroy the stream. Waiting for `finish`
+      // after destruction misses its error/close events and never settles.
+      const written = finished(ws, { cleanup: true })
+      void written.catch(() => undefined)
+      ws.on('error', (error) => requestController.abort(error))
       const reader = res.body.getReader()
       const onAbort = (): void => {
         void reader.cancel(requestController.signal.reason).catch(() => undefined)
@@ -470,6 +479,7 @@ async function doDownload(
             armInactivity()
           }
           const { done, value } = await reader.read()
+          requestController.signal.throwIfAborted()
           if (done) break
           if (value && value.byteLength > 0) {
             clearInactivity()
@@ -477,15 +487,17 @@ async function doDownload(
             await waitIfTaskPaused(extSignal)
             extSignal?.throwIfAborted()
             received += value.byteLength
-            if (!ws.write(value)) await once(ws, 'drain')
+            if (!ws.write(value)) await once(ws, 'drain', { signal: requestController.signal })
             slowWindow.add(value.byteLength)
-            if (slowWindow.shouldAbort()) throw new Error('连接速度过慢，已主动断开')
+            if (slowWindow.shouldAbort()) throw new DOMException('连接速度过慢，已主动断开', 'TimeoutError')
             onProgress?.(received, total)
             armInactivity()
           }
         }
+        clearInactivity()
         ws.end()
-        await once(ws, 'finish')
+        await written
+        requestController.signal.throwIfAborted()
         if (extSignal?.aborted) throw new Error('已取消')
         if (total > 0 && received !== total) {
           throw new DownloadIntegrityError(`响应提前结束：期望 ${total} 字节，实际 ${received} 字节`)
@@ -494,7 +506,7 @@ async function doDownload(
       } catch (e) {
         void reader.cancel().catch(() => undefined)
         ws.destroy()
-        if (!ws.closed) await once(ws, 'close').catch(() => undefined)
+        await written.catch(() => undefined)
         if (extSignal?.aborted) fs.rmSync(tmp, { force: true })
         if (extSignal?.aborted) throw new Error('已取消')
         throw e
@@ -510,7 +522,7 @@ async function doDownload(
   }
 }
 
-/** 按文件大小选择传输策略：已知大小 ≥8MB 直接分块；未知大小时由 doDownload 探测升级。 */
+/** 已知大小用于完整性校验；未知大小时由响应头探测。 */
 async function startTransfer(
   url: string,
   dest: string,
@@ -688,14 +700,12 @@ for (let round = 0; round < 2; round++) {
         transferTries++
         try {
           const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size)
-          // 探测/分块得出的总长只参与本次校验，不写回 expected：避免污染后续候选来源
+          // 远端总长不写回 expected，避免污染后续候选来源。
           const verifyTarget = expected
           const invalid = await verifyFile(transfer.tmp, verifyTarget, extSignal)
           if (invalid) {
             fs.rmSync(transfer.tmp, { force: true })
-            // 分块产物拼接后内容不符：断点不可信（可能含坏块），全部丢弃，
-            // 防止后续候选/重试直接复用坏块导致校验永远失败。
-                        launcherLog(`校验失败 ${baseName}：${invalid}（${candidate}）`)
+            launcherLog(`校验失败 ${baseName}：${invalid}（${candidate}）`)
             failures.push(`${candidate} -> ${invalid}`)
             lastErr = new DownloadIntegrityError(`${invalid}: ${path.basename(dest)}`)
             // 完整响应但内容错误：切换来源，不对同一地址无脑重试。
@@ -725,6 +735,9 @@ for (let round = 0; round < 2; round++) {
           if (kind !== 'transient') break
           // 仅 transient 失败记 host 健康度（404/410 等文件级错误不算源的问题）
           noteHostFailure(candidate)
+          // A stalled source should yield to its fallback immediately, rather
+          // than spending three timeout windows on the same dead connection.
+          if (candidates.length > 1 && e instanceof DOMException && e.name === 'TimeoutError') break
           if (attempt < maxAttempts - 1) {
             launcherLog(`重试 ${baseName}：${message}（第 ${attempt + 1}/${maxAttempts - 1} 次重试）`)
             await abortableDelay(350 * 2 ** attempt, extSignal)

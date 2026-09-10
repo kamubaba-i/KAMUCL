@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import LaunchNotice from './components/LaunchNotice.vue'
+import { useNavigationBubble } from './composables/useNavigationBubble'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { backgroundImageEffect } from '@shared/appearancePolicy'
@@ -183,6 +184,10 @@ const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 const reducedMotion = ref(motionQuery.matches)
 const onMotionChange = () => { reducedMotion.value = motionQuery.matches }
 const routeDuration = computed(() => reducedMotion.value ? 0 : { enter: 180, leave: 80 })
+const { navEl, bubbleStyle, retarget: retargetNav, reset: resetNav, focusOut: navFocusOut, measure: measureNav } = useNavigationBubble(
+  computed(() => store.currentView),
+  computed(() => [resourceExpanded.value, inResourceGroup.value, visibleNavItems.value, visibleResourceSubItems.value])
+)
 
 /** 关闭启动器不影响游戏：游戏在跑时点关闭先提示一次，再真正关闭 */
 let closeHintShown = false
@@ -1241,7 +1246,8 @@ onUnmounted(() => {
       </div>
 
       <!-- 导航 -->
-      <nav class="nav" aria-label="主导航">
+      <nav ref="navEl" class="nav" aria-label="主导航" @pointerover="retargetNav" @pointerleave="resetNav" @focusin="retargetNav" @focusout="navFocusOut" @scroll.passive="measureNav">
+        <div class="nav-bubble" :style="bubbleStyle" aria-hidden="true"></div>
         <template v-for="item in visibleNavItems" :key="item.key">
           <button
             class="nav-item"
@@ -1833,13 +1839,28 @@ onUnmounted(() => {
   z-index: 1;
 }
 .nav-item:hover {
-  background: var(--hover);
+  background: transparent;
   color: var(--text);
 }
 .nav-item.active {
-  background: var(--accent-soft);
+  background: transparent;
   box-shadow: inset 3px 0 0 var(--accent);
   color: color-mix(in srgb, var(--text) 84%, var(--accent));
+}
+.nav-bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 80%, transparent), var(--hover));
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent), 0 3px 12px #00000008;
+  transition: transform 300ms cubic-bezier(.22, 1, .36, 1), width 300ms cubic-bezier(.22, 1, .36, 1), height 300ms cubic-bezier(.22, 1, .36, 1), opacity 120ms ease;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-bubble { transition: none; }
 }
 .nav-icon {
   display: flex;
