@@ -254,7 +254,7 @@ function buildModel(): void {
 
   walkJoints = makeWalkJoints()
   const g = new THREE.Group()
-  g.rotation.order = 'YXZ' // 先 yaw 后 pitch：任意朝向下垂直拖动都「朝自己倾倒」（HMCL 体验）
+  g.rotation.order = 'YXZ'
 
   const head = new THREE.Group()
   head.position.set(0, 24, 0) // 颈部枢轴
@@ -288,8 +288,8 @@ function buildModel(): void {
 
   g.add(head, body, armL, armR, legL, legR)
   attachCapeMesh(g)
-  g.rotation.y = yaw
-  g.rotation.x = pitch
+  // 俯仰只由相机负责；换披风重建模型时不能再把相机角度施加到躯干。
+  g.rotation.set(0, yaw, 0)
   root = g
   joints = { head, armL, armR, legL, legR }
   scene.add(g)
@@ -506,8 +506,7 @@ function onPointerMove(e: PointerEvent) {
   const dy = e.clientY - lastY
   lastX = e.clientX
   lastY = e.clientY
-  // 水平拖 → yaw 无限旋转；垂直拖 → pitch 夹紧。模型 rotation 用 YXZ 欧拉序，
-  // 等价于 HMCL 象限分配公式：任意朝向下垂直拖动都朝观察者方向倾倒。
+  // 水平拖动旋转角色；垂直拖动让相机绕角色中心俯仰，角色保持直立。
   yawTarget += dx * 0.01
   pitchTarget = clamp(pitchTarget + dy * 0.01, -PITCH_MAX, PITCH_MAX)
   requestFrame()
@@ -611,7 +610,7 @@ function applyPose(): void {
   joints.head.rotation.y = 0
   // 躯干零位移：行走弹跳与待机呼吸起伏是「上下抖动」的根源，彻底移除；模型恒定立于原地
   root.position.y = 0
-  root.rotation.y = yaw
+  root.rotation.set(0, yaw, 0)
   // pitch 不再翻倒模型（绕脚部倾倒不符合直觉）；俯仰由相机环绕实现（applyCamera）
 }
 
