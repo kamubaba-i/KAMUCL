@@ -22,7 +22,7 @@ test('chunked download engine removed: single-connection + .part resume is the o
   assert.ok(!dl.includes('buildChunkPlan'), '分块计划必须移除')
   assert.ok(!dl.includes('chunkStallWatchdog'), '分块看门狗必须移除')
   // startTransfer 永远单连接
-  assert.match(dl, /async function startTransfer\([\s\S]*?return doDownload\(url, dest, onProgress, extSignal, expectedSize, expectedSize == null\)/)
+  assert.match(dl, /async function startTransfer\([\s\S]*?return doDownload\(url, dest, onProgress, extSignal, expectedSize, expectedSize == null, preferFaster\)/)
   // 断点续传保留（.part）
   assert.match(dl, /\.part/)
 })
