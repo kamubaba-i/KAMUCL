@@ -14,7 +14,7 @@ import {
   type FrpConfig,
   type FrpState
 } from './frp'
-import { fetchFrpNodes } from './frpNodes'
+import { fetchFrpNodes, createFrpTunnel, getRunnableFrpTunnel, type FrpCreateTunnel } from './frpNodes'
 
 export interface FrpStartPayload {
   accessKey: string
@@ -32,14 +32,14 @@ export const FRP_IPC = {
 } as const
 
 export function registerFrpIpc(ipcMain: IpcMain): void {
+  ipcMain.handle('frp:create-tunnel', (_e, payload: {accessKey: string; tunnel: FrpCreateTunnel}) => createFrpTunnel(String(payload?.accessKey ?? ''), payload?.tunnel))
   ipcMain.handle(FRP_IPC.start, async (_event, payload: FrpStartPayload) => {
     if (!payload || typeof payload !== 'object') throw new Error('参数无效')
     const accessKey = String(payload.accessKey ?? '').trim()
     const tunnelId = String(payload.tunnelId ?? '').trim()
-    const localPort = Number(payload.localPort ?? 0) || 0
     if (!accessKey) throw new Error('请填写访问密钥')
-    if (!tunnelId) throw new Error('请填写隧道 ID')
-    return frpController.start({ accessKey, tunnelId, localPort })
+    const tunnel = await getRunnableFrpTunnel(accessKey, tunnelId)
+    return frpController.start({ accessKey, tunnelId, localPort: tunnel.localPort })
   })
 
   ipcMain.handle(FRP_IPC.stop, async () => {

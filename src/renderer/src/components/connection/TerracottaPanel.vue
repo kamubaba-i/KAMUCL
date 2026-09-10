@@ -5,7 +5,7 @@ import ConnectionStatus from './ConnectionStatus.vue'
 import { toast } from '../../store'
 import { copyText } from '../../api'
 
-interface TcStatus { phase: 'idle' | 'downloading' | 'starting' | 'hosting' | 'joining' | 'ready'; room?: string; url?: string; stateRaw?: string; error?: string; binaryReady: boolean; running: boolean }
+interface TcStatus { phase: 'idle' | 'downloading' | 'starting' | 'hosting' | 'joining' | 'ready'; room?: string; url?: string; stateRaw?: string; error?: string; downloaded?: number; total?: number; binaryReady: boolean; running: boolean }
 
 const status = ref<TcStatus | null>(null)
 const busy = ref(false)
@@ -31,7 +31,7 @@ const steps = computed<Step[]>(() => {
   const phase = s.phase
   const stepState = (active: boolean, done: boolean): 'done' | 'active' | 'pending' => (done ? 'done' : active ? 'active' : 'pending')
   return [
-    { label: '准备官方工具', state: stepState(phase === 'downloading', s.binaryReady || phase !== 'idle'), detail: s.binaryReady ? '已就绪（SHA-256 校验通过）' : '等待下载' },
+    { label: '准备官方工具', state: stepState(phase === 'downloading', s.binaryReady), detail: s.binaryReady ? '已就绪（SHA-256 校验通过）' : '等待下载' },
     { label: '启动陶瓦引擎', state: stepState(phase === 'starting', s.running), detail: s.running ? '运行中' : undefined },
     { label: mode.value === 'join' ? '加入房间' : '创建房间', state: stepState(phase === 'hosting' || phase === 'joining', !!s.room || !!s.url), detail: s.stateRaw ? `引擎状态 ${s.stateRaw}` : undefined },
     { label: mode.value === 'join' ? '连接就绪' : '房间就绪', state: stepState(false, phase === 'ready'), detail: phase === 'ready' ? (mode.value === 'join' ? '本地地址已生成' : '房间码已生成') : undefined }
@@ -64,6 +64,7 @@ async function copyLogs(): Promise<void> {
 let offEvent: (() => void) | undefined
 
 function onEvent(payload: { type: string; data: unknown }): void {
+  if (payload.type === 'status') { status.value = { binaryReady: status.value?.binaryReady ?? false, running: status.value?.running ?? false, ...(payload.data as TcStatus) }; return }
   if (payload.type === 'log') {
     const d = payload.data as { level: string; msg: string }
     if (d?.msg) pushLog(`[${d.level}] ${d.msg}`)
@@ -80,7 +81,15 @@ async function refresh(): Promise<void> {
   try { status.value = await window.kamucl.invoke('tc:status') } catch { /* 窗口关闭 */ }
 }
 
+async function install(): Promise<void> {
+  busy.value = true; error.value = ''
+  try { await window.kamucl.invoke('tc:install'); toast('陶瓦工具已下载并通过校验', 'success') }
+  catch (e) { error.value = (e as Error).message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') }
+  finally { busy.value = false; await refresh() }
+}
+async function cancelInstall() { await window.kamucl.invoke('tc:cancel-install') }
 async function start(): Promise<void> {
+  if (!status.value?.binaryReady) return
   busy.value = true; error.value = ''
   try {
     const result = await window.kamucl.invoke<TcStatus>('tc:start', { mode: mode.value, code: roomCode.value.trim().toUpperCase(), playerName: playerName.value || undefined })
@@ -159,9 +168,19 @@ onUnmounted(() => { offEvent?.() })
         </li>
       </ol>
 
+      <div v-if="busyPhase && status?.phase !== 'downloading'" class="connection-actions"><button class="btn btn-ghost" @click="stop">取消连接</button></div>
       <p v-if="error" class="connection-error" role="alert">{{ error }}</p>
     </ConnectionPanel>
 
+    <ConnectionPanel title="陶瓦工具" subtitle="仅在你点击下载后获取官方工具，完成校验后即可创建或加入房间。">
+      <p class="connection-muted">Terracotta 0.4.2 · {{ status?.binaryReady ? '已安装并通过校验' : '尚未安装或需要修复' }}</p>
+      <template v-if="status?.phase === 'downloading'">
+        <progress class="tc-progress" :value="status.downloaded || 0" :max="status.total || undefined"></progress>
+        <p class="connection-muted">{{ ((status.downloaded || 0) / 1048576).toFixed(1) }} MB{{ status.total ? ' / ' + (status.total / 1048576).toFixed(1) + ' MB' : '' }} · 下载后校验并解压</p>
+        <button class="btn btn-ghost" @click="cancelInstall">取消下载</button>
+      </template>
+      <button v-else-if="!status?.binaryReady" class="btn btn-gold" :disabled="busy" @click="install">下载陶瓦工具</button>
+    </ConnectionPanel>
     <!-- 主操作区：创建房间 / 加入房间 两栏并排（窄窗口自动换行） -->
     <ConnectionPanel title="开始联机" subtitle="创建或加入，两步各自独立、互不打扰">
       <div class="connection-columns">
@@ -170,7 +189,7 @@ onUnmounted(() => { offEvent?.() })
           <p class="connection-muted">先启动游戏并对局域网开放世界；陶瓦会自动完成其余工作，房间码会出现在上方「连接状态」。</p>
           <label class="connection-field">游戏内名字<input v-model="playerName" class="input" maxlength="16" placeholder="可选，默认 KAMUCL" /></label>
           <div class="connection-actions">
-            <button class="btn btn-gold main-btn" :disabled="busy || status?.running" @click="mode = 'host'; start()">{{ busy && mode === 'host' ? '处理中…' : '创建陶瓦房间' }}</button>
+            <button class="btn btn-gold main-btn" :disabled="busy || status?.running || !status?.binaryReady" @click="mode = 'host'; start()">{{ busy && mode === 'host' ? '处理中…' : '创建陶瓦房间' }}</button>
           </div>
         </div>
         <div class="op-card">
@@ -178,7 +197,7 @@ onUnmounted(() => { offEvent?.() })
           <label class="connection-field">房间码<input v-model="roomCode" class="input room-input" placeholder="U/XXXX-XXXX-XXXX-XXXX" :disabled="busy" @keydown.enter="joinNow" /></label>
           <p v-if="roomCode.trim() && !joinCodeValid" class="connection-muted">格式：U/ 开头 + 四段各 4 位（例如 U/AB12-CD34-EF56-GH78）。</p>
           <div class="connection-actions">
-            <button class="btn btn-gold main-btn" :disabled="busy || !joinCodeValid" @click="joinNow">{{ busy && mode === 'join' ? '连接中…' : '加入房间' }}</button>
+            <button class="btn btn-gold main-btn" :disabled="busy || !joinCodeValid || !status?.binaryReady" @click="joinNow">{{ busy && mode === 'join' ? '连接中…' : '加入房间' }}</button>
           </div>
           <p class="connection-muted">加入成功（引擎给出本地地址）后，地址会显示在上方「连接状态」。</p>
         </div>
@@ -190,7 +209,7 @@ onUnmounted(() => { offEvent?.() })
       <summary>关于陶瓦联机</summary>
       <div class="connection-detail-content">
         <p>陶瓦联机（Terracotta）是 burningtnt（GitHub burningtnt/Terracotta）维护的独立开源联机项目，基于 EasyTier、AGPL-3.0 协议。</p>
-        <p>首次使用会自动下载官方 0.4.2 二进制并做 SHA-256 校验；极端 NAT 环境下成功率较高。</p>
+        <p>点击「下载陶瓦工具」获取官方 0.4.2 二进制，分别校验压缩包与 EXE 的 SHA-256；极端 NAT 环境下成功率较高。</p>
         <p>房间码为官方四段格式 U/XXXX-XXXX-XXXX-XXXX，与陶瓦官方工具互通。</p>
       </div>
     </details>
@@ -207,6 +226,7 @@ onUnmounted(() => { offEvent?.() })
   </div>
 </template>
 <style scoped>
+.tc-progress { width:100%; accent-color:var(--accent); height:8px; margin:12px 0 }
 .tc-page { display: flex; flex-direction: column; gap: var(--sec-gap); min-width: 0; }
 .tc-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
 .tc-metrics > div { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-height: var(--row-h); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--card-2); }

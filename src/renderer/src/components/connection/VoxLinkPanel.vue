@@ -8,15 +8,17 @@ import { copyText } from '../../api'
 
 interface LobbyRoom { code: string; name: string; currentPlayers?: number; maxPlayers?: number; hasPassword?: boolean; category?: string; gameVersion?: string; loader?: string; clientTag?: string; natType?: string }
 interface RoomInfo { code: string; name: string; currentPlayers: number; maxPlayers: number; isHost: boolean; gameVersion?: string; loader?: string }
-interface Snapshot { state: string; room: RoomInfo | null; session: { state: string; code: string; isHost: boolean; room: RoomInfo | null }; settings: { allowRelay: boolean; theme: string } }
+interface Snapshot { pending?:boolean; joinedAt?:number; connection?:ConnStateEvent|null; stages?:Record<string,StageEvent>; state: string; room: RoomInfo | null; session: { state: string; code: string; isHost: boolean; room: RoomInfo | null }; settings: { allowRelay: boolean; theme: string } }
 /** 引擎 stage 事件（voxlink/engine.ts emitStage）：阶段条唯一数据源，禁止前端自演进度 */
-interface StageEvent { key: 'stun' | 'punch' | 'relay' | 'host_stun' | 'host_punch'; status: 'active' | 'retry' | 'ok' | 'degraded' | 'fail'; detail: string; ts: number }
+interface StageEvent { key: 'stun' | 'punch' | 'relay' | 'host_stun' | 'host_punch' | 'turn'; status: 'active' | 'retry' | 'ok' | 'degraded' | 'fail'; detail: string; ts: number }
 /** 引擎 conn:state 事件：phase = p2p | direct | prelay */
 interface ConnStateEvent { phase?: string; status?: string; address?: string; detail?: string }
 
 const state = ref<Snapshot | null>(null)
 const busy = ref(false)
 const error = ref('')
+const leaving = ref(false), turnBusy = ref(false)
+let uiOperation=0
 const logs = ref<Array<{ ts: string; text: string }>>([])
 
 // 主操作区页内 Tab：创建房间 / 加入房间 / 公共大厅 分开，避免同屏拥挤
@@ -74,7 +76,7 @@ const relayStage = computed(() => stageMap.value.relay)
 const punching = computed(() => joined.value && !connected.value && !!punchStage.value && (punchStage.value.status === 'active' || punchStage.value.status === 'retry'))
 const punchElapsed = computed(() => punchStartTs.value > 0 ? Math.max(0, Math.floor((nowTick.value - punchStartTs.value) / 1000)) : 0)
 /** 打洞持续约 20 秒未成功 → 出现「尝试直连」「使用玩家中继」（时刻取自真实引擎事件） */
-const fallbackVisible = computed(() => punching.value && punchStartTs.value > 0 && nowTick.value - punchStartTs.value >= 20_000)
+const fallbackVisible = computed(() => joined.value && !isHost.value && !connected.value && punchStartTs.value > 0 && nowTick.value - punchStartTs.value >= 20_000)
 
 /** 状态区徽标：由会话与隧道真实状态推导（文案不含「已连接」，判定以 mcAddress 为准） */
 const overallTone = computed<'neutral' | 'success' | 'danger' | 'pending'>(() => {
@@ -114,7 +116,7 @@ const steps = computed<Step[]>(() => {
   list.push({
     key: isHost.value ? 'host_punch' : 'punch',
     label: isHost.value ? '等待房客打洞' : 'UDP 打洞',
-    state: stepState(punchStage.value, connected.value),
+    state: stepState(punchStage.value, connected.value && mcPhase.value === 'p2p'),
     detail: punching.value ? `已进行 ${punchElapsed.value} 秒` : punchStage.value?.detail,
     seconds: stageSeconds.value[isHost.value ? 'host_punch' : 'punch']
   })
@@ -127,6 +129,7 @@ const steps = computed<Step[]>(() => {
       seconds: stageSeconds.value.relay
     })
   }
+  if (stageMap.value.turn) list.push({key:'turn',label:'TURN 中继',state:stepState(stageMap.value.turn,connected.value && mcPhase.value==='turn'),detail:stageMap.value.turn.detail})
   list.push({
     key: 'tunnel',
     label: isHost.value ? '房客隧道建立' : '数据隧道建立',
@@ -217,8 +220,7 @@ function onConnState(d: ConnStateEvent): void {
 
 function onEvent(payload: { type: string; data: unknown }): void {
   if (payload.type === 'state') {
-    state.value = payload.data as Snapshot
-    if (sessionState.value === 'idle') resetConn()
+    applySnapshot(payload.data as Snapshot)
     return
   }
   if (payload.type === 'log') {
@@ -245,10 +247,12 @@ async function startHost(): Promise<void> {
     return
   }
   busy.value = true
+  const operation=++uiOperation
   try {
     const r = await window.kamucl.invoke('voxlink:start', { mode: 'host', roomName: name, isPublic: isPublic.value }) as { ok: boolean }
     if (r?.ok) await status()
   } catch (e) {
+    if(operation!==uiOperation)return
     if (isVoxlinkContentBlocked(e)) {
       roomNameError.value = VOXLINK_ROOM_BLOCKED_MESSAGE
       error.value = roomNameError.value
@@ -256,28 +260,43 @@ async function startHost(): Promise<void> {
       error.value = (e as Error).message?.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') ?? '创建房间失败'
     }
   } finally {
-    busy.value = false
+    if(operation===uiOperation)busy.value = false
     if (roomNameError.value) { await nextTick(); roomNameInput.value?.focus() }
   }
 }
 async function startJoin(code: string): Promise<void> {
   const c = code.trim().toUpperCase()
   if (!/^[A-HJ-NP-Z2-9]{6}$/.test(c)) { error.value = 'VoxLink 房间码为 6 位字符（不含 I、L、O、0、1）'; return }
+  if(busy.value)return
+  const operation=++uiOperation
   busy.value = true; error.value = ''; resetConn()
   const r = await call<{ ok: boolean }>('voxlink:start', { mode: 'join', code: c })
+  if(operation!==uiOperation)return
   if (r?.ok) await status()
   busy.value = false
 }
 async function stop(): Promise<void> {
-  busy.value = true
-  await call('voxlink:stop')
-  resetConn()
-  await status()
-  busy.value = false
+  if(leaving.value)return
+  ++uiOperation;leaving.value=true
+  try {await call('voxlink:stop');resetConn();await status()}
+  finally {leaving.value=false;busy.value=false;turnBusy.value=false}
+}
+async function useTurn() {
+  if(turnBusy.value)return
+  turnBusy.value=true;error.value=''
+  try{await call('voxlink:useTurnRelay')}
+  finally{turnBusy.value=false}
+}
+function applySnapshot(s:Snapshot) {
+  state.value=s
+  if(s.state==='idle'||s.state==='closed'){resetConn();return}
+  if(s.joinedAt)punchStartTs.value=s.joinedAt
+  if(s.stages)stageMap.value=s.stages
+  if(s.connection)onConnState(s.connection)
 }
 async function status(): Promise<void> {
   const s = await call<Snapshot>('voxlink:status')
-  if (s) state.value = s
+  if (s) applySnapshot(s)
 }
 async function loadLobby(): Promise<void> {
   loadingLobby.value = true
@@ -340,6 +359,11 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
       </ol>
       <p v-else class="connection-muted">当前没有进行中的连接。在下方选择「创建房间」「加入房间」或去「公共大厅」，这里会逐步展示 NAT 探测 → UDP 打洞 → 隧道建立的真实进度。</p>
 
+      <div v-if="joined || busy || state?.pending" class="connection-actions session-actions">
+        <button class="btn btn-ghost" :disabled="leaving" @click="stop">{{ leaving ? '正在退出…' : joined ? (isHost ? '关闭房间' : '退出房间') : '取消连接' }}</button>
+        <button v-if="fallbackVisible" class="btn btn-gold" :disabled="turnBusy || stageMap.turn?.status === 'active'" @click="useTurn">{{ turnBusy || stageMap.turn?.status === 'active' ? 'TURN 连接中…' : stageMap.turn?.status === 'fail' ? '重试 TURN 中继' : '使用 TURN 中继' }}</button>
+      </div>
+      <p v-if="fallbackVisible" class="connection-muted">连接已尝试 {{ punchElapsed }} 秒。可使用 TURN 中继；开启中继后，持续重试会自动尝试可用节点。</p>
       <p v-if="sessionClosed" class="connection-error" role="alert">会话已结束（房间可能过期或网络中断）。房间码 300 秒无心跳即失效，请双方同时在线后重新加入。</p>
       <p v-if="error" class="connection-error" role="alert">{{ error }}</p>
     </ConnectionPanel>
@@ -366,7 +390,6 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
         <template v-else>
           <div class="connection-result" aria-live="polite">
             <p>房间进行中，实时进度见上方「连接状态」。</p>
-            <div class="connection-actions"><button class="btn btn-ghost" :disabled="busy" @click="stop">关闭房间</button></div>
           </div>
         </template>
       </div>
@@ -377,7 +400,7 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
           <label class="connection-field">房间码<input v-model="joinCode" class="input room-input" maxlength="7" placeholder="例如 ABC123" :disabled="busy" @keydown.enter="startJoin(joinCode)" /></label>
           <div class="connection-actions"><button class="btn btn-gold" :disabled="busy || joinCode.trim().length < 6" @click="startJoin(joinCode)">{{ busy ? '连接中…' : '加入房间' }}</button></div>
           <p class="connection-muted">主路径是 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器。输入房间码后会自动开始打洞，全程进度见上方「连接状态」。</p>
-          <p class="connection-muted">双对称 NAT、校园网、手机热点下成功率较低；打洞约 20 秒未成功会出现「尝试直连」「使用玩家中继」手动后备，也可让双方重启游戏刷新 NAT 后再试。</p>
+          <p class="connection-muted">双对称 NAT、校园网、手机热点下成功率较低；连接约 20 秒未成功会在上方出现「使用 TURN 中继」，也可尝试直连或玩家中继，也可让双方重启游戏刷新 NAT 后再试。</p>
         </template>
         <template v-else-if="connected">
           <!-- 只有隧道真正建立、本地地址可用后才算「已连接」 -->
@@ -390,27 +413,24 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
               <li>粘贴上方地址</li>
               <li>点击「加入服务器」</li>
             </ol>
-            <p class="connection-muted">连接方式 <code>{{ mcPhase === 'prelay' ? '玩家中继' : mcPhase === 'direct' ? '直连' : 'P2P 打洞' }}</code>；地址{{ mcPhase === 'direct' ? '为房主公网地址' : '为本机隧道入口（127.0.0.1）' }}。</p>
-            <div class="connection-actions"><button class="btn btn-ghost" :disabled="busy" @click="stop">离开房间</button></div>
+            <p class="connection-muted">连接方式 <code>{{ mcPhase === 'turn' ? 'TURN 中继' : mcPhase === 'prelay' ? '玩家中继' : mcPhase === 'direct' ? '直连' : 'P2P 打洞' }}</code>；地址{{ mcPhase === 'direct' ? '为房主公网地址' : '为本机隧道入口（127.0.0.1）' }}。</p>
           </div>
         </template>
         <template v-else-if="!isHost">
           <!-- 打洞进行中：绝不显示「已连接」 -->
           <div class="connection-result" aria-live="polite">
             <ConnectionStatus tone="pending" label="房间已加入，正在建立 P2P 连接…" />
-            <p v-if="conn?.phase" class="connection-muted">当前阶段：{{ conn.phase === 'prelay' ? '玩家中继' : conn.phase === 'direct' ? '直连探测' : 'P2P 打洞' }}{{ punching ? ` · 已进行 ${punchElapsed} 秒` : '' }}</p>
+            <p v-if="conn?.phase" class="connection-muted">当前阶段：{{ conn.phase === 'turn' ? 'TURN 中继' : conn.phase === 'prelay' ? '玩家中继' : conn.phase === 'direct' ? '直连探测' : 'P2P 打洞' }}{{ punching ? ` · 已进行 ${punchElapsed} 秒` : '' }}</p>
             <p v-if="fallbackVisible" class="connection-muted">打洞已持续约 {{ punchElapsed }} 秒仍未命中。双对称 NAT / 校园网 / 手机热点成功率较低，可尝试手动后备，或让双方重启游戏刷新 NAT。</p>
             <div v-if="fallbackVisible" class="connection-actions">
               <button class="btn" :disabled="directTried" @click="tryDirect">{{ directTried ? '直连探测中/已探测' : '尝试直连' }}</button>
-              <button class="btn" :disabled="relayTried" @click="useRelay">{{ relayTried ? '中继请求中/已请求' : '使用玩家中继' }}</button>
+              <button class="btn" :disabled="relayTried || turnBusy || stageMap.turn?.status === 'active'" @click="useRelay">{{ relayTried ? '中继请求中/已请求' : '使用玩家中继' }}</button>
             </div>
-            <div class="connection-actions"><button class="btn btn-ghost" :disabled="busy" @click="stop">离开房间</button></div>
           </div>
         </template>
         <template v-else>
           <div class="connection-result" aria-live="polite">
             <p>你是房主，等待房客加入即可；进度见上方「连接状态」。</p>
-            <div class="connection-actions"><button class="btn btn-ghost" :disabled="busy" @click="stop">关闭房间</button></div>
           </div>
         </template>
       </div>
@@ -442,7 +462,7 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
     <details class="connection-details reference-details">
       <summary>联机说明与中继设置</summary>
       <div class="connection-detail-content">
-        <label class="connection-toggle"><span>允许为他人提供中继<small>关闭后不再为别人中继，但自己也无法使用玩家中继</small></span><input type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="!!state && sessionState !== 'idle'" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
+        <label class="connection-toggle"><span>允许中继与自动后备连接<small>允许玩家中继；加入 60 秒仍未连通时自动尝试 TURN。20 秒后也可手动选择 TURN</small></span><input type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="!!state && sessionState !== 'idle'" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
         <p>主路径是 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器；打洞约 20 秒未成功时，可手动选择「尝试直连」或「使用玩家中继」两种后备路径，两者都由引擎真实事件驱动。</p>
         <p>打通后需要在游戏「多人游戏 → 直接连接」中手动填入本地地址完成加入——启动器不会替你点最后一下。</p>
       </div>

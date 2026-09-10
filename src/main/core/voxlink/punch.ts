@@ -1,3 +1,4 @@
+import { signPunchFrame, verifyPunchFrame } from './punchAuth'
 /**
  * voxlink/punch.ts — UDP 打洞控制包（移植自 voxlink/app-desktop/punch.go）
  *
@@ -108,6 +109,7 @@ export function predictedPortsAround(base: number, delta: number): number[] {
 export interface PuncherOptions {
   conn: dgram.Socket
   timeoutMs?: number
+  authKey?: Buffer | null
 }
 
 /** 单 socket 打洞器。 */
@@ -115,6 +117,7 @@ export class Puncher {
   readonly conn: dgram.Socket
   readonly nonce: number
   timeoutMs: number
+  private authKey?: Buffer | null
 
   private target: { address: string; port: number } | null = null
   private predicted: { address: string; port: number }[] = []
@@ -131,6 +134,7 @@ export class Puncher {
   private onMsg: ((buf: Buffer, rinfo: dgram.RemoteInfo) => void) | null = null
 
   constructor(opts: PuncherOptions) {
+    this.authKey = opts.authKey
     this.conn = opts.conn
     this.nonce = punchRandomNonce()
     this.timeoutMs = opts.timeoutMs ?? PUNCH_TOTAL_TIMEOUT_MS
@@ -168,12 +172,14 @@ export class Puncher {
     if (this.stopFlag || this.onMsg) return
     const onMsg = (buf: Buffer, rinfo: dgram.RemoteInfo): void => {
       if (this.stopFlag) return
-      const ctrl = punchParseControl(buf)
+      const verified = verifyPunchFrame(buf, this.authKey)
+      if (!verified) return
+      const ctrl = punchParseControl(verified)
       if (!ctrl) return
       const from = { address: rinfo.address, port: rinfo.port }
       if (!this.target || !punchAcceptSource(this.target, from)) return
       // ACK不能再触发ACK，避免两端响应互相激发热循环。
-      if (ctrl.type === PUNCH_TYPE_PUNCH) void udpSendTo(this.conn, punchAckFor(buf), from)
+      if (ctrl.type === PUNCH_TYPE_PUNCH) void udpSendTo(this.conn, signPunchFrame(punchAckFor(buf), this.authKey), from)
       if (!this.peerFired && this.onPeer) {
         this.peerFired = true
         try { this.onPeer(from) } catch { /* ignore */ }
@@ -194,7 +200,7 @@ export class Puncher {
     poll()
 
     // 主动发送循环
-    const pkt = punchBuildControl(PUNCH_TYPE_PUNCH, this.nonce)
+    const pkt = signPunchFrame(punchBuildControl(PUNCH_TYPE_PUNCH, this.nonce), this.authKey)
     const blast = (): void => {
       if (this.stopFlag || this.won) return
       const t = this.target

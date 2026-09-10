@@ -1,3 +1,4 @@
+import { signPunchFrame, verifyPunchFrame } from './punchAuth'
 /**
  * voxlink/rudp.ts — 可靠 UDP 隧道（移植自 voxlink/app-desktop/rudp.go，对齐
  * ReliableUdpTransport.java 的字节格式）
@@ -176,6 +177,8 @@ export type RudpCloseReason = string
 /**
  * 一条可靠 UDP 会话，行为对齐 Go 端 rudpConn：实现字节流读/写、可被 TCP 桥搬运。
  */
+export interface RudpCodec { encode(frame: Buffer): Buffer; decode(packet: Buffer): Buffer | null }
+export interface RudpOptions { codec?: RudpCodec; authKey?: Buffer | null; ownsSocket?: boolean }
 export class RudpConn extends EventEmitter {
   readonly conn: dgram.Socket
   private remote: RudpTarget | null
@@ -206,7 +209,7 @@ export class RudpConn extends EventEmitter {
   private fecMinGroup = 0
   private fecHasMin = false
   private chunks: Buffer[] = []
-  private dataNotify: NodeJS.Timeout | null = null
+  private dataWaiters = new Set<()=>void>()
 
   private lastRecv = Date.now()
   private closed = false
@@ -221,7 +224,7 @@ export class RudpConn extends EventEmitter {
   private recvHandler?: (msg: Buffer, rinfo: dgram.RemoteInfo) => void
   private errHandler?: (err: Error) => void
 
-  constructor(conn: dgram.Socket, remote: RudpTarget | null) {
+  constructor(conn: dgram.Socket, remote: RudpTarget | null, private options: RudpOptions = {}) {
     super()
     this.conn = conn
     this.remote = remote
@@ -249,8 +252,12 @@ export class RudpConn extends EventEmitter {
 
   private startRecv(): void {
     this.recvHandler = (msg, rinfo): void => {
-      this.maybeRebindRemote({ address: rinfo.address, port: rinfo.port })
-      const frame = rudpDecode(msg)
+      if (this.options.codec && (rinfo.address !== this.remote?.address || rinfo.port !== this.remote?.port)) return
+      const decoded = this.options.codec ? this.options.codec.decode(msg) : msg
+      const verified = decoded && verifyPunchFrame(decoded, this.options.authKey)
+      if (!verified) return
+      const frame = rudpDecode(verified)
+      if (frame && !this.options.codec) this.maybeRebindRemote({ address: rinfo.address, port: rinfo.port })
       if (frame) this.processFrame(frame)
     }
     this.errHandler = (): void => { /* ignore */ }
@@ -303,7 +310,7 @@ export class RudpConn extends EventEmitter {
       case RUDP_TYPE_KEEPALIVE:
         this.markRecv()
         this.resetFailures()
-        this.sendFrame({ type: RUDP_TYPE_KEEPALIVE, seq: 0, ack: this.nextExpected, payload: Buffer.alloc(0), fecCount: 0, fecLengths: [] })
+        this.sendFrame({ type: RUDP_TYPE_ACK, seq: 0, ack: this.nextExpected, payload: Buffer.alloc(0), fecCount: 0, fecLengths: [] })
         break
       case RUDP_TYPE_FEC_XOR:
         this.markRecv()
@@ -451,7 +458,7 @@ export class RudpConn extends EventEmitter {
       this.dupAckCount += 1
       if (this.dupAckCount >= 3 && this.pending.size > 0) {
         const pp = this.pending.get(this.oldestUnacked)
-        if (pp) {
+        if (pp && Date.now()-pp.sendTime >= RUDP_RTO_MIN_MS) {
           pp.sendTime = Date.now()
           pp.retries += 1
           this.sendDataPacket(this.oldestUnacked, pp.data, false)
@@ -537,25 +544,18 @@ export class RudpConn extends EventEmitter {
     if (this.closed) return
     const addr = this.remote
     if (!addr) return
-    const buf = rudpEncode(f)
+    const raw = signPunchFrame(rudpEncode(f), this.options.authKey)
+    const buf = this.options.codec ? this.options.codec.encode(raw) : raw
     this.conn.send(buf, 0, buf.length, addr.port, addr.address, () => { /* ignore */ })
   }
 
   private notifyData(): void {
-    if (this.dataNotify) {
-      clearTimeout(this.dataNotify)
-      this.dataNotify = null
-    }
-    this.dataNotify = setTimeout(() => {
-      this.dataNotify = null
-    }, 0)
+    for(const wake of this.dataWaiters)wake()
+    this.dataWaiters.clear()
   }
 
   private notifyAck(): void {
-    if (this.ackNotify) return
-    this.ackNotify = setTimeout(() => {
-      this.ackNotify = null
-    }, 0)
+    this.emit('ack-ready')
   }
 
   /** 写一个分片：窗口控制 → 登记 pending → 发 DATA → FEC 组管理。 */
@@ -565,18 +565,14 @@ export class RudpConn extends EventEmitter {
     while (seqDiff(this.nextSeq, this.oldestUnacked) >= this.window) {
       if (this.closed) throw new Error('rudp: 连接已关闭')
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1000)
-        const finish = (): void => {
+        const timer = setTimeout(finish, 1000)
+        function finish(): void {
           clearTimeout(timer)
+          cleanup()
           resolve()
         }
-        if (this.ackNotify) {
-          clearTimeout(this.ackNotify)
-          this.ackNotify = null
-          finish()
-        } else {
-          setTimeout(finish, 1000)
-        }
+        const cleanup=()=>this.off('ack-ready',finish)
+        this.once('ack-ready',finish)
       })
       if (this.closed) throw new Error('rudp: 连接已关闭')
       const now = Date.now()
@@ -588,7 +584,7 @@ export class RudpConn extends EventEmitter {
         throw new Error('rudp: 传输停滞（对端无响应）')
       }
     }
-
+    if(this.closed)throw new Error('rudp: 连接已关闭')
     const seq = this.nextSeq
     this.nextSeq = (this.nextSeq + 1) >>> 0
     const data = Buffer.from(chunk)
@@ -690,18 +686,7 @@ export class RudpConn extends EventEmitter {
       }
       if (this.closed) return 0
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 500)
-        const finish = (): void => {
-          clearTimeout(timer)
-          resolve()
-        }
-        if (this.dataNotify) {
-          clearTimeout(this.dataNotify)
-          this.dataNotify = null
-          finish()
-        } else {
-          setTimeout(finish, 500)
-        }
+        this.dataWaiters.add(resolve)
       })
     }
   }
@@ -719,16 +704,18 @@ export class RudpConn extends EventEmitter {
     if (this.closed) return
     this.closed = true
     if (this.remote) {
-      const buf = rudpEncode({ type: RUDP_TYPE_DISCONNECT, seq: 0, ack: 0, payload: Buffer.alloc(0), fecCount: 0, fecLengths: [] })
+      const raw = signPunchFrame(rudpEncode({ type: RUDP_TYPE_DISCONNECT, seq: 0, ack: 0, payload: Buffer.alloc(0), fecCount: 0, fecLengths: [] }), this.options.authKey)
+      const buf = this.options.codec ? this.options.codec.encode(raw) : raw
       try {
         this.conn.send(buf, 0, buf.length, this.remote.port, this.remote.address, () => { /* ignore */ })
       } catch { /* ignore */ }
     }
     if (this.recvHandler) this.conn.removeListener('message', this.recvHandler)
     if (this.errHandler) this.conn.removeListener('error', this.errHandler)
-    try { this.conn.close() } catch { /* ignore */ }
+    try { if (this.options.ownsSocket !== false) this.conn.close() } catch { /* ignore */ }
     this.notifyData()
     this.notifyAck()
+    this.emit('closed')
     if (this.onClosed && !this.doneCh) {
       this.doneCh = true
       const msg = this.closeMsg ?? 'closed'
@@ -749,7 +736,7 @@ function computeXorPayload(payloads: Buffer[]): Buffer {
 /** seq 运算：seqAfter / seqDiff（模 2^32）。 */
 export function seqAfter(a: number, b: number): boolean {
   const diff = (a - b) >>> 0
-  return diff < 0x3fffffff
+  return diff > 0 && diff < 0x80000000
 }
 
 export function seqDiff(newer: number, older: number): number {

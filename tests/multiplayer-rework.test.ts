@@ -51,7 +51,7 @@ test('联机多页结构：landing=方式选择，每种方式独立页并保留
 test('FRP 页重排：一键开始 + 状态区/主操作区/参考折叠/日志窄区 + 宽松节点行', () => {
   const panel = read('src/renderer/src/components/connection/FrpPanel.vue')
   // 主流程：一键开始（上次配置预填） + 刷新状态
-  for (const text of ['启动 frpc', '刷新状态', 'userData/frp-config.json', 'frp:status', 'frp:start']) {
+  for (const text of ['启动选中隧道', '刷新状态', 'frp:status', 'frp:start', 'frp:create-tunnel']) {
     assert.ok(panel.includes(text), `FrpPanel 缺少：${text}`)
   }
   // 节点参考与运行日志默认折叠（details 不带 open 属性）
@@ -70,9 +70,9 @@ test('FRP 页重排：一键开始 + 状态区/主操作区/参考折叠/日志�
   const listAt = panel.indexOf('class="node-list"')
   assert.ok(tunnelsAt > -1 && listAt > tunnelsAt, '我的隧道小卡应在节点列表上方')
   // 高级选项（本地端口自动识别）折叠；远程地址+复制在状态卡
-  assert.ok(panel.includes('高级选项 · 本地端口'), '本地端口应放高级折叠区')
+  assert.ok(panel.includes('localPort'), '创建隧道需要实际本地端口')
   assert.ok(panel.includes('复制地址'), '远程地址应可复制')
-  for (const text of ['只看免费节点', "'免费'", "'专业版'", '节点由 natfrp 后台创建隧道时选择', '负载', '直接连接']) {
+  for (const text of ['只看免费节点', "'免费'", "'专业版'", '负载', '直接连接']) {
     assert.ok(panel.includes(text), `FrpPanel 缺少：${text}`)
   }
 })

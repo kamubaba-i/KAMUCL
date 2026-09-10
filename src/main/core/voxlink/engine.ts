@@ -1,3 +1,5 @@
+import { TurnRelay } from './turnRelay'
+import { derivePunchKey } from './punchAuth'
 /**
  * voxlink/engine.ts — 连接引擎编排：信令分发、UDP 打洞 → rudp 隧道 → 本地端口映射桥、
  * 直连探测与 MC 端口探测。玩家中继见 relay.ts。
@@ -56,7 +58,7 @@ const ENGINE_SIGNALS = new Set([
   'relay_accept',
   'relay_declined',
   'relay_setup',
-  'relay_ready'
+  'relay_ready', 'turn_alloc', 'turn_ready'
 ])
 
 // ---- 信令消息类型 ----
@@ -68,6 +70,7 @@ export interface ConnState {
 }
 
 export interface RoomInfo {
+  hostCapabilities?: string[]
   code: string
   name: string
   hostIp: string
@@ -142,6 +145,8 @@ export interface JoinRoomResult {
 // ---- 引擎 ----
 
 interface HostPeer {
+  authKey?: Buffer | null
+  socket?: dgram.Socket
   lastPunchInfoAt?: number
   id: string
   puncher: Puncher | null
@@ -158,6 +163,7 @@ export type NetLogFn = (level: LogLevel, msg: string) => void
 
 /** 创建 connEngine 的对外回调接口（解耦 settings/io 路径）。 */
 export interface EngineDeps {
+  allowRelay?: () => boolean
   api: ApiClient
   baseURL: () => string
   emit: EmitFn
@@ -166,6 +172,24 @@ export interface EngineDeps {
 
 export class ConnEngine extends EventEmitter {
   readonly deps: EngineDeps
+  readonly turn: TurnRelay
+  joinedAt = 0
+  lastConnection: ConnState | null = null
+  stages: Record<string, unknown> = {}
+  private autoTurnTimer?: NodeJS.Timeout
+  private lastAutoTurn = 0
+  private guestAuthKey(): Buffer | null { return this.room?.hostCapabilities?.includes('punchAuthV1') ? derivePunchKey(this.code,this.clientID) : null }
+  private suspendGuestPunch(): void { this.gCycle++;this.gActive=false;this.gPuncher?.stop();this.gPuncher=null;if(this.gPunchSock)try{this.gPunchSock.close()}catch{};this.gPunchSock=null }
+  useTurnRelay(): Promise<void> { if(this.rInFlight)throw new Error('玩家中继请求正在进行，请稍后重试');return this.turn.startGuest() }
+  beginFallbackTimer() {
+    if(this.autoTurnTimer)clearInterval(this.autoTurnTimer)
+    this.joinedAt=Date.now();this.lastAutoTurn=0;this.lastConnection=null;this.stages={}
+    if(!this.isHost)this.autoTurnTimer=setInterval(()=>{
+      if(this.session && !this.session.isDone() && !this.gP2PDone && !this.rDone && !this.rInFlight && !this.turn.busy() && this.deps.allowRelay?.()!==false && Date.now()-this.joinedAt>=60_000 && Date.now()-this.lastAutoTurn>=60_000) {
+        this.lastAutoTurn=Date.now();void this.useTurnRelay().catch(e=>this.deps.netLog('warn',(e as Error).message))
+      }
+    },1000)
+  }
   state: 'idle' | 'hosting' | 'in_room' | 'closed' = 'idle'
   code = ''
   token = ''
@@ -211,6 +235,14 @@ export class ConnEngine extends EventEmitter {
   constructor(deps: EngineDeps) {
     super()
     this.deps = deps
+    this.turn = new TurnRelay({
+      api:deps.api,baseURL:()=>this.baseURL(),room:()=>this.session && !this.session.isDone() && this.code ? {code:this.code,token:this.token,clientId:this.clientID,isHost:this.isHost,hostPort:this.hostPort,hostAuth:!!this.room?.hostCapabilities?.includes('punchAuthV1')} : null,
+      directConnected:peer=>peer ? !!this.hPeers.get(peer)?.rudp : this.gP2PDone || this.rDone,
+      signal:(type,data,to)=>this.sendSignal(type,data,to), log:deps.netLog,
+      stage:(status,detail)=>this.emitStage('turn',status,detail),
+      state:(status,address,detail)=>{if(status==='failed' && this.lastConnection?.phase==='turn')this.gP2PDone=false;this.emitConnState('turn',status,address,detail)},
+      connected:(peer,_address)=>{if(this.isHost){const p=this.hPeers.get(peer);p?.puncher?.stop();if(p?.socket)try{p.socket.close()}catch{};this.hPeers.delete(peer)}else{this.suspendGuestPunch();this.gP2PDone=true}}
+    })
   }
 
   // ---- 状态 ----
@@ -253,6 +285,7 @@ export class ConnEngine extends EventEmitter {
   onSignal(type: string, from: string, data: Record<string, unknown>): void {
     if (!ENGINE_SIGNALS.has(type)) return
     if (!this.session || this.session.isDone()) return
+    if(type==='turn_alloc' || type==='turn_ready'){void this.turn.onSignal(type,from,data).catch(e=>this.deps.netLog('warn',(e as Error).message));return}
     switch (type) {
       case 'join_request':
         if (this.isHost) void this.hostOnJoinRequest(from, data)
@@ -328,7 +361,7 @@ export class ConnEngine extends EventEmitter {
   }
 
   private async guestPunchFlow(gen: number, offer: Record<string, unknown>): Promise<void> {
-    try { await this._guestPunchFlow(gen, offer) } finally { this.endGuestCycle() }
+    try { await this._guestPunchFlow(gen, offer) } finally { if(gen===this.gCycle)this.endGuestCycle() }
   }
 
   private async _guestPunchFlow(gen: number, offer: Record<string, unknown>): Promise<void> {
@@ -341,6 +374,8 @@ export class ConnEngine extends EventEmitter {
       })
     })
 
+    if(gen!==this.gCycle || !this.session || this.session.isDone()){sock.close();return}
+    this.gPunchSock=sock
     let mine: StunMappedAddr | null = null
     this.emitStage('stun', 'active', '正在通过 STUN 探测本机 NAT 映射…')
     try {
@@ -349,6 +384,7 @@ export class ConnEngine extends EventEmitter {
     } catch {
       this.deps.netLog('warn', 'STUN 探测全部失败，punch_info 不带映射地址')
     }
+    if(gen!==this.gCycle || !this.session || this.session.isDone()){try{sock.close()}catch{};return}
     if (mine) this.emitStage('stun', 'ok', 'NAT 映射探测完成')
     else this.emitStage('stun', 'degraded', 'STUN 探测失败，将按房主公告地址直接打洞')
 
@@ -386,6 +422,7 @@ export class ConnEngine extends EventEmitter {
       })
       if (this.gMappedCh.length > 0) hostMapped = this.gMappedCh.shift()!
     }
+    if(gen!==this.gCycle || !this.session || this.session.isDone()){try{sock.close()}catch{};return}
     if (!hostMapped) hostMapped = this.gMapped
 
     // 目标选择
@@ -439,7 +476,7 @@ export class ConnEngine extends EventEmitter {
         }
       }
 
-      const p = new Puncher({ conn: sock, timeoutMs: PUNCH_MAX_WAIT_BEFORE_TX_MS })
+      const p = new Puncher({ conn: sock, timeoutMs: PUNCH_MAX_WAIT_BEFORE_TX_MS, authKey: this.guestAuthKey() })
       p.setTarget(curTarget)
       if (predDelta !== 0) p.setPredictedPorts(predictedPortsAround(predBase, predictStep))
       p.setOnPeer(punchOnPeer)
@@ -467,7 +504,7 @@ export class ConnEngine extends EventEmitter {
       if (!this.genValid(gen)) { try { sock.close() } catch { /* ignore */ }; return }
       if (this.gP2PDone) { try { sock.close() } catch { /* ignore */ }; return }
 
-      const rc = new RudpConn(sock!, actual)
+      const rc = new RudpConn(sock!, actual, {authKey: this.guestAuthKey()})
       rc.start()
       let guestBridge: TcpBridge | null = null
       let localAddr = ''
@@ -493,6 +530,7 @@ export class ConnEngine extends EventEmitter {
       this.gRudp = rc
       this.gBridge = guestBridge
       this.gP2PDone = true
+      this.turn.stop()
       this.deps.netLog('info', 'P2P 打洞成功，rudp 隧道已建立')
       this.emitStage('punch', 'ok', 'UDP 打洞成功，数据隧道已建立')
       const directAddr = `${hostIp}:${hostPort}`
@@ -539,6 +577,7 @@ export class ConnEngine extends EventEmitter {
   }
 
   private onPeerDisconnect(from: string): void {
+    this.turn.peerLeft(from)
     if (this.isHost) {
       const p = this.hPeers.get(from)
       this.hPeers.delete(from)
@@ -567,12 +606,13 @@ export class ConnEngine extends EventEmitter {
   // ---- host：打洞应答与桥接 ----
 
   private async hostOnJoinRequest(from: string, _data: Record<string, unknown>): Promise<void> {
+    if(this.turn.hasPeer(from))return
     const existing = this.hPeers.get(from)
     if (existing && (existing.rudp || existing.puncher)) {
       this.deps.netLog('warn', '忽略重复 join_request')
       return
     }
-    const peer: HostPeer = { id: from, puncher: null, rudp: null, mapped: null, hostMapped: null, hostDelta: 0 }
+    const peer: HostPeer = { authKey: Array.isArray(_data.clientCapabilities) && _data.clientCapabilities.includes('punchAuthV1') ? derivePunchKey(this.code,from) : null, id: from, puncher: null, rudp: null, mapped: null, hostMapped: null, hostDelta: 0 }
     this.hPeers.set(from, peer)
     const hostPort = this.hostPort
     if (hostPort <= 0) {
@@ -589,7 +629,10 @@ export class ConnEngine extends EventEmitter {
   }
 
   private async hostServeJoin(peer: HostPeer, hostPort: number): Promise<void> {
+    const session=this.session
     const sock = await punchListen(hostPort)
+    peer.socket=sock
+    if(this.session!==session || this.hPeers.get(peer.id)!==peer){sock.close();return}
 
     this.emitStage('host_stun', 'active', '房主：正在通过 STUN 探测 NAT 映射…')
     let hostMapped: StunMappedAddr | null = null
@@ -599,6 +642,7 @@ export class ConnEngine extends EventEmitter {
       if (samples.length > 0) hostMapped = samples[0]!
       hostDelta = stunDeltaFromSamples(samples)
     } catch { /* ignore */ }
+    if(this.session!==session || this.hPeers.get(peer.id)!==peer){try{sock.close()}catch{};return}
     this.emitStage('host_stun', hostMapped ? 'ok' : 'degraded', hostMapped ? '房主 NAT 映射探测完成' : '房主 STUN 探测失败，将在邀请中省略映射地址')
 
     const offer: Record<string, unknown> = { hostPort }
@@ -623,7 +667,7 @@ export class ConnEngine extends EventEmitter {
       return
     }
 
-    const puncher = new Puncher({ conn: sock, timeoutMs: HOST_PUNCH_LIFETIME_MS })
+    const puncher = new Puncher({ conn: sock, timeoutMs: HOST_PUNCH_LIFETIME_MS, authKey:peer.authKey })
     puncher.setOnPeer((addr) => {
       void this.sendSignal('peer_port', { peer_ip: addr.address, peer_port: addr.port }, peer.id)
     })
@@ -688,6 +732,7 @@ export class ConnEngine extends EventEmitter {
     if (!this.session) return { ok: false, err: '当前没有房间会话' }
     if (this.directMu) return { ok: false, err: '直连探测已在进行中' }
     this.directMu = true
+    const directSession=this.session
     void (async (): Promise<void> => {
       try {
         this.emitConnState(PHASE_DIRECT, STATUS_TRYING, '', '')
@@ -700,7 +745,9 @@ export class ConnEngine extends EventEmitter {
         const target = `${hostIp}:${hostPort}`
         for (let i = 0; i < DIRECT_ATTEMPTS; i++) {
           const ok2 = await this.tcpProbe(target, DIRECT_DIAL_TIMEOUT_MS)
+          if(this.session!==directSession || directSession.isDone() || this.gP2PDone || this.rDone)return
           if (ok2) {
+            this.turn.stop();this.suspendGuestPunch();this.gP2PDone=true
             this.deps.netLog('info', '直连探测成功')
             this.emitConnState(PHASE_DIRECT, STATUS_SUCCESS, target, '')
             return
@@ -713,7 +760,7 @@ export class ConnEngine extends EventEmitter {
         }
         this.emitConnState(PHASE_DIRECT, STATUS_FAILED, '', '直连探测未通')
       } finally {
-        this.directMu = false
+        if(this.session===directSession)this.directMu = false
       }
     })()
     return { ok: true }
@@ -749,6 +796,7 @@ export class ConnEngine extends EventEmitter {
     if (!this.session) return { ok: false, err: '当前没有房间会话' }
     if (this.isHost) return { ok: false, err: '房主无需玩家中继' }
     if (this.rInFlight || this.rDone) return { ok: false, err: '玩家中继已在进行中' }
+    if (this.turn.busy() || this.gP2PDone) return { ok: false, err: '已有连接或 TURN 中继正在建立' }
 
     // 修复：失效当前 p2p 打洞周期（gen+1），否则打洞循环会与下面的中继打洞
     // 共用同一个 socket 互相干扰（Go 版通过取消 context 实现，这里对齐为代次失效）。
@@ -1009,13 +1057,14 @@ export class ConnEngine extends EventEmitter {
   }
 
   /** 中继资源释放钩子（保留便于未来 TURN 接入）。 */
-  relayRelease(): void { /* no-op for player relay */ }
+  relayRelease(): void { this.turn.stop() }
 
   // ---- 状态推送 ----
 
   private emitConnState(phase: string, status: string, address: string, detail: string): void {
     if (!this.session) return
-    this.deps.emit('conn:state', { phase, status, address, detail } satisfies ConnState)
+    this.lastConnection = {phase,status,address,detail}
+    this.deps.emit('conn:state', this.lastConnection)
   }
 
   /**
@@ -1023,17 +1072,20 @@ export class ConnEngine extends EventEmitter {
    * 仅补充本地事件发射，不改变任何信令/协议行为；detail 不含远程地址（消敏）。
    */
   private emitStage(
-    key: 'stun' | 'punch' | 'relay' | 'host_stun' | 'host_punch',
+    key: 'stun' | 'punch' | 'relay' | 'host_stun' | 'host_punch' | 'turn',
     status: 'active' | 'retry' | 'ok' | 'degraded' | 'fail',
     detail: string
   ): void {
     if (!this.session) return
-    this.deps.emit('stage', { key, status, detail, ts: Date.now() })
+    const event={key,status,detail,ts:Date.now()};this.stages[key]=event
+    this.deps.emit('stage',event)
   }
 
   // ---- 解绑 ----
 
   teardown(): void {
+    this.gCycle++;this.turn.stop();if(this.autoTurnTimer)clearInterval(this.autoTurnTimer)
+    this.joinedAt=0;this.lastConnection=null;this.stages={}
     const gPuncher = this.gPuncher, gSock = this.gPunchSock, gRudp = this.gRudp, gBridge = this.gBridge
     const rPuncher = this.rPuncher, rSock = this.rSock, rRudp = this.rRudp, rBridge = this.rBridge
     const asNodeStop = this.rAsNodeStop
@@ -1085,6 +1137,7 @@ export class ConnEngine extends EventEmitter {
     if (asNodeStop) try { asNodeStop() } catch { /* ignore */ }
     for (const p of peers) {
       p.puncher?.stop()
+      if(p.socket)try{p.socket.close()}catch{}
       if (p.rudp) try { p.rudp.close() } catch { /* ignore */ }
     }
   }
@@ -1122,13 +1175,16 @@ export class VoxlinkApp {
   state: 'idle' | 'hosting' | 'in_room' | 'closed' = 'idle'
   room: RoomInfo | null = null
   settingsPath: string
+  private roomOperation=0
+  private roomPending=false
 
   constructor(opts: AppOptions = {}) {
     this.settings = opts.settings ?? loadSettings()
     this.settingsPath = defaultSettingsPath()
-    this.api = new ApiClient({ userAgent: `KAMUCL-App/${'1.1.4-beta'}` })
+    this.api = new ApiClient()
     this.engine = new ConnEngine({
       api: this.api,
+      allowRelay: () => this.settings.allowRelay,
       baseURL: () => DEFAULT_SERVER_URL,
       emit: (ev, data) => this.emit(ev, data),
       netLog: (level, msg) => this.netLog(level, msg)
@@ -1145,7 +1201,7 @@ export class VoxlinkApp {
 
   // ---- 1. GetSettings ----
   getSettingsJSON(): { serverUrl: string; theme: string; version: string } {
-    return { serverUrl: DEFAULT_SERVER_URL, theme: this.settings.theme, version: '1.1.4-beta' }
+    return { serverUrl: DEFAULT_SERVER_URL, theme: this.settings.theme, version: '1.1.5' }
   }
 
   // ---- 2. SaveSettings ----
@@ -1191,6 +1247,9 @@ export class VoxlinkApp {
 
   // ---- 6. CreateRoom ----
   async createRoom(req: CreateRoomParams): Promise<CreateRoomResult> {
+    if(this.roomPending)throw new Error('正在加入或创建房间，请先取消')
+    const generation=++this.roomOperation;this.roomPending=true
+    try {
     const name = normalizeVoxlinkRoomName(req.name)
     if (req.hostPort < 1024 || req.hostPort > 65535) throw new APIError('INVALID_PARAMS', 'hostPort 必须在 1024-65535 之间', 0)
     const loader = (req.loader || '').trim() || 'unknown'
@@ -1214,14 +1273,16 @@ export class VoxlinkApp {
       loader,
       clientType: 'app',
       clientProtocolVersion: 7,
-      clientCapabilities: ['relay', 'continuous_retry'],
+      clientCapabilities: ['relay', 'continuous_retry', 'punchAuthV1'],
       clientTag: CLIENT_TAG,
       client_tag: CLIENT_TAG
     }
     if (req.password) body.password = req.password
 
+    if(generation!==this.roomOperation)throw new Error('操作已取消')
     const data = await this.api.post(this.baseURL(), '/room/create', body, {}) as { code: string; hostToken: string; name: string; hostIp: string; hostPort: number; expiresIn: number }
 
+    if(generation!==this.roomOperation){void this.api.post(this.baseURL(),'/room/leave',{code:data.code, token:data.hostToken, isHost:true},null).catch(()=>{});throw new Error('操作已取消')}
     const room: RoomInfo = {
       code: data.code,
       name: data.name,
@@ -1240,10 +1301,14 @@ export class VoxlinkApp {
     }
     this.startSession(data.code, data.hostToken, true, room)
     return { code: data.code, hostToken: data.hostToken, name: data.name, hostIp: data.hostIp, hostPort: data.hostPort, expiresIn: data.expiresIn }
+    } finally { if(generation===this.roomOperation)this.roomPending=false }
   }
 
   // ---- 7. JoinRoom ----
   async joinRoom(req: JoinRoomParams): Promise<JoinRoomResult> {
+    if(this.roomPending)throw new Error('正在加入或创建房间，请先取消')
+    const generation=++this.roomOperation;this.roomPending=true
+    try {
     const code = req.code.toUpperCase().trim()
     if (!validateRoomCode(code)) throw new APIError('INVALID_PARAMS', '房间码必须为 6 位（字符集 A-Z 去掉 I/O、2-9 去掉 0/1）', 0)
     if (this.state !== 'idle') throw new APIError('SESSION_ACTIVE', '请先退出当前房间再操作', 0)
@@ -1251,15 +1316,18 @@ export class VoxlinkApp {
       code,
       clientType: 'app',
       clientProtocolVersion: 7,
-      clientCapabilities: ['relay', 'continuous_retry']
+      clientCapabilities: ['relay', 'continuous_retry', 'punchAuthV1']
     }
     if (req.password) body.password = req.password
 
+    if(generation!==this.roomOperation)throw new Error('操作已取消')
     const data = await this.api.post(this.baseURL(), '/room/join', body, {}) as { clientToken: string; clientId: string; room: RoomInfo }
+    if(generation!==this.roomOperation){void this.api.post(this.baseURL(),'/room/leave',{code:code, token:data.clientToken, isHost:false},null).catch(()=>{});throw new Error('操作已取消')}
     const room: RoomInfo = { ...data.room, code, isHost: false }
     if (!room.clientType) room.clientType = 'app'
     this.startSession(code, data.clientToken, false, room, data.clientId)
     return { clientToken: data.clientToken, clientId: data.clientId, room }
+    } finally { if(generation===this.roomOperation)this.roomPending=false }
   }
 
   private startSession(code: string, token: string, isHost: boolean, room: RoomInfo, clientID = ''): void {
@@ -1282,8 +1350,9 @@ export class VoxlinkApp {
     })
     this.engine.session = sess
     this.engine.setState(state, code, token, isHost, room, sess)
+    this.engine.beginFallbackTimer()
     this.emit('session:state', { state, room: { ...room } })
-    void sess.run()
+    void sess.run().finally(()=>{if(this.engine.session===sess && sess.isDone()) {this.engine.teardown();this.engine.session=null;this.state='closed';this.room=null;this.emit('session:state',{state:'closed'})}})
   }
 
   private updateRoomInfo(info: { currentPlayers: number; name: string }): void {
@@ -1300,27 +1369,19 @@ export class VoxlinkApp {
 
   // ---- 8. LeaveRoom ----
   async leaveRoom(): Promise<{ left: boolean }> {
+    this.roomOperation++;this.roomPending=false
     const had = this.engine.session !== null
-    if (!had) return { left: false }
     await this.leaveInternal()
     this.emit('session:state', { state: 'idle' })
-    return { left: true }
+    return { left: had }
   }
 
   private async leaveInternal(): Promise<void> {
-    const s = this.engine.session
-    const code = this.engine.code, token = this.engine.token, isHost = this.engine.isHost
-    if (s) {
-      this.engine.relayRelease()
-      this.engine.teardown()
-      try { s.stop() } catch { /* ignore */ }
-      await Promise.race([s.getDone(), new Promise<void>((r) => setTimeout(r, 3000))])
-      try { await this.api.post(this.baseURL(), '/room/leave', { code, token, isHost }, null) } catch { /* ignore */ }
-    }
-    this.engine.session = null
-    this.state = 'idle'
-    this.room = null
-    this.engine.setState('idle', '', '', false, null, null)
+    const session=this.engine.session
+    const code=this.engine.code, token=this.engine.token, isHost=this.engine.isHost
+    this.engine.teardown();this.engine.session=null;this.state='idle';this.room=null
+    this.engine.setState('idle','', '',false,null,null)
+    if(session){session.stop();void this.api.post(this.baseURL(),'/room/leave',{code,token,isHost},null).catch(()=>{})}
   }
 
   // ---- 9. GetSessionState ----

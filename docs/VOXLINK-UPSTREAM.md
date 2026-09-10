@@ -1,5 +1,15 @@
 # VoxLink 上游同步记录
 
+## KAMUCL 1.0.46
+
+来源：[VoxLink 1.1.5 / 6b11d93](https://github.com/AUGUHDAR/VoxLink/commit/6b11d93)。将 MOD 的 TURN 节点探测、allocate/BIND、信令交接、数据封装、会话认证和退出释放移植到 TypeScript，保留启动器房间来源标记、独立 TCP 入口和当前游戏端口。20 秒显示手动 TURN，允许中继时 60 秒尝试自动后备，失败后间隔 60 秒重试。支持打洞、加入期间取消与已连接后退出。
+
+本地验证包含真实 UDP 节点、BIND 丢包重试、错误票据、认证篡改、真实 TCP 双向 512KB 传输以及退出中晚到分配结果释放。未用两个真实公网网络完成跨 NAT 游戏联调；不宣称全部 MOD 功能已移植，语音、日志上传、TURN 建立后的无缝切回 P2P 不在本轮实现范围。
+
+陶瓦固定官方 v0.4.2：压缩包和 EXE 各自 SHA256，手动安装才触发下载。对照官方 main.rs 直接管理 Windows --hmcl2 服务进程，避免 --hmcl 包装进程退出误判。真实官方包在隔离目录完成安装、启动、/state 读取与停止。
+
+FRP 对照 [官方 OpenAPI](https://github.com/natfrp/api/blob/master/openapi.yaml)，Bearer 密钥获取节点/隧道，显式 POST 创建 TCP 隧道；运行前刷新并验证隧道。测试使用模拟账号响应，不创建玩家账号的测试隧道。
+
 ## KAMUCL 1.0.44
 
 核对来源：[AUGUHDAR/VoxLink 1.1.4 源码提交](https://github.com/AUGUHDAR/VoxLink/commit/40d03c65422978e057402efefafbc0350a3e2654)

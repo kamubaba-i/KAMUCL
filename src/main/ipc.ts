@@ -1,3 +1,4 @@
+import { resolveResourceDirectory, listResourceEntries, requireResourceVersion } from './core/resourceDirectory'
 import { importResourceFiles } from './core/resourceFiles'
 import { exitHistory } from './core/exitHistory'
 /**
@@ -815,11 +816,11 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     }
     return list
   })
-  ipcMain.handle(IPC.modsDuplicates, (_e, versionId: string) =>
-    modinfo.findDuplicates(String(versionId ?? ''))
+  ipcMain.handle(IPC.modsDuplicates, (_e, versionId: string, folder?: string) =>
+    withGameFolder(folder || folderOfVersion(versionId), () => modinfo.findDuplicates(String(versionId ?? '')))
   )
-  ipcMain.handle(IPC.modsCrossDuplicates, (_e, versionIds: string[]) =>
-    modinfo.findCrossDuplicates(Array.isArray(versionIds) ? versionIds.map(String) : [])
+  ipcMain.handle(IPC.modsCrossDuplicates, (_e, versionIds: string[], folder?: string) =>
+    withGameFolder(folder || settings.getSettings().activeFolder || settings.getSettings().gameDir, () => modinfo.findCrossDuplicates(Array.isArray(versionIds) ? versionIds.map(String) : []))
   )
   ipcMain.handle(IPC.modsCheckUpdates, (_e, versionId: string, folder?: string) =>
     withGameFolder(folder || folderOfVersion(String(versionId ?? '')), () =>
@@ -969,7 +970,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     const target = selectModTarget(modTargets().versions, id, folder)
     return importResourceFiles(files, target, kind)
   })
-  const safeDir = (rel: string, folder?: string): string => {
+  const safeDir = async (rel: string, folder?: string): Promise<string> => {
     // 允许 gameDir 下单级子目录（mods 等）或 versions/<id>/<sub> 三级（版本实例目录），防目录穿越
     const parts = String(rel ?? '')
       .split(/[\\/]+/)
@@ -980,42 +981,24 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     // versions/<id> 前缀按版本所属文件夹寻址（多文件夹体系）；其余按当前活动文件夹
     if (folder && !settings.getSettings().folders.some(f => pathIdentity(f.path) === pathIdentity(folder))) throw new Error('游戏文件夹未登记')
     const base = folder || (isVersionPath && parts.length >= 2 ? folderOfVersion(parts[1]) : settings.getSettings().activeFolder || settings.getSettings().gameDir)
-    if (folder && isVersionPath && parts.length === 3 && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[2])) {
-      const target = selectModTarget(versions.scanInstalledFolder(folder).versions, parts[1], folder)
-      return path.join(target.gameDirectory!, parts[2])
+    if (isVersionPath && parts.length === 3 && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[2])) {
+      return resolveResourceDirectory(base, parts[1], parts[2])
     }
     const dir = parts.length ? path.join(base, ...parts) : base
     if (!path.resolve(dir).startsWith(path.resolve(base))) throw new Error('非法目录')
     return dir
   }
-  const listDir = (rel: string, folder?: string): FsEntry[] => {
-    const dir = safeDir(rel, folder)
-    try {
-      return fs
-        .readdirSync(dir, { withFileTypes: true })
-        .map((d) => {
-          try {
-            const st = fs.statSync(path.join(dir, d.name))
-            return { name: d.name, size: st.size, isDir: d.isDirectory(), mtime: st.mtimeMs }
-          } catch {
-            return { name: d.name, size: 0, isDir: d.isDirectory(), mtime: 0 }
-          }
-        })
-        .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
-    } catch {
-      return []
-    }
-  }
-  ipcMain.handle(IPC.appOpenDir, (_e, rel?: string, folder?: string) => {
-    const dir = safeDir(String(rel ?? ''), folder)
+  const listDir = async (rel: string, folder?: string): Promise<FsEntry[]> => listResourceEntries(await safeDir(rel, folder))
+  ipcMain.handle(IPC.appOpenDir, async (_e, rel?: string, folder?: string) => {
+    const dir = await safeDir(String(rel ?? ''), folder)
     fs.mkdirSync(dir, { recursive: true })
     void shell.openPath(dir)
   })
   ipcMain.handle(IPC.fsList, (_e, rel: string, folder?: string) => listDir(String(rel ?? ''), folder))
-  ipcMain.handle(IPC.fsRemove, (_e, rel: string, name: string, folder?: string) => {
-    const dir = safeDir(String(rel ?? ''), folder)
+  ipcMain.handle(IPC.fsRemove, async (_e, rel: string, name: string, folder?: string) => {
+    const dir = await safeDir(String(rel ?? ''), folder)
     const target = path.join(dir, path.basename(String(name ?? '')))
-    fs.rmSync(target, { recursive: true, force: true })
+    await fs.promises.rm(target, { recursive: true, force: true })
     return listDir(String(rel ?? ''), folder)
   })
   /**
@@ -1024,7 +1007,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
    * - 隔离实例（versions/<id>/…）→ 只查该实例；
    * - 共享目录（mods 等）→ 查所有共享实例，任一在运行即阻止。
    */
-  ipcMain.handle(IPC.fsToggleDisable, (_e, rel: string, name: string, folder?: string) => {
+  ipcMain.handle(IPC.fsToggleDisable, async (_e, rel: string, name: string, folder?: string) => {
     const relStr = String(rel ?? '')
     const running = launch.getRunningVersionIds()
     const m = /^versions\/([^/]+)\//.exec(relStr)
@@ -1034,7 +1017,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     if (affected.some((id) => running.has(id))) {
       throw new Error('该实例正在运行中，请先退出游戏再禁用/启用模组')
     }
-    const dir = safeDir(relStr, folder)
+    const dir = await safeDir(relStr, folder)
     const base = path.basename(String(name ?? ''))
     const from = path.join(dir, base)
     const lower = base.toLowerCase()

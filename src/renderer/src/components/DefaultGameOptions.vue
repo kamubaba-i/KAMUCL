@@ -10,7 +10,7 @@ const busy = ref(false), loading = ref(true), page = ref('root'), version = ref(
 const versions = computed(() => [...new Set(['26.2', ...store.installed.map(v => v.mcVersion).filter(Boolean), '1.21.11', '1.20.1', '1.16.5', '1.12.2'])])
 const title = computed(() => page.value === 'root' ? '选项' : page.value === 'mouse' ? '鼠标设置' : GAME_OPTION_PAGES.find(p => p[0] === page.value)?.[1])
 const rows = computed(() => {
-  const list = GAME_OPTIONS.filter(d => d.page === page.value).map(d => uniqueGameOptions.find(o => o.id === d.id)!)
+  const list = GAME_OPTIONS.filter(d => d.page === page.value || (page.value === 'controls' && d.id === 'mouseSensitivity')).map(d => uniqueGameOptions.find(o => o.id === d.id)!)
   return page.value === 'video' ? list.sort((a,b) => VIDEO_OPTION_ORDER.indexOf(a.id) - VIDEO_OPTION_ORDER.indexOf(b.id)) : list
 })
 const unavailable = computed(() => uniqueGameOptions.filter(d => d.id in state.value.values && !supportedGameOption(d, version.value)))
@@ -52,7 +52,7 @@ onMounted(async () => {
     <p class="options-note muted">只同步你修改的项目，其余保留游戏设置。预览版本用于检查兼容性，启动时会按实际版本转换数值。</p>
     <p v-if="unavailable.length" class="options-warning">{{ version }} 不支持：{{ unavailable.map(d => d.label).join('、') }}。这些项目仅对支持它们的版本生效。</p>
     <div class="options-path"><button v-if="page !== 'root'" class="btn btn-ghost btn-sm" @click="page = page === 'mouse' ? 'controls' : 'root'">← 返回</button><span>选项{{ page === 'mouse' ? ' / 控制' : '' }}{{ page !== 'root' ? ' / ' + title : '' }}</span></div>
-    <div v-if="page === 'controls'" class="mc-options-grid options-entrances"><button class="btn btn-ghost" @click="page = 'mouse'">鼠标设置…</button><button class="btn btn-ghost" @click="emit('section', 'keys')">按键控制…</button></div>
+    <div v-if="page === 'controls'" class="mc-options-grid options-entrances"><button class="btn btn-ghost" @click="page = 'mouse'">鼠标设置 · 灵敏度与滚动…</button><button class="btn btn-ghost" @click="emit('section', 'keys')">按键控制…</button></div>
     <div v-if="loading" class="empty">正在读取配置…</div>
     <div v-else class="mc-options-grid">
       <div v-for="d in rows" :key="d.id" class="option-cell" :class="{'option-custom': d.id in state.values, 'option-unsupported': !supportedGameOption(d, version)}">
@@ -64,6 +64,7 @@ onMounted(async () => {
       </div>
       <div v-if="page === 'root'" class="option-cell world-option"><div class="option-caption">世界选项 / 难度</div><p class="muted">由单人世界或服务器管理，请在游戏中修改。</p></div>
     </div>
+    <button v-if="page === 'root'" class="btn btn-ghost mouse-shortcut" @click="page = 'mouse'">鼠标灵敏度 <strong>{{ label(uniqueGameOptions.find(d => d.id === 'mouseSensitivity')!) }}</strong><span>控制 → 鼠标设置 ›</span></button>
     <div v-if="page === 'root'" class="mc-options-grid options-entrances"><button v-for="[id, name] in GAME_OPTION_PAGES" :key="id" class="option-entry" @click="open(id)">{{ name }}<span>›</span></button></div>
     <p v-if="page === 'credits'" class="empty">Minecraft 的鸣谢与著作权信息请在游戏内查看；此入口不修改配置。</p>
     <p class="options-note muted">画面受模组、资源包、服务器和显示设备影响；这里同步原版选项值。若模组接管同名选项，请同时检查该模组设置。</p>
@@ -71,6 +72,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.mouse-shortcut{display:flex;width:100%;gap:16px;justify-content:flex-start;margin-top:16px;padding:14px 18px}.mouse-shortcut span{margin-left:auto;color:var(--text-dim);font-size:12px}.mouse-shortcut strong{color:var(--accent-2)}
 .option-number{display:flex;align-items:center;gap:4px;color:var(--accent-2)}.option-number input{width:76px;text-align:right;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);padding:3px 5px;font:inherit;font-variant-numeric:tabular-nums}.option-select{width:100%}
 .game-options{padding:28px}.options-header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.options-header h2{font-size:20px;margin:0 0 7px}.options-header p{margin:0;font-size:13px}.options-sync{display:flex;align-items:center;gap:10px;white-space:nowrap;font-size:13px}.options-context{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:24px;padding-top:20px;border-top:1px solid var(--border)}.options-context label{display:flex;align-items:center;gap:10px;color:var(--text-dim);font-size:12px}.options-context select{width:180px}.options-note{font-size:12px;line-height:1.7;margin:14px 0}.options-warning{padding:12px;border-radius:10px;background:var(--accent-soft);color:var(--text);font-size:13px}.options-path{display:flex;align-items:center;gap:12px;font-weight:650;margin:25px 0 15px}.mc-options-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.option-cell{padding:16px;background:var(--card-2);border:1px solid var(--border);border-radius:12px;min-width:0}.option-custom{border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}.option-unsupported{opacity:.65}.option-caption{display:flex;justify-content:space-between;gap:12px;font-size:13px;margin-bottom:14px}.option-caption strong{color:var(--accent-2);font-variant-numeric:tabular-nums}.option-cell input[type=range]{width:100%;accent-color:var(--accent);margin:0;height:22px}.option-toggle{width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;background:var(--card);color:var(--text);display:flex;justify-content:space-between;cursor:pointer}.option-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px;color:var(--text-dim)}.option-foot small{font-size:11px}.option-foot button{border:0;background:none;color:var(--accent-2);font-size:11px;cursor:pointer;white-space:nowrap}.options-entrances{margin:18px 0}.option-entry{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border:1px solid var(--border);border-radius:10px;background:var(--card-2);color:var(--text);cursor:pointer;transition:background 180ms,border-color 180ms}.option-entry:hover{background:var(--accent-soft);border-color:var(--accent)}.world-option p{font-size:12px;line-height:1.7}@media(max-width:850px){.options-header,.options-context{flex-wrap:wrap}.game-options{padding:20px}}@media(max-width:650px){.mc-options-grid{grid-template-columns:1fr}.options-context label{flex-wrap:wrap}}
 </style>

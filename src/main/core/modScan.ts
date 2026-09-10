@@ -1,0 +1,25 @@
+import { Worker } from 'node:worker_threads'
+import path from 'node:path'
+import type { ModInfo } from '../../shared/types'
+import { logScope } from './launcherLog'
+
+const scans = new Map<string, Promise<Array<ModInfo & { sha1: string }>>>()
+export function scanModDirectory(dir: string, hash = false): Promise<Array<ModInfo & { sha1: string }>> {
+  const key = dir + ':' + hash
+  if (scans.has(key)) return scans.get(key)!
+  const started = Date.now()
+  const pending = new Promise<Array<ModInfo & { sha1: string }>>((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'modScanWorker.cjs'), { workerData: { dir, hash } })
+    const timer = setTimeout(() => { void worker.terminate(); reject(new Error('扫描超时，请检查是否有损坏或过大的模组文件')) }, 120_000)
+    worker.once('message', ({ result, error }) => {
+      clearTimeout(timer)
+      void worker.terminate()
+      if (error) reject(new Error(error))
+      else { logScope('resources').info(`解析 ${dir}：${result.length} 个 JAR，${Date.now() - started} ms（后台线程）`); resolve(result) }
+    })
+    worker.once('error', e => { clearTimeout(timer); reject(e) })
+    worker.once('exit', code => { clearTimeout(timer); if (code !== 0) reject(new Error('模组扫描线程已结束，请重试')) })
+  }).finally(() => scans.delete(key))
+  scans.set(key, pending)
+  return pending
+}

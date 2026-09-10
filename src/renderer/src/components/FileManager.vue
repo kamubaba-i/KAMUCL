@@ -24,6 +24,8 @@ const props = defineProps<{
   icon: string
 }>()
 
+const page = ref(1)
+const PAGE_SIZE = 100
 const entries = ref<FsEntry[]>([])
 const loading = ref(true)
 const loadError = ref('')
@@ -42,24 +44,22 @@ const currentVersion = computed(() => {
 /** 实际管理的相对目录：隔离版本 → versions/<id>/<rel>；共享版本 → <rel> */
 const effectiveRel = computed(() => {
   const v = currentVersion.value
-  if (v?.isolated) return `versions/${v.id}/${props.rel}`
-  return props.rel
+  return v ? `versions/${v.id}/${props.rel}` : ''
 })
 
 /** 目录不存在时视为空列表（隔离版本刚开启、尚未产生该子目录） */
+let loadGeneration = 0
 async function load() {
+  const generation = ++loadGeneration
+  const v = currentVersion.value
+  entries.value = []; loadError.value = ''; page.value = 1
+  if (!v) { loading.value = false; return }
   loading.value = true
-  loadError.value = ''
   try {
-    entries.value = await listFs(effectiveRel.value, currentVersion.value?.folder || activeFolder.value)
-  } catch (e) {
-    const msg = errText(e)
-    // 目录不存在不算错误（新版本还没该子目录）
-    entries.value = []
-    loadError.value = msg.includes('非法目录') ? msg : ''
-  } finally {
-    loading.value = false
-  }
+    const result = await listFs(effectiveRel.value, v.folder || activeFolder.value)
+    if (generation === loadGeneration) entries.value = result
+  } catch (e) { if (generation === loadGeneration) loadError.value = errText(e) }
+  finally { if (generation === loadGeneration) loading.value = false }
 }
 
 const importing = ref(false)
@@ -87,7 +87,8 @@ onMounted(async () => {
   void load()
 })
 
-watch([effectiveRel, activeFolder], () => void load())
+watch([effectiveRel, activeFolder], () => { dupOpen.value = false; delModal.open = false; updatePanel.open = false; void load() })
+onUnmounted(() => { loadGeneration++ })
 watch(() => store.fsRefreshTick, () => void load())
 
 // ---------------- 路径显示（超长中间省略 + 点击复制） ----------------
@@ -96,7 +97,7 @@ const dupOpen = ref(false)
 
 /** 中间省略的路径：versions/neo…2.0.75/mods */
 const displayPath = computed(() => {
-  const p = effectiveRel.value
+  const p = currentVersion.value?.gameDirectory ? currentVersion.value.gameDirectory + '/' + props.rel : effectiveRel.value
   const MAX = 34
   if (p.length <= MAX) return p
   const head = p.slice(0, 16)
@@ -105,7 +106,7 @@ const displayPath = computed(() => {
 })
 
 async function copyPath() {
-  const ok = await copyText(`/${effectiveRel.value}`)
+  const ok = await copyText(currentVersion.value?.gameDirectory ? currentVersion.value.gameDirectory + '/' + props.rel : effectiveRel.value)
   toast(ok ? '已复制完整路径' : '复制失败', ok ? 'success' : 'error')
 }
 
@@ -117,7 +118,12 @@ const filtered = computed(() =>
     : entries.value
 )
 
+const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
+const visibleEntries = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
+watch([keyword, pageCount], () => { page.value = Math.min(page.value, pageCount.value) })
+
 async function onOpenDir() {
+  if (!currentVersion.value) return
   opening.value = true
   try {
     await openDir(effectiveRel.value, currentVersion.value?.folder || activeFolder.value)
@@ -142,10 +148,14 @@ const isDisabledMod = (e: FsEntry) => /\.jar\.disabled$/i.test(e.name)
 const toggling = ref('')
 
 async function onToggleDisable(entry: FsEntry) {
+  if (!currentVersion.value) return
   if (toggling.value) return
   toggling.value = entry.name
+  const generation=loadGeneration
   try {
-    entries.value = await toggleDisableFs(effectiveRel.value, entry.name, currentVersion.value?.folder || activeFolder.value)
+    const result = await toggleDisableFs(effectiveRel.value, entry.name, currentVersion.value?.folder || activeFolder.value)
+    if(generation!==loadGeneration)return
+    entries.value=result
     toast(isDisabledMod(entry) ? `已启用 ${entry.name.replace(/\.disabled$/i, '')}` : `已禁用 ${entry.name}`, 'success')
   } catch (e) {
     toast(errText(e), 'error')
@@ -155,11 +165,15 @@ async function onToggleDisable(entry: FsEntry) {
 }
 
 async function onConfirmRemove() {
+  if (!currentVersion.value) return
   const entry = delModal.target
   if (!entry || delModal.busy) return
   delModal.busy = true
+  const generation=loadGeneration
   try {
-    entries.value = await removeFs(effectiveRel.value, entry.name, currentVersion.value?.folder || activeFolder.value)
+    const result = await removeFs(effectiveRel.value, entry.name, currentVersion.value?.folder || activeFolder.value)
+    if(generation!==loadGeneration)return
+    entries.value=result
     delModal.open = false
     toast(`已删除 ${entry.name}`, 'success')
   } catch (e) {
@@ -284,7 +298,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
           :options="availableVersions.map(v => ({ value: v.id, label: v.id + (v.isolated ? '（已隔离）' : '（共享）') }))"
           @change="() => {}"
         />
-        <button class="btn btn-ghost" :disabled="loading" @click="load">
+        <button class="btn btn-ghost" :disabled="loading || !currentVersion" @click="load">
           <span v-if="loading" class="spin"></span>
           <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -300,13 +314,13 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
           </svg>
           检测更新
         </button>
-        <button v-if="props.rel === 'mods'" class="btn btn-ghost" @click="dupOpen = true">
+        <button v-if="props.rel === 'mods'" class="btn btn-ghost" :disabled="!currentVersion" @click="dupOpen = true">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6Z" />
           </svg>
           清理重复
         </button>
-        <button class="btn btn-gold" :disabled="opening" @click="onOpenDir">
+        <button class="btn btn-gold" :disabled="opening || !currentVersion" @click="onOpenDir">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
           </svg>
@@ -316,8 +330,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
     </div>
 
     <!-- 未安装任何版本时提示 -->
-    <div v-if="!store.installed.length" class="card empty">
-      <span>还没有安装任何游戏版本，请先到「游戏版本」页安装</span>
+    <div v-if="!currentVersion" class="card empty">
+      <span>当前游戏文件夹没有可选版本，请先到「游戏版本」页安装或选择版本</span>
     </div>
 
     <!-- MOD 更新检测面板（内联，不跳页） -->
@@ -366,7 +380,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
     </div>
 
     <!-- 文件列表 -->
-    <div class="card fm-card">
+    <div v-if="currentVersion" class="card fm-card">
       <div v-if="loading" class="empty">
         <span class="spin"></span>
         <span>正在读取文件列表…</span>
@@ -384,7 +398,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
         <span>没有匹配「{{ store.searchKeyword }}」的文件</span>
       </div>
       <div v-else class="fm-list">
-        <div v-for="e in filtered" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
+        <div v-for="e in visibleEntries" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
           <span class="fm-file-icon">
             <svg v-if="e.isDir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
@@ -414,6 +428,12 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       </div>
     </div>
 
+    <nav v-if="currentVersion && filtered.length" class="fm-pagination" aria-label="资源列表分页">
+      <span class="muted">共 {{ filtered.length }} 项 · 每页 {{ PAGE_SIZE }} 项</span>
+      <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
+      <span>{{ page }} / {{ pageCount }}</span>
+      <button class="btn btn-ghost btn-sm" :disabled="page >= pageCount" @click="page++">下一页</button>
+    </nav>
     <!-- 删除文件二次确认 -->
     <ConfirmModal
       :open="delModal.open"
@@ -426,10 +446,11 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 
     <!-- 清理重复 MOD（仅模组页） -->
     <DupCleanModal
-      v-if="props.rel === 'mods'"
+      v-if="props.rel === 'mods' && dupOpen && currentVersion"
       :open="dupOpen"
       :version-id="currentVersion?.id ?? ''"
       :rel="effectiveRel"
+      :folder="currentVersion?.folder || activeFolder"
       @close="dupOpen = false"
       @deleted="load"
     />
@@ -437,6 +458,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 </template>
 
 <style scoped>
+.fm-pagination { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; padding:8px 0; font-size:13px }
+.fm-pagination .muted { margin-right:auto }
 .page {
   display: flex;
   flex-direction: column;

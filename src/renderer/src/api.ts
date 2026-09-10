@@ -276,8 +276,8 @@ export const discardModInstall = (id: string) => invoke<void>(IPC.modsDiscard, i
 export const parseMods = (paths: string[]) => invoke<ModInfo[]>(IPC.modsParse, paths)
 export const installMods = (files: string[], targetVersionId: string, folder?: string) =>
   invoke<ModInstallResult[]>(IPC.modsInstall, files, targetVersionId, folder)
-export const findModDuplicates = (versionId: string) =>
-  invoke<ModDuplicateGroup[]>(IPC.modsDuplicates, versionId)
+export const findModDuplicates = (versionId: string, folder?: string) =>
+  invoke<ModDuplicateGroup[]>(IPC.modsDuplicates, versionId, folder)
 export const checkModUpdates = (versionId: string, folder?: string) =>
   invoke<import('@shared/types').ModUpdateReport>(IPC.modsCheckUpdates, versionId, folder)
 export const applyModUpdates = (versionId: string, items: import('@shared/types').ModUpdateTarget[], folder?: string) =>
@@ -341,8 +341,8 @@ export const bridgeReset = (versionId: string, id?: string) =>
 export const bridgeInstalled = (versionId: string) => invoke<boolean>(IPC.bridgeInstalled, versionId)
 export const bridgeInstall = (versionId: string) =>
   invoke<{ ok: boolean; already?: boolean; error?: string }>(IPC.bridgeInstall, versionId)
-export const findModCrossDuplicates = (versionIds: string[]) =>
-  invoke<ModCrossDuplicate[]>(IPC.modsCrossDuplicates, versionIds)
+export const findModCrossDuplicates = (versionIds: string[], folder?: string) =>
+  invoke<ModCrossDuplicate[]>(IPC.modsCrossDuplicates, versionIds, folder)
 
 // ---------------- 文件/目录 ----------------
 /** 用系统资源管理器打开游戏目录下的子目录（'' = 游戏根目录） */

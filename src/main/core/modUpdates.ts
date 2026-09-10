@@ -1,3 +1,6 @@
+import { scanModDirectory } from './modScan'
+import { resolveResourceDirectory } from './resourceDirectory'
+import { folderOfVersion } from './paths'
 /**
  * MOD 更新检测：按 jar 的 sha1 在 Modrinth version_files 批量反查项目，
  * 以实例真实的 MC 版本与加载器为约束取最新兼容版本，支持单个/批量下载替换。
@@ -5,10 +8,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import crypto from 'node:crypto'
-import { parseModFile } from './modinfo'
 import { readVersionJson } from './versions'
-import { instanceDirectoryState } from './instances'
 import { resolveInstanceMetadata } from './instanceMetadata'
 import { downloadFile } from './download'
 
@@ -87,12 +87,8 @@ async function mrPost(pathname: string, body: unknown): Promise<unknown> {
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
 }
 
-function modsDirOf(versionId: string): string {
-  return path.join(instanceDirectoryState(versionId, readVersionJson(versionId)).path, 'mods')
-}
-
-async function sha1Of(file: string): Promise<string> {
-  return crypto.createHash('sha1').update(await fs.promises.readFile(file)).digest('hex')
+function modsDirOf(versionId: string): Promise<string> {
+  return resolveResourceDirectory(folderOfVersion(versionId), versionId, 'mods')
 }
 
 /** 把 Modrinth version_files/update 的响应映射为更新项（纯函数，可测试）：
@@ -129,37 +125,21 @@ export function mapUpdateEntries(
 
 /** 检测实例 mods 目录内全部 jar 的可用更新（只读网络查询，不改动任何本地文件） */
 export async function checkModUpdates(versionId: string): Promise<ModUpdateReport> {
-  const dir = modsDirOf(versionId)
-  let jars: string[] = []
-  try {
-    jars = fs.readdirSync(dir).filter((name) => name.toLowerCase().endsWith('.jar'))
-  } catch {
-    jars = []
-  }
+  const dir = await modsDirOf(versionId)
+  const scanned = await scanModDirectory(dir, true)
   const meta = resolveInstanceMetadata(readVersionJson(versionId), (id) => {
     try { return readVersionJson(id) } catch { return undefined }
   })
   const loader = meta.loader
   const report: ModUpdateReport = { mcVersion: meta.mcVersion || '', loader: loader ?? '', entries: [] }
-  if (!jars.length) return report
+  if (!scanned.length) return report
   if (!meta.mcVersion || !loader) throw new Error('实例缺少加载器或 Minecraft 版本元数据，无法检测更新')
 
-  const entries = await Promise.all(
-    jars.map(async (fileName): Promise<ModUpdateEntry> => {
-      const file = path.join(dir, fileName)
-      const info = parseModFile(file)
-      return {
-        fileName,
-        name: info.name || info.id || fileName,
-        modId: info.id || '',
-        currentVersion: info.version || '',
-        sha1: await sha1Of(file),
-        source: null,
-        alreadyLatest: false,
-        update: null
-      }
-    })
-  )
+  const entries: ModUpdateEntry[] = scanned.filter(info => !info.error && info.sha1).map(info => ({
+    fileName: info.fileName, name: info.name || info.id || info.fileName,
+    modId: info.id || '', currentVersion: info.version || '', sha1: info.sha1,
+    source: null, alreadyLatest: false, update: null
+  }))
 
   const byHash = (await mrPost('/version_files/update', {
     hashes: entries.map((e) => e.sha1),
@@ -178,7 +158,7 @@ export async function applyModUpdates(
   items: ModUpdateTarget[],
   onItem?: (fileName: string, state: 'start' | 'ok' | 'error', message?: string) => void
 ): Promise<Array<{ fileName: string; ok: boolean; error?: string }>> {
-  const dir = modsDirOf(versionId)
+  const dir = await modsDirOf(versionId)
   fs.mkdirSync(dir, { recursive: true })
   const results: Array<{ fileName: string; ok: boolean; error?: string }> = []
   for (const item of items) {

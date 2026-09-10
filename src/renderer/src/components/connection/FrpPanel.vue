@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import ConnectionPanel from './ConnectionPanel.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
+import { copyText } from '../../api'
 import { toast } from '../../store'
 
 type FrpStatus = 'idle' | 'starting' | 'running' | 'auth_failed' | 'tunnel_offline' | 'error' | 'stopped'
@@ -80,7 +81,7 @@ async function refreshStatus(): Promise<void> {
   try {
     const res = (await kamucl.invoke('frp:status')) as FrpState
     state.value = res
-    if (res.config) {
+    if (res.config && !form.accessKey) {
       form.accessKey = res.config.accessKey
       form.tunnelId = res.config.tunnelId
       form.localPort = res.config.localPort ? String(res.config.localPort) : ''
@@ -124,6 +125,22 @@ async function onStop(): Promise<void> {
   }
 }
 
+const creation = reactive({name: 'Minecraft', node: '', localPort: '', remotePort: ''})
+const creating = ref(false)
+const selectedTunnel = computed(() => nodesResult.value?.tunnels?.find(t => String(t.id) === form.tunnelId))
+const creatableNodes = computed(() => visibleNodes.value.filter(n => n.online && n.canCreate))
+watch(() => form.accessKey, () => { nodesResult.value = null; form.tunnelId = '' })
+async function copyWebsite() { toast(await copyText('https://www.natfrp.com/') ? '已复制樱花穿透网址' : '复制失败', 'info') }
+async function createTunnel() {
+  if (creating.value) return
+  creating.value = true; errorMsg.value = ''
+  try {
+    const result = await kamucl.invoke('frp:create-tunnel', {accessKey: form.accessKey.trim(), tunnel: {name: creation.name, node: Number(creation.node), localPort:Number(creation.localPort), remotePort:Number(creation.remotePort) || undefined}}) as {id:number}
+    await loadNodes(true); form.tunnelId = String(result.id)
+    toast('隧道已创建并选中，可以直接启动', 'success')
+  } catch(e) { errorMsg.value = (e as Error).message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') }
+  finally { creating.value = false }
+}
 async function copyRemote(): Promise<void> {
   if (!state.value.remoteAddress) return
   try {
@@ -150,6 +167,8 @@ async function loadNodes(refresh = false): Promise<void> {
   nodesError.value = ''
   try {
     nodesResult.value = (await kamucl.invoke('frp:nodes', { accessKey: form.accessKey.trim(), refresh })) as FrpNodesResult
+    if (!nodesResult.value?.tunnels) throw new Error('隧道列表查询失败，请检查密钥权限后重试')
+    if (!nodesResult.value.tunnels.some(t => String(t.id) === form.tunnelId)) form.tunnelId = ''
   } catch (e) {
     nodesError.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : String(e)
   } finally {
@@ -216,7 +235,7 @@ onBeforeUnmount(() => {
         <ConnectionStatus :tone="statusTone(state.status)" :label="statusLabel[state.status]" />
       </template>
 
-      <div class="remote-card" :class="{ ok: state.status === 'running' }">
+      <div v-if="running || state.remoteAddress" class="remote-card" :class="{ ok: state.status === 'running' }">
         <p class="remote-label">远程地址（好友直接连接用）</p>
         <p class="remote-line">
           <code class="mono">{{ state.remoteAddress ?? '尚未分配' }}</code>
@@ -232,72 +251,28 @@ onBeforeUnmount(() => {
           启动隧道并通过认证后，这里会显示 frpc 分配的远程地址。
         </p>
       </div>
+      <p v-else class="connection-muted">{{ errorMsg || '按下方步骤获取访问密钥、选择隧道。连接后这里显示可分享的地址。' }}</p>
       <p v-if="errorMsg" class="connection-error" role="alert">{{ errorMsg }}</p>
     </ConnectionPanel>
 
-    <!-- 主操作区：一键开始（上次配置自动预填） -->
-    <ConnectionPanel
-      title="启动隧道"
-      subtitle="确认访问密钥与隧道 ID 后一键开始；两项均保存在本机 userData/frp-config.json，进入本页已自动填入上次配置。"
-    >
-      <label class="connection-field">
-        <span>访问密钥</span>
-        <input
-          v-model="form.accessKey"
-          class="input"
-          type="password"
-          autocomplete="off"
-          placeholder="natfrp.com 用户信息页查看"
-        />
-        <small>即 frpc 启动命令里 accessKey:tunnelId 的前半段；节点查询也使用它。密钥仅保存在本机，日志中默认打码。</small>
-      </label>
+    <ConnectionPanel title="1 · 获取访问密钥" subtitle="登录樱花穿透，在用户信息页复制访问密钥，粘贴后读取账号内的隧道。">
+      <div class="frp-guide-links"><a class="btn btn-ghost" href="https://www.natfrp.com/" target="_blank" rel="noreferrer">打开樱花穿透 ↗</a><button class="btn btn-ghost" @click="copyWebsite">复制网址</button><a href="https://doc.natfrp.com/" target="_blank" rel="noreferrer">使用帮助 ↗</a></div>
+      <p class="connection-muted selectable">https://www.natfrp.com/</p>
+      <label class="connection-field"><span>访问密钥</span><input v-model="form.accessKey" class="input" type="password" autocomplete="off" placeholder="粘贴用户信息页的访问密钥" :disabled="running || busy || creating || nodesLoading" /><small>密钥仅保存在本机，并用于连接樱花穿透服务。</small></label>
+      <button class="btn btn-gold" :disabled="nodesLoading || !form.accessKey.trim()" @click="loadNodes(true)">{{ nodesLoading ? '正在读取…' : '读取我的隧道与节点' }}</button>
+      <p v-if="nodesError" class="connection-error" role="alert">{{ nodesError }}</p>
+    </ConnectionPanel>
 
-      <label class="connection-field">
-        <span>隧道 ID</span>
-        <input
-          v-model="form.tunnelId"
-          class="input"
-          inputmode="numeric"
-          placeholder="例如 12345"
-        />
-        <small>在 natfrp.com 隧道列表创建（选择节点后生成），本地 IP 填 127.0.0.1，本地端口与 MC 局域网一致。</small>
-      </label>
+    <ConnectionPanel title="2 · 选择隧道并启动" subtitle="选择账号中已创建的 TCP 隧道，连接到它配置的本地游戏端口。">
+      <label class="connection-field"><span>我的隧道</span><select v-model="form.tunnelId" class="input" :disabled="running || busy || !nodesResult?.tunnels"><option value="">{{ nodesResult?.tunnels?.length ? '请选择隧道' : '请先读取隧道，或在下方创建' }}</option><option v-for="t in nodesResult?.tunnels || []" :key="t.id" :value="String(t.id)" :disabled="t.type !== 'tcp' || t.status !== 0">{{ t.name || '#' + t.id }} · {{ t.nodeName || '节点 ' + t.node }} · {{ t.type.toUpperCase() }} · {{ t.localIp }}:{{ t.localPort }}{{ t.status !== 0 ? '（不可用）' : '' }}</option></select></label>
+      <div v-if="selectedTunnel" class="connection-result"><strong>本地游戏：{{ selectedTunnel.localIp }}:{{ selectedTunnel.localPort }}</strong><p class="connection-muted">在 Minecraft 中「对局域网开放」，端口需与此一致。若游戏端口变化，可创建新隧道，或在樱花穿透网站修改后刷新列表。</p></div>
+      <div class="connection-actions main-actions"><button v-if="!running" class="btn btn-gold main-btn" :disabled="busy || !selectedTunnel" @click="onStart">{{ busy ? '正在连接…' : '启动选中隧道' }}</button><button v-else class="btn btn-ghost main-btn" :disabled="busy" @click="onStop">停止隧道</button><button class="btn btn-ghost" :disabled="busy" @click="refreshStatus">刷新状态</button></div>
+    </ConnectionPanel>
 
-      <details class="connection-details">
-        <summary>高级选项 · 本地端口</summary>
-        <div class="connection-detail-content">
-          <label class="connection-field">
-            <span>本地端口（MC 局域网端口）</span>
-            <input
-              v-model="form.localPort"
-              class="input"
-              inputmode="numeric"
-              placeholder="留空自动读取游戏内局域网端口"
-            />
-            <small>在游戏中选择「对局域网开放」后会写入 latest.log，启动器会尝试自动识别；仅当自动识别失败时才需要手动填写。</small>
-          </label>
-        </div>
-      </details>
-
-      <div class="connection-actions main-actions">
-        <button
-          v-if="!running"
-          class="btn btn-gold main-btn"
-          :disabled="busy || !form.accessKey.trim() || !form.tunnelId.trim()"
-          @click="onStart"
-        >
-          {{ busy ? '启动中…' : '启动 frpc' }}
-        </button>
-        <button v-else class="btn btn-ghost main-btn" :disabled="busy" @click="onStop">
-          {{ busy ? '停止中…' : '停止 frpc' }}
-        </button>
-        <button class="btn btn-ghost" :disabled="busy" @click="refreshStatus">刷新状态</button>
-      </div>
-      <p class="connection-muted">
-        <template v-if="hasSavedConfig">已载入上次保存的配置，确认无误即可启动。</template>
-        <template v-else>首次使用：填入访问密钥与隧道 ID，启动后会自动保存在本机，下次进入本页即可直接启动。</template>
-        启动即运行官方 frpc，把本地世界映射到樱花穿透节点；失败时状态区会给出认证或隧道原因。
-      </p>
+    <ConnectionPanel title="创建新隧道" subtitle="选择服务节点，再填入游戏局域网端口。创建成功后自动选中，不会自动运行。">
+      <div class="frp-create-grid"><label class="connection-field"><span>隧道名称</span><input v-model="creation.name" class="input" maxlength="64" placeholder="例如：好友生存世界" /></label><label class="connection-field"><span>服务节点</span><select v-model="creation.node" class="input"><option value="">{{ nodesResult ? '选择可用节点' : '请先读取节点' }}</option><option v-for="n in creatableNodes" :key="n.id" :value="String(n.id)">{{ n.name }} · {{ n.free ? '免费' : '专业版' }}{{ n.load !== null ? ' · ' + n.load + '%' : '' }}</option></select></label><label class="connection-field"><span>本地端口</span><input v-model="creation.localPort" class="input" type="number" min="1" max="65535" placeholder="游戏对局域网开放后显示的端口" /></label><label class="connection-field"><span>远程端口（可选）</span><input v-model="creation.remotePort" class="input" type="number" min="1" max="65535" placeholder="留空由樱花穿透分配" /></label></div>
+      <label class="frp-free"><input v-model="onlyFree" type="checkbox" />仅显示免费节点</label>
+      <button class="btn btn-gold" :disabled="creating || !form.accessKey.trim() || !creation.node || !creation.localPort" @click="createTunnel">{{ creating ? '正在创建…' : '创建 TCP 隧道' }}</button>
     </ConnectionPanel>
 
     <!-- 参考信息区：节点参考（默认折叠，点开才展开/查询） -->
@@ -305,7 +280,7 @@ onBeforeUnmount(() => {
       <header class="connection-panel-head">
         <div>
           <h2>节点参考</h2>
-          <p>节点由 natfrp 后台创建隧道时选择，此处仅供查看：在线状态、负载与免费/专业版标识来自 api.natfrp.com/v4（缓存 10 分钟）。</p>
+          <p>查看各节点的状态与说明，在上方选择可用节点创建隧道。专业版节点需要对应账号权限。</p>
         </div>
       </header>
       <div class="connection-panel-body">
@@ -367,6 +342,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 <style scoped>
+.frp-guide-links{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.selectable{user-select:text}.frp-create-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.frp-free{display:flex;gap:8px;align-items:center;font-size:13px;margin:16px 0}@media(max-width:750px){.frp-create-grid{grid-template-columns:1fr}}
 .frp-page { display: flex; flex-direction: column; gap: var(--sec-gap); min-width: 0; }
 .remote-card {
   display: flex; flex-direction: column; gap: var(--space-3);

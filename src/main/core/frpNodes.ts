@@ -132,14 +132,16 @@ export function filterFrpNodes(nodes: FrpNodeInfo[], onlyFree: boolean): FrpNode
 }
 
 /** 统一错误：非 2xx 时 v4 API 返回 { code, msg }（HTTP 状态码可能是 500 但 body 里是真实错误码）。 */
-async function apiGet(path: string, accessKey: string): Promise<unknown> {
+async function apiGet(path: string, accessKey: string, body?: Record<string, unknown>): Promise<unknown> {
   let resp: Response
   try {
     resp = await httpFetch(`${API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${accessKey}` }
+      headers: { Authorization: `Bearer ${accessKey}`, ...(body ? {'Content-Type': 'application/json'} : {}) },
+      method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(20_000)
     })
   } catch (e) {
-    throw new Error(`无法连接 natfrp API：${e instanceof Error ? e.message : String(e)}`)
+    throw new Error('无法连接樱花穿透，请检查网络后重试')
   }
   const text = await resp.text()
   if (!resp.ok) {
@@ -157,6 +159,36 @@ async function apiGet(path: string, accessKey: string): Promise<unknown> {
   } catch {
     throw new Error(`natfrp API ${path} 返回了无法解析的内容`)
   }
+}
+
+export interface FrpCreateTunnel { name: string; node: number; localPort: number; remotePort?: number }
+/** Explicit user action only; no retries of POSTs, which might otherwise create duplicate tunnels. */
+export async function createFrpTunnel(accessKey: string, input: FrpCreateTunnel): Promise<{id: number; name: string}> {
+  const name = String(input?.name ?? '').trim()
+  if (!name || name.length > 64) throw new Error('请填写 1–64 字符的隧道名称')
+  if (!Number.isInteger(input.localPort) || input.localPort < 1 || input.localPort > 65535) throw new Error('请填写游戏中显示的局域网端口（1–65535）')
+  if (input.remotePort && (!Number.isInteger(input.remotePort) || input.remotePort < 1 || input.remotePort > 65535)) throw new Error('远程端口无效')
+  const result = await fetchFrpNodes(accessKey, {refresh:true})
+  const node = result.nodes.find(n => n.id === input.node)
+  if (!node?.online || !node.canCreate) throw new Error('所选节点离线或已满，请选择其他节点')
+  const created = await apiGet('/tunnels', accessKey.trim(), {
+    name, type:'tcp', node: node.id, local_ip:'127.0.0.1', local_port:input.localPort,
+    ...(input.remotePort ? {remote:String(input.remotePort)} : {})
+  }) as {id: number; name: string}
+  cache = null
+  if (!Number.isSafeInteger(created?.id) || created.id <= 0) throw new Error('创建结果不完整，请刷新隧道列表确认，勿重复创建')
+  return created
+}
+
+export async function getRunnableFrpTunnel(accessKey: string, id: string): Promise<FrpTunnelInfo> {
+  if (!/^\d+$/.test(id)) throw new Error('请先选择已创建的隧道')
+  const result = await fetchFrpNodes(accessKey, {refresh:true})
+  if (!result.tunnels) throw new Error('隧道列表获取失败，请检查访问密钥后重试')
+  const tunnel = result.tunnels.find(t => String(t.id) === id)
+  if (!tunnel || tunnel.status !== 0) throw new Error('隧道不存在或不可用，请刷新列表重新选择')
+  if (tunnel.type !== 'tcp') throw new Error('Minecraft Java 版请选择 TCP 隧道')
+  if (!result.nodes.find(n => n.id === tunnel.node)?.online) throw new Error('隧道所在节点已离线，请选择其他隧道')
+  return tunnel
 }
 
 interface RawNode {

@@ -61,10 +61,10 @@ export class TcpBridge {
 
   /** guest 模式：监听 127.0.0.1 随机端口，返回本地代理地址。 */
   static async startGuest(rc: RudpConn, downCb: BridgeDownCb): Promise<{ addr: string; bridge: TcpBridge }> {
+    const bridge = new TcpBridge(rc, downCb)
     const ln = net.createServer((conn) => {
-      const bridge = new TcpBridge(rc, downCb)
-      bridge.ln = ln
-      try { conn.setNoDelay(true) } catch { /* ignore */ }
+      if (bridge.isStopped() || bridge.tcp) { conn.destroy(); return }
+      conn.setNoDelay(true)
       bridge.setConn(conn, null)
       void bridge.pump(conn)
     })
@@ -75,7 +75,6 @@ export class TcpBridge {
         resolve()
       })
     })
-    const bridge = new TcpBridge(rc, downCb)
     bridge.ln = ln
     bridge.touch()
     rc.setOnClosed(() => bridge.stop())
@@ -105,7 +104,6 @@ export class TcpBridge {
       const b = Buffer.alloc(BRIDGE_BUF_SIZE)
       try {
         while (true) {
-          conn.readable && conn.resume()
           const n = await readSocket(conn, b)
           if (n === 0) return
           this.touch()
@@ -263,9 +261,10 @@ function readSocket(s: net.Socket, buf: Buffer): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     const onReadable = (): void => {
       try {
-        const chunk = s.read()
+        const chunk = s.read(Math.min(buf.length, s.readableLength) || undefined)
         if (chunk !== null) {
           const n = chunk.copy(buf, 0, 0, buf.length)
+          if (chunk.length > n) s.unshift(chunk.subarray(n))
           cleanup()
           resolve(n)
         }
@@ -292,7 +291,8 @@ function readSocket(s: net.Socket, buf: Buffer): Promise<number> {
     s.once('error', onError)
     s.once('end', onEnd)
     s.once('close', onEnd)
-    onReadable()
+    if (s.destroyed || s.readableEnded) onEnd()
+    else onReadable()
   })
 }
 

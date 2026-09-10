@@ -18,7 +18,7 @@ const methodCards: Array<{ key: Exclude<ConnectPage, 'choose'>; name: string; ta
     name: 'FRP 内网穿透',
     tag: '公网隧道 · 最稳',
     scene: '适合追求稳定、任何网络环境都要能开局',
-    desc: '注册樱花穿透（natfrp.com）并创建隧道，用官方 frpc 把本地世界映射到公网。任何网络环境都能稳定开局，需要访问密钥与隧道 ID。',
+    desc: '注册樱花穿透（natfrp.com）并创建隧道，用官方 frpc 把本地世界映射到公网。任何网络环境都能稳定开局，填入访问密钥，选择或创建隧道即可运行。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9m5 11V5m5 15v-8m5 8V8"/></svg>'
   },
   {
@@ -26,7 +26,7 @@ const methodCards: Array<{ key: Exclude<ConnectPage, 'choose'>; name: string; ta
     name: 'VoxLink 联机',
     tag: '6 位房间码 · 免公网 IP',
     scene: '适合双方网络尚可、想输个房间码就开玩',
-    desc: '创建房间得到 6 位房间码，好友输码后自动进行 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器；打洞约 20 秒未成功可转玩家中继或直连。打通后仍需在游戏内「直接连接」填入地址。',
+    desc: '创建房间得到 6 位房间码，好友输码后自动进行 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器；20 秒未连通可选择 TURN 中继，开启中继时 60 秒自动尝试。打通后仍需在游戏内「直接连接」填入地址。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="5"/><path d="M8 12h2m4 0h2"/><circle cx="9" cy="12" r="0.8" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="0.8" fill="currentColor" stroke="none"/></svg>'
   },
   {
@@ -34,7 +34,7 @@ const methodCards: Array<{ key: Exclude<ConnectPage, 'choose'>; name: string; ta
     name: '陶瓦联机',
     tag: '独立开源 · 开箱即用',
     scene: '适合不想配置任何参数、极端 NAT 环境',
-    desc: '独立开源联机项目（GitHub burningtnt/Terracotta，基于 EasyTier，AGPL-3.0）：自动下载官方二进制并校验，创建/加入房间开箱即用，极端 NAT 下成功率较高。',
+    desc: '独立开源联机项目（GitHub burningtnt/Terracotta，基于 EasyTier，AGPL-3.0）：手动下载官方工具并校验，创建/加入房间开箱即用，极端 NAT 下成功率较高。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>'
   }
 ]
