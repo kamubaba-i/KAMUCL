@@ -105,6 +105,11 @@ const navItems: Array<{ key: ViewName; label: string; icon: string }> = [
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M7.5 10.8v3.4M5.8 12.5h3.4"/><circle cx="15.6" cy="11.9" r="0.6" fill="currentColor" stroke="none"/><circle cx="18" cy="13.6" r="0.6" fill="currentColor" stroke="none"/></svg>'
   },
   {
+    key: 'keys',
+    label: '默认配置',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>'
+  },
+  {
     key: 'skins',
     label: '皮肤',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 4-6 3 2 5 3-1v9h8v-9l3 1 2-5-6-3a3 3 0 0 1-6 0Z"/></svg>'
@@ -152,11 +157,7 @@ const resourceSubItems: Array<{ key: ViewName; label: string; icon: string }> = 
     label: '光影包',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
   },
-  {
-    key: 'keys',
-    label: '默认配置',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>'
-  },
+
   {
     key: 'bridge',
     label: 'MOD 面板',
@@ -177,7 +178,7 @@ const resourceSubItems: Array<{ key: ViewName; label: string; icon: string }> = 
 /** 资源管理组是否展开（默认折叠；当前在其中任一子页时强制展开高亮） */
 const resourceExpanded = ref(false)
 const inResourceGroup = computed(() =>
-  ['mods', 'packs', 'shaders', 'keys', 'bridge', 'servers', 'friends'].includes(store.currentView)
+  ['mods', 'packs', 'shaders', 'bridge', 'servers', 'friends'].includes(store.currentView)
 )
 
 // Route timings also respect the OS preference when Vue uses explicit timeout fallback.

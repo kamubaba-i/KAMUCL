@@ -32,6 +32,7 @@ import {
 export type MirrorPref = 'official' | 'bmclapi'
 export type ProgressFn = (done: number, total: number) => void
 export interface DownloadBatchProgress extends DownloadProgressSnapshot {
+  activeFiles?: string[]
   speedBps: number
   etaSeconds: number | null
   paused: boolean
@@ -45,6 +46,7 @@ export type AllProgressFn = (
 ) => void
 
 export interface DownloadTask {
+  label?: string
   url: string
   /** 元数据声明的其他合法来源，按原顺序 fallback。 */
   urls?: string[]
@@ -76,6 +78,11 @@ export function mirrorUrl(url: string, mirror: MirrorPref): string {
     const u = new URL(url)
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return url
     const host = u.hostname.toLowerCase()
+    // Documented MCIM file CDN routes; never rewrite arbitrary resource hosts.
+    if ((host === 'cdn.modrinth.com' && /^\/data\/[^/]+\/versions\/[^/]+\//.test(u.pathname)) ||
+        (['edge.forgecdn.net', 'mediafilez.forgecdn.net'].includes(host) && /^\/files\/\d+\/\d+\//.test(u.pathname))) {
+      return `https://mod.mcimirror.top${u.pathname}${u.search}`
+    }
     if (PLAIN_MIRROR_HOSTS.has(host)) {
       return `https://${BMCLAPI_HOST}${u.pathname}${u.search}`
     }
@@ -413,6 +420,10 @@ async function doDownload(
   } catch {
     offset = 0
   }
+  if (range && expectedSize != null && offset === expectedSize) {
+    onProgress?.(offset, expectedSize)
+    return { tmp, received: offset, total: expectedSize }
+  }
 
   const requestController = new AbortController()
   const onExternalAbort = (): void => requestController.abort(extSignal?.reason)
@@ -448,7 +459,8 @@ async function doDownload(
         signal: requestController.signal,
         redirect: 'follow',
         headers,
-        bodyTimeoutMs: DOWNLOAD_BODY_TIMEOUT_MS
+        bodyTimeoutMs: DOWNLOAD_BODY_TIMEOUT_MS,
+        separateConnection: !!range
       })
       if (res.status === 416 && expectedSize != null && offset === expectedSize) {
         await res.body?.cancel()
@@ -541,7 +553,7 @@ async function doDownload(
         void reader.cancel().catch(() => undefined)
         ws.destroy()
         await written.catch(() => undefined)
-        if (extSignal?.aborted) fs.rmSync(tmp, { force: true })
+        if (extSignal?.aborted && !range) fs.rmSync(tmp, { force: true })
         if (extSignal?.aborted) throw new Error('已取消')
         throw e
       } finally {
@@ -564,16 +576,23 @@ async function startTransfer(
   extSignal: AbortSignal | undefined,
   expectedSize: number | undefined,
   preferFaster = false,
-  parallel = false
+  parallelKey?: string
 ): Promise<TransferResult> {
-  const count = Math.min(4, downloadLimiter.maxConcurrent)
-  if (parallel && expectedSize && expectedSize >= 8 * 1024 * 1024 && count > 1 &&
+  const count = Math.min((expectedSize ?? 0) >= 64 * 1024 * 1024 ? 8 : 4, downloadLimiter.maxConcurrent)
+  if (parallelKey && expectedSize && expectedSize >= 8 * 1024 * 1024 && count > 1 &&
       !downloadLimiter.isThrottling && !fs.existsSync(dest + '.part')) {
     const controller = new AbortController()
     const signal = extSignal ? AbortSignal.any([extSignal, controller.signal]) : controller.signal
     inheritTaskControl(extSignal, signal)
     fs.mkdirSync(path.dirname(dest), { recursive: true })
-    const dir = fs.mkdtempSync(dest + '.segments-')
+    const dir = dest + '.segments-cache'
+    const identity = JSON.stringify({ size: expectedSize, count, hash: parallelKey })
+    let previous = ''
+    try { previous = fs.readFileSync(path.join(dir, 'identity.json'), 'utf8') } catch {}
+    if (previous !== identity) fs.rmSync(dir, { recursive: true, force: true })
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'identity.json'), identity)
+    let keepSegments = false
     const done = Array.from({ length: count }, () => 0)
     let firstError: unknown
     try {
@@ -604,9 +623,12 @@ async function startTransfer(
       return { tmp: dest + '.part', received: expectedSize, total: expectedSize }
     } catch (error) {
       fs.rmSync(dest + '.part', { force: true })
-      if (extSignal?.aborted) throw error
+      if (extSignal?.aborted || !(error instanceof DownloadIntegrityError)) {
+        keepSegments = true
+        throw error
+      }
       launcherLog(`分段下载回退单连接 ${path.basename(dest)}：${error instanceof Error ? error.message : error}`)
-    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+    } finally { if (!keepSegments) fs.rmSync(dir, { recursive: true, force: true }) }
   }
   return doDownload(url, dest, onProgress, extSignal, expectedSize, expectedSize == null, preferFaster)
 }
@@ -784,7 +806,7 @@ for (let round = 0; round < 2; round++) {
         transferTries++
         try {
           const preferFaster = round === 0 && candidate !== candidates[candidates.length - 1] && (expected.size ?? 0) >= slowSpeedThresholds.largeFileBytes
-          const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size, preferFaster, !!(expected.sha1 || expected.sha512))
+          const transfer = await startTransfer(candidate, dest, monoOnProgress, extSignal, expected.size, preferFaster, expected.sha512 || expected.sha1)
           // 远端总长不写回 expected，避免污染后续候选来源。
           const verifyTarget = expected
           const invalid = await verifyFile(transfer.tmp, verifyTarget, extSignal)
@@ -879,6 +901,7 @@ export async function downloadAll(
   let networkBytes = 0
   let speedState = { speedBps: 0, etaSeconds: null as number | null }
   let lastEmitAt = 0
+  const activeFiles = new Map<number, string>()
   const speedEstimator = new SmoothedSpeedEstimator()
   const emitSnapshot = (force = false): void => {
     const now = Date.now()
@@ -888,6 +911,7 @@ export async function downloadAll(
     const detail: DownloadBatchProgress = {
       ...snapshot,
       ...speedState,
+      activeFiles: [...activeFiles.values()],
       paused: isTaskPaused(poolSignal)
     }
     onProgress?.(
@@ -920,6 +944,7 @@ export async function downloadAll(
       await waitIfTaskPaused(poolSignal)
       const taskIndex = idx++
       const t = tasks[taskIndex]
+      activeFiles.set(taskIndex, t.label || path.basename(t.dest))
       let lastReceived = 0
       let hasReceivedSample = false
       try {
@@ -943,6 +968,8 @@ export async function downloadAll(
         if (firstError == null) firstError = e
         poolController.abort(e)
         throw e
+      } finally {
+        activeFiles.delete(taskIndex)
       }
       const actualSize = fs.statSync(t.dest).size
       tracker.complete(progressIds[taskIndex], actualSize)
