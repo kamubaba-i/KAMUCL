@@ -49,6 +49,23 @@ app.whenReady().then(async () => {
   }
   const navigate = async key => { await run(`document.querySelector('[data-nav="${key}"]').click()`); await wait(600) }
   await win.loadFile(path.resolve('out/renderer/index.html')); await wait(1800)
+  const hover = async key => {
+    const point = await run(`(()=>{const r=document.querySelector('[data-nav="${key}"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`)
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+  }
+  const bubble = () => run(`(()=>{const b=document.querySelector('.nav-bubble').getBoundingClientRect();return {top:b.top,height:b.height}})()`)
+  const itemTop = key => run(`document.querySelector('[data-nav="${key}"]').getBoundingClientRect().top`)
+  await hover('home'); await wait(350)
+  const start = await itemTop('home'), end = await itemTop('game')
+  await hover('game'); await wait(50)
+  const mid = await bubble()
+  assert(mid.top > start && mid.top < end, 'Shared bubble must interpolate rather than jump')
+  await hover('skins'); await wait(35); await hover('settings'); await wait(350)
+  assert(Math.abs((await bubble()).top - await itemTop('settings')) < 1, 'Rapid hover settles at the latest item')
+  assert.equal(await run(`document.querySelector('[aria-current="page"]').dataset.nav`), 'home')
+  await shot('navigation-hover')
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: 500, y: 200 }); await wait(350)
+  assert(Math.abs((await bubble()).top - start) < 1, 'Pointer exit returns bubble to selected page')
   await shot('home-wide')
   await navigate('game'); await run(`document.querySelectorAll('.game-tab')[1].click()`); await shot('versions-wide')
   assert(await run(`Array.from(document.querySelectorAll('.installed-row')).every(row => {
@@ -68,12 +85,23 @@ app.whenReady().then(async () => {
     assert.equal(await run(`document.querySelector('[aria-current="page"]').dataset.nav`), 'community')
     await navigate('home')
     await run(`document.querySelector('.nav-parent').click()`); await wait(400)
+    await hover('mods'); await wait(350)
+    assert(Math.abs((await bubble()).top - await itemTop('mods')) < 1, 'Nested item uses nav-relative geometry')
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: 500, y: 200 }); await wait(350)
+    // Offscreen windows have no native focus; emulate it without stealing the user's window.
+    win.webContents.debugger.attach('1.3')
+    await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
+    await run(`document.querySelector('[data-nav="shaders"]').focus(); document.querySelector('.nav').scrollTop = 40`); await wait(350)
+    const focusGeometry = { bubble: await bubble(), target: await itemTop('shaders'), state: await run(`({active:document.activeElement?.dataset.nav,scroll:document.querySelector('.nav').scrollTop,style:document.querySelector('.nav-bubble').getAttribute('style')})`) }
+    assert(Math.abs(focusGeometry.bubble.top - focusGeometry.target) < 1, 'Keyboard focus and scrolling retain bubble alignment: ' + JSON.stringify(focusGeometry))
+    win.webContents.debugger.detach()
     await run(`document.querySelector('.nav-parent').click()`); await wait(400)
     assert(await run(`document.querySelector('.nav-sub').inert`), 'Collapsed navigation must not receive keyboard focus')
     await win.webContents.debugger.attach('1.3')
     await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
     await navigate('community')
     assert.equal(await run(`getComputedStyle(document.querySelector('.result-card')).animationDuration`), '1e-05s')
+    assert(parseFloat(await run(`getComputedStyle(document.querySelector('.nav-bubble')).transitionDuration`)) < 0.001)
     win.webContents.debugger.detach()
     await navigate('settings'); await shot('settings-compact')
     for (const theme of ['black-orange', 'white-pink', 'black-pink', 'transparent']) {
