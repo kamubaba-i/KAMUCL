@@ -1,4 +1,5 @@
 import { cleanDesign } from '../../shared/visualDesign'
+import { ensureDefaultGameFolder } from './defaultGameFolder'
 /**
  * 设置持久化：userData/settings.json
  */
@@ -74,6 +75,7 @@ export function resetSettingsToDefaults(): void {
   } catch { /* 备份失败不阻断重置 */ }
   const def = defaults()
   fs.mkdirSync(path.dirname(file), { recursive: true })
+  ensureDefaultGameFolder(app.getPath('appData'), def.folders)
   fs.writeFileSync(file, JSON.stringify(def, null, 2), 'utf-8')
   cached = def
 }
@@ -154,6 +156,8 @@ export function getSettings(): Settings {
   } catch {
     cached = def
   }
+  try { ensureDefaultGameFolder(app.getPath('appData'), cached.folders) }
+  catch (error) { console.error('[KAMUCL] 默认游戏目录创建失败:', error) }
   return cached
 }
 
