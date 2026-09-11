@@ -462,7 +462,7 @@ watch(
               {{ uploading ? '上传中…' : '上传' }}
             </button>
           </div>
-          <p v-if="isMs" class="muted skin-hint">支持 64×64 的 PNG 皮肤文件，也可直接拖拽到本页（旧版 64×32 会自动迁移预览）</p>
+          <p v-if="isMs" class="muted skin-hint">支持 64×64 的 PNG 皮肤文件</p>
           <div v-else class="external-skin-note">
             <span class="tag tag-cyan">{{ store.selectedAccount?.providerName }}</span>
             <p class="muted skin-hint">外置账号的皮肤与披风由所属皮肤站管理；KAMUCL 会读取并在启动时加载当前材质。</p>
