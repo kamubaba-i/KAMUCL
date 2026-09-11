@@ -105,7 +105,7 @@ export const store = reactive({
   /** 当前选中的板块 key（对应元素 data-edit 值），空 = 未选中 */
   editTarget: '',
   /** 通知中心：最近的 toast 记录（新→旧，上限 30 条） */
-  notices: [] as Array<{ id: number; text: string; type: ToastType; time: number }>,
+  notices: [] as Array<{ id: number; text: string; type: ToastType; time: number; exitTarget?: {id:string;folder:string} }>,
   /** 通知是否有未读（驱动铃铛红点） */
   noticesUnread: false,
   /** 整合包导入处理器（App.vue 注册，供任意页面触发导入确认弹窗） */
@@ -273,7 +273,7 @@ export function markNoticesRead() {
 export async function loadExitNotices() {
   try {
     const records = await getExitHistory()
-    records.forEach((record, i) => store.notices.push({ id: -i - 1, time: record.time, text: record.text, type: record.uncertain ? 'info' : 'error' }))
+    records.forEach((record, i) => store.notices.push({ id: -i - 1, time: record.time, text: record.text, type: record.uncertain ? 'info' : 'error', exitTarget: record.kind==='game'&&record.context?.versionId&&record.context?.folder?{id:String(record.context.versionId),folder:String(record.context.folder)}:undefined }))
     store.notices.sort((a, b) => b.time - a.time)
     store.noticesUnread ||= records.some(record => !record.seen)
   } catch { /* Older test bridges or unreadable journal must not block startup. */ }

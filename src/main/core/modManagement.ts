@@ -1,3 +1,4 @@
+import { protectModChange } from './changeProtection'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -18,7 +19,7 @@ const MR='https://api.modrinth.com/v2'
 async function json(url:string,body?:unknown,headers:Record<string,string>={}){const r=await httpFetch(url,{method:body?'POST':'GET',headers:{'User-Agent':'KAMUCL (github.com/kamubaba-i/KAMUCL)','Content-Type':'application/json',...headers},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});if(!r.ok)throw new Error('社区请求失败 HTTP '+r.status);return r.json() as Promise<any>}
 export async function assertModsIdle(dir:string){const running=getRunningVersionIds();for(const v of listAllInstalled().filter(v=>running.has(v.id))){const other=await resolveResourceDirectory(v.folder||gameDir(),v.id,'mods');if(path.resolve(other).toLowerCase()===path.resolve(dir).toLowerCase())throw new Error('使用该模组目录的游戏正在运行，请先退出游戏')}}
 export async function modCatalog(versionId:string,folder:string):Promise<ManagedMod[]>{const dir=await resolveResourceDirectory(folder,versionId,'mods');const entries=await scanModDirectory(dir,true);return entries.map(i=>({fileName:i.fileName,name:i.name||i.fileName,version:i.version||'',sha1:i.sha1,fingerprint:i.fingerprint,identity:i.sha1?modIdentity(dir,i.sha1):undefined,locked:i.sha1?isModLocked(dir,i.sha1):false,error:i.error}))}
-export async function setModsEnabled(versionId:string,folder:string,names:string[],enabled:boolean):Promise<ModOperationResult[]>{const dir=await resolveResourceDirectory(folder,versionId,'mods');return withFileJob(dir,undefined,async()=>{await assertModsIdle(dir);if(!Array.isArray(names)||names.length>10000)throw new Error('单次最多处理10000个模组');const result:ModOperationResult[]=[];for(const name of [...new Set(names)]){try{safeModName(name);const base=name.replace(/\.disabled$/i,''),target=base+(enabled?'':'.disabled');if(!fs.existsSync(path.join(dir,name))&&fs.existsSync(path.join(dir,target))){await validateModFile(dir,target);result.push({fileName:name,name:target,ok:true});continue}await validateModFile(dir,name);if(name!==target){if(fs.existsSync(path.join(dir,target)))throw new Error('目标文件已存在，未覆盖');await fs.promises.copyFile(path.join(dir,name),path.join(dir,target),fs.constants.COPYFILE_EXCL);try{await fs.promises.unlink(path.join(dir,name))}catch(e){await fs.promises.unlink(path.join(dir,target));throw e}}result.push({fileName:name,name:target,ok:true})}catch(e){result.push({fileName:name,ok:false,error:String(e)})}}return result})}
+export async function setModsEnabled(versionId:string,folder:string,names:string[],enabled:boolean):Promise<ModOperationResult[]>{const dir=await resolveResourceDirectory(folder,versionId,'mods');return withFileJob(dir,undefined,async()=>{await assertModsIdle(dir);if(!Array.isArray(names)||names.length>10000)throw new Error('单次最多处理10000个模组');const validNames=[...new Set(names)].filter(n=>{try{safeModName(n);return true}catch{return false}});if(validNames.length)await protectModChange(dir,validNames.flatMap(n=>[n,n.replace(/\.disabled$/i,'')+(enabled?'':'.disabled')]),'批量启停模组前');const result:ModOperationResult[]=[];for(const name of [...new Set(names)]){try{safeModName(name);const base=name.replace(/\.disabled$/i,''),target=base+(enabled?'':'.disabled');if(!fs.existsSync(path.join(dir,name))&&fs.existsSync(path.join(dir,target))){await validateModFile(dir,target);result.push({fileName:name,name:target,ok:true});continue}await validateModFile(dir,name);if(name!==target){if(fs.existsSync(path.join(dir,target)))throw new Error('目标文件已存在，未覆盖');await fs.promises.copyFile(path.join(dir,name),path.join(dir,target),fs.constants.COPYFILE_EXCL);try{await fs.promises.unlink(path.join(dir,name))}catch(e){await fs.promises.unlink(path.join(dir,target));throw e}}result.push({fileName:name,name:target,ok:true})}catch(e){result.push({fileName:name,ok:false,error:String(e)})}}return result})}
 async function identify(dir:string,mods:ManagedMod[]):Promise<void>{
  const missing=mods.filter(m=>m.sha1&&modIdentity(dir,m.sha1).startsWith('sha1:'));if(!missing.length)return
  const byHash:Record<string,any>={}
@@ -57,4 +58,26 @@ export async function planModVersionChange(id:string,fileId:string):Promise<ModC
  const view:ModChangePlan={id:crypto.randomUUID(),fileName:mod.fileName,target:file,files,warnings,changelog:String(changelog).replace(/<[^>]*>/g,'').slice(0,20000)};changes.set(view.id,{view,dir:c.dir,replacements,mods:c.mods,lockHash:mod.sha1,time:Date.now()});return view
 }
 async function validateSnapshot(dir:string,mods:ManagedMod[]){const names=(await fs.promises.readdir(dir)).filter(n=>/\.jar(?:\.disabled)?$/i.test(n)).sort();if(JSON.stringify(names)!==JSON.stringify(mods.map(m=>m.fileName).sort()))throw new Error('检查后模组列表发生变化，请重新检查');for(const m of mods)await validateModFile(dir,m.fileName,m.sha1)}
-export async function applyModVersionChange(id:string,confirmed:boolean){prune();const c=changes.get(id);if(!c)throw new Error('切换计划已过期');if((c.view.warnings.length||isModLocked(c.dir,c.lockHash))&&confirmed!==true)throw new Error('请确认锁定模组与前置提醒');return withFileJob(c.dir,undefined,async()=>{await assertModsIdle(c.dir);await validateSnapshot(c.dir,c.mods);await replaceModFiles(c.dir,c.replacements,async()=>{await assertModsIdle(c.dir);await validateSnapshot(c.dir,c.mods);if(isModLocked(c.dir,c.lockHash)&&confirmed!==true)throw new Error('模组已锁定，请重新确认');transferModLock(c.dir,c.lockHash,c.replacements[0].sha1)});changes.delete(id);return {ok:true}})}
+export async function applyModVersionChange(id:string,confirmed:boolean){prune();const c=changes.get(id);if(!c)throw new Error('切换计划已过期');if((c.view.warnings.length||isModLocked(c.dir,c.lockHash))&&confirmed!==true)throw new Error('请确认锁定模组与前置提醒');return withFileJob(c.dir,undefined,async()=>{await assertModsIdle(c.dir);await validateSnapshot(c.dir,c.mods);await replaceModFiles(c.dir,c.replacements,async()=>{await assertModsIdle(c.dir);await validateSnapshot(c.dir,c.mods);if(isModLocked(c.dir,c.lockHash)&&confirmed!==true)throw new Error('模组已锁定，请重新确认')});transferModLock(c.dir,c.lockHash,c.replacements[0].sha1);changes.delete(id);return {ok:true}})}
+
+/** Resolve required files from the exact installed release, never from a name search. */
+export async function planMissingDependencies(versionId:string,folder:string,fileName:string):Promise<ModChangePlan>{
+ const list=await modVersionChoices(versionId,folder,fileName),c=choices.get(list.id)!,mod=c.mods.find(m=>m.fileName===fileName)!
+ if(/\.disabled$/i.test(fileName))throw new Error('该模组已禁用，无需安装运行前置')
+ const exact=list.files.find(f=>f.sha1===mod.sha1)
+ if(!exact)throw new Error('社区列表中没有与本地哈希完全一致的版本，无法可靠确定前置，请手动核对')
+ const plan=await planModVersionChange(list.id,exact.fileId),change=changes.get(plan.id)!
+ const warnings=plan.warnings.filter(w=>!w.startsWith('此模组已锁定'))
+ if(warnings.length){changes.delete(plan.id);throw new Error('无法完整确定兼容前置：'+warnings.join('；'))}
+ const files=plan.files.filter(f=>f.dependency)
+ if(!files.length){changes.delete(plan.id);throw new Error('社区元数据未发现可安全补充的缺失前置，请核对日志中的版本限制')}
+ // A distinct store prevents these plans being applied by the version-change endpoint.
+ changes.delete(plan.id);dependencyChanges.set(plan.id,{...change,replacements:change.replacements.slice(1)})
+ return {...plan,files,warnings:[],changelog:'仅补充所列必要前置，保留当前模组及其锁定状态。'}
+}
+const dependencyChanges=new Map<string,{dir:string;replacements:ModReplacement[];mods:ManagedMod[];time:number}>()
+export async function applyMissingDependencies(id:string,confirmed:boolean,signal?:AbortSignal,onProgress?:(fraction:number)=>void){
+ for(const[k,v]of dependencyChanges)if(Date.now()-v.time>1800000)dependencyChanges.delete(k)
+ const c=dependencyChanges.get(id);if(!c||!confirmed)throw new Error('请重新检查并确认前置安装清单')
+ return withFileJob(c.dir,signal,async()=>{await assertModsIdle(c.dir);await validateSnapshot(c.dir,c.mods);await replaceModFiles(c.dir,c.replacements,async()=>{await assertModsIdle(c.dir);await validateSnapshot(c.dir,c.mods)},signal,onProgress);dependencyChanges.delete(id);return {ok:true}})
+}

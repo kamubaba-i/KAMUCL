@@ -68,7 +68,7 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 
 // ---------------- 设置 ----------------
 export const getSettings = () => invoke<Settings>(IPC.settingsGet)
-export const getExitHistory = () => invoke<Array<{ id: string; kind: string; time: number; text: string; seen: boolean; uncertain?: boolean }>>(IPC.exitHistoryList)
+export const getExitHistory = () => invoke<Array<{ id: string; kind: string; time: number; text: string; seen: boolean; uncertain?: boolean; context?: Record<string,unknown> }>>(IPC.exitHistoryList)
 export const acknowledgeExitHistory = () => invoke<void>(IPC.exitHistoryAck)
 export const clearExitHistory = () => invoke<void>(IPC.exitHistoryClear)
 /** 真实系统信息（物理内存总量等），用于内存滑块上限等 */
@@ -390,8 +390,8 @@ export const pauseTask = (taskId: string) => invoke<boolean>(IPC.tasksPause, tas
 export const resumeTask = (taskId: string) => invoke<boolean>(IPC.tasksResume, taskId)
 
 /** 导出启动失败日志包（弹系统保存对话框），返回保存路径（取消 = null） */
-export const exportLaunchLogs = (versionId: string) =>
-  invoke<string | null>(IPC.launchExportLogs, versionId)
+export const exportLaunchLogs = (versionId: string, folder?: string) =>
+  invoke<string | null>(IPC.launchExportLogs, versionId, folder)
 
 // ---------------- 工具 ----------------
 /** 把 invoke 抛出的错误转成适合 toast 展示的短文本 */

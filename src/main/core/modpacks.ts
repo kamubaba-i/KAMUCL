@@ -1,3 +1,4 @@
+import { backupInstance } from './instanceCenter'
 /**
  * 整合包安装：Modrinth .mrpack、CurseForge .zip 与「解压即玩」全量包（含 .minecraft/versions）
  * 流程：探测格式 → 解析清单 → 安装游戏本体与加载器 → 创建隔离实例 → 下载文件 → 解压 overrides
@@ -957,6 +958,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
     if (!existing) throw new Error(`目标文件夹中找不到待${action === 'update' ? '更新' : '覆盖'}实例：${id}`)
     registerVersionFolder(id, targetFolder)
     const currentDir = versionDir(id)
+    await backupInstance({folder:targetFolder,id},'整合包覆盖前',true,undefined,opts?.signal)
     oldManaged = readManagedFiles(currentDir)
     backupDir = path.join(path.dirname(currentDir), `.${path.basename(currentDir)}.kamucl-backup-${crypto.randomUUID()}`)
     fs.renameSync(currentDir, backupDir)

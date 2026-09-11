@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import LaunchNotice from './components/LaunchNotice.vue'
+import { instanceCenter, openInstanceCenter } from './instanceCenter'
 import { loadExitNotices, clearNotices } from './store'
 import { useNavigationBubble } from './composables/useNavigationBubble'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -57,6 +58,7 @@ import { updateNotes, latestUpdateNote } from '@shared/updateNotes'
 import HomeView from './views/HomeView.vue'
 // 非首屏视图全部懒加载：首屏只打包/挂载 HomeView，其余视图拆独立 chunk 按需拉取
 // （渲染层常驻内存大头之一；配合 memTrim/idleTrim 的静默瘦身）。
+const InstanceCenter = defineAsyncComponent(() => import('./components/InstanceCenter.vue'))
 const GameView = defineAsyncComponent(() => import('./views/GameView.vue'))
 const ModsView = defineAsyncComponent(() => import('./views/ModsView.vue'))
 const PacksView = defineAsyncComponent(() => import('./views/PacksView.vue'))
@@ -686,7 +688,7 @@ async function onExportLogs() {
   if (launchFail.exporting) return
   launchFail.exporting = true
   try {
-    const p = await exportLaunchLogs(store.launchingVersionId)
+    const p = await exportLaunchLogs(store.launchingVersionId,store.launchingFolder)
     if (p) {
       toast(`错误日志已导出：${p}`, 'success')
       launchFail.open = false
@@ -1206,6 +1208,7 @@ onUnmounted(() => {
 
 <template>
   <LaunchNotice />
+  <InstanceCenter v-if="instanceCenter.target" :key="instanceCenter.target.folder+instanceCenter.target.id" />
   <Teleport :to="designStageReady ? '#design-preview-host' : 'body'" :disabled="!designStageReady">
   <!-- 自定义背景层（纯色/图片 + 透明度 + 模糊） -->
   <div data-ui="App:870373af1ab7" v-if="bgStyle" class="app-bg" :style="bgStyle"></div>
@@ -1385,6 +1388,7 @@ onUnmounted(() => {
                 <span data-ui="App:adb2057c5de6" class="notice-dot"></span>
                 <div data-ui="App:2278766c3c3f" class="notice-body">
                   <p data-ui="App:e0e95443c7b4" class="notice-text">{{ n.text }}</p>
+                  <button v-if="n.exitTarget" class="btn btn-sm" @click="openInstanceCenter(n.exitTarget,'diagnostics'); noticeOpen = false">查看原因</button>
                   <span data-ui="App:9f929a457637" class="notice-time">{{ fmtNoticeTime(n.time) }}</span>
                 </div>
               </div>
@@ -1541,6 +1545,7 @@ onUnmounted(() => {
         <h3 data-ui="App:ffddaed1dca5" class="modal-title">{{ launchFail.title }}</h3>
         <p data-ui="App:9ede176a5a84" class="launchfail-text">{{ launchFail.text }}</p>
         <div data-ui="App:b5caea38dc55" class="modal-actions">
+          <button class="btn btn-ghost" @click="openInstanceCenter({id:store.launchingVersionId,folder:store.launchingFolder},'diagnostics'); launchFail.open=false">查看原因</button>
           <button data-ui="App:bbc871d022c8" class="btn btn-ghost" @click="launchFail.open = false">关闭</button>
           <button data-ui="App:43f37fe4338f" class="btn btn-gold" :disabled="launchFail.exporting" @click="onExportLogs">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11" /><path d="m7 10 5 5 5-5" /><path d="M4 21h16" /></svg>

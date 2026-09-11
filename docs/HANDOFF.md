@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 14:30 ｜ 当前版本：**1.0.57**（已验证、打包和发布）
+> 更新时间：2026-09-11 17:39 ｜ 当前版本：**1.0.58**
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,8 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.58：实例管理中心与本地诊断**。实现和验证说明见 [INSTANCE-CENTER-1.0.58.md](INSTANCE-CENTER-1.0.58.md)。源码包含复制/备份/恢复事务、模组改动保护、独立会话日志、运行环境检查及修复；生产界面验证脚本为 `scripts/verify-instance-center-ui.cjs`。Mac 构建工作流现从同一次原生构建直接输出 APP ZIP 和已挂载启动验证的 DMG，避免再次依赖已发布附件。
 
 **v1.0.57 补充 DMG 应用安装镜像**：`KAMUCL-1.0.57-mac-arm64.dmg` 和 `KAMUCL-1.0.57-mac-x64.dmg` 已附加到相同 Release，内含 KAMUCL.app、Applications 快捷入口和安装说明。此次仅封装已发布 ZIP 中的相同应用，版本保持 1.0.57，原 ZIP/Windows 附件及标签不变。Mac 原生验证运行 https://github.com/kamubaba-i/KAMUCL/actions/runs/34575051141 ：ZIP 哈希、签名结构、hdiutil verify、只读挂载后的实际主界面启动全部通过。未做 Apple 开发者签名及公证。DMG 发布摘要独立放在 SHA256SUMS-DMG.txt，成品归档 `release/final-1.0.57`；证据 `out/dmg-arm64-ci`、`out/dmg-x64-ci`、`out/upload-dmg.log`。打包流程提交 master `9c25e07`、main `65ad879`。
 

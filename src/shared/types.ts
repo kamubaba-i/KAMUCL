@@ -646,6 +646,13 @@ export interface LaunchState {
 
 // ---------------- IPC 通道（invoke: 前端 await 调用） ----------------
 export const IPC = {
+  centerOverview: 'center:overview',
+  centerWorlds: 'center:worlds',
+  centerScreenshots: 'center:screenshots',
+  centerBackups: 'center:backups',
+  centerOperation: 'center:operation',
+  centerDiagnose: 'center:diagnose',
+  centerFile: 'center:file',
   exitHistoryList: 'exitHistory:list',
   exitHistoryAck: 'exitHistory:ack',
   exitHistoryClear: 'exitHistory:clear',

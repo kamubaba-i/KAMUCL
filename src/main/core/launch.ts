@@ -281,7 +281,11 @@ async function launchOwned(
   let logStream: fs.WriteStream | null = null
   let stdoutStream: fs.WriteStream | null = null
   let stderrStream: fs.WriteStream | null = null
-  const launchLogDir = path.join(gameDir(), 'kamucl-logs')
+  const launchLogDir = path.join(gameDir(), 'kamucl-logs', crypto.randomUUID())
+  const sessionStartedAt = new Date().toISOString()
+  let sessionDirectory = ''
+  try { sessionDirectory = instanceDirectoryState(versionId, readVersionJson(versionId)).path } catch {}
+  lastLaunch = { versionId, javaPath:'', startedAt:sessionStartedAt, effectiveGameDir:sessionDirectory, logDir:launchLogDir }
   try {
     fs.mkdirSync(launchLogDir, { recursive: true })
     logStream = fs.createWriteStream(path.join(launchLogDir, 'latest.log'), { flags: 'w' })
@@ -311,8 +315,11 @@ async function launchOwned(
   let chainBroken = false
   try {
     let cur: VersionJson = readVersionJson(versionId)
+    const visited = new Set([versionId])
     while (cur.inheritsFrom) {
+      if(visited.has(cur.inheritsFrom)||visited.size>=32)throw new Error('版本继承链存在循环或超过 32 层')
       baseIdProbe = cur.inheritsFrom
+      visited.add(baseIdProbe)
       cur = readVersionJson(baseIdProbe)
     }
   } catch (e) {
@@ -693,7 +700,7 @@ async function launchOwned(
   // 持久化运行中游戏记录：重开启动器时据此识别并恢复状态
   persistRunningGame({ pid: proc.pid ?? 0, versionId, effectiveGameDir, logDir: launchLogDir, startedAt: lastLaunch.startedAt })
   const exitRecord = rememberExit(() => exitHistory().begin('game', proc.pid ?? 0, versionId, {
-    versionId, javaPath, effectiveGameDir, logDir: launchLogDir, startedAt: lastLaunch!.startedAt, pid: proc.pid
+    versionId, folder: folderOfVersion(versionId), javaPath, effectiveGameDir, logDir: launchLogDir, startedAt: lastLaunch!.startedAt, pid: proc.pid
   }))
   proc.once('spawn', () => {
     launchLog.info(`游戏进程已启动：pid=${proc.pid}`)

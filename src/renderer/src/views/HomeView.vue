@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openInstanceCenter } from '../instanceCenter'
 import { appearancePreview } from '../visualDesign'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { carouselImages, carouselDuration } from '@shared/appearancePolicy'
@@ -209,7 +210,7 @@ async function startVersion(id: string, createCommandWorld = false) {
     return
   }
   store.launchingVersionId = id
-  store.launchingFolder = store.settings?.activeFolder ?? store.settings?.gameDir ?? ''
+  store.launchingFolder = currentVersion.value?.folder ?? store.settings?.activeFolder ?? store.settings?.gameDir ?? ''
   store.launchState = { status: 'launching', text: '正在准备启动…' }
   try {
     await launchGame(id, undefined, currentVersion.value?.folder, createCommandWorld)
@@ -686,6 +687,7 @@ onUnmounted(() => {
         class="float-menu card-float-menu"
         :style="{ top: cardMenu.top + 'px', left: cardMenu.left + 'px' }"
       >
+        <button class="menu-item" @click="openInstanceCenter(cardMenuVersion); cardMenu.id = ''">管理实例</button>
         <button class="menu-item" @click="startVersion(cardMenuVersion.id); cardMenu.id = ''">启动实例</button>
         <button class="menu-item" title="新建允许命令的创造模式测试世界并自动进入（Minecraft 1.20+）" :disabled="running || launching || restartBusy" @click="startVersion(cardMenuVersion.id, true); cardMenu.id = ''">启动并创建命令世界</button>
         <button class="menu-item" :disabled="!running || restartBusy" @click="quickRestart(cardMenuVersion)">快速重启游戏</button>

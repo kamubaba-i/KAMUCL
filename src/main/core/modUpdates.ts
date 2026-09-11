@@ -176,7 +176,8 @@ export async function applyModUpdates(
       const oldHash=await modHash(path.join(dir,item.fileName))
       if(isModLocked(dir,oldHash))throw new Error('此模组已锁定，请解除锁定后更新')
       const name=item.targetName.replace(/\.disabled$/i,'')+(/\.disabled$/i.test(item.fileName)?'.disabled':'')
-      await replaceModFiles(dir,[{oldName:item.fileName,oldSha1:oldHash,name,sha1:item.sha1||'',url:item.url,size:item.size}],async()=>{await assertModsIdle(dir);if(isModLocked(dir,oldHash))throw new Error('此模组已锁定');transferModLock(dir,oldHash,item.sha1!)})
+      await replaceModFiles(dir,[{oldName:item.fileName,oldSha1:oldHash,name,sha1:item.sha1||'',url:item.url,size:item.size}],async()=>{await assertModsIdle(dir);if(isModLocked(dir,oldHash))throw new Error('此模组已锁定')})
+      transferModLock(dir,oldHash,item.sha1!)
       onItem?.(item.fileName,'ok');results.push({fileName:item.fileName,ok:true})
     }catch(error){const message=error instanceof Error?error.message:String(error);onItem?.(item.fileName,'error',message);results.push({fileName:item.fileName,ok:false,error:message})}
   }
