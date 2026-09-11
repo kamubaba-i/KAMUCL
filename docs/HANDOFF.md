@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 05:23 ｜ 当前版本：**1.0.54**（已验证、打包和发布）
+> 更新时间：2026-09-11 11:58 ｜ 当前版本：**1.0.55**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,14 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.55 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.55 ，Release ID 386776165。皮肤页说明简化为“支持 64×64 的 PNG 皮肤文件”。master 提交 `b36954b`，main cherry-pick `6f14d9e`。TypeScript、生产构建及 EXE/ZIP 启动入口验证通过，附件 SHA256 与远端核对通过。成品 `release/final-1.0.55`；证据 `out/build-1055.log`、`out/package-1055.log`、`out/release-1.0.55-proof.json`、`out/publish-1055.log`。
+
+```text
+16e8a7e1bea7321b96dcf49bec691e4063d1208dbfda77f6b01cd5e49dd65e57  KAMUCL-1.0.55.exe
+b83c38ded255b02c132785cee93748992d3592ac87945278e39f35d913cd09ed  KAMUCL-1.0.55-windows-x64.zip
+```
+
 
 **1.0.54 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.54 ，Release ID 386632313。master 功能提交 `5b29177`，main 独立历史 cherry-pick `5e71b92`。tag 指向 master 功能提交；三个附件大小与 SHA256 核对后公开，latest 已核验。
 
