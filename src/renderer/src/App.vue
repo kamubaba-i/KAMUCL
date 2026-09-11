@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const isMac = window.kamucl.platform === 'darwin'
 import LaunchNotice from './components/LaunchNotice.vue'
 import { instanceCenter, openInstanceCenter } from './instanceCenter'
 import { loadExitNotices, clearNotices } from './store'
@@ -988,7 +989,7 @@ function applyCustomVars(custom: CustomTheme, theme: ThemeName) {
   st.setProperty('--shadow-lg', dark ? '0 20px 55px rgba(0, 0, 0, 0.42)' : '0 20px 55px rgba(31, 50, 85, 0.18)')
   st.setProperty(
     '--shell-surface',
-    `color-mix(in srgb, ${colors.bg} ${transparent ? 24 : dark ? 30 : 42}%, transparent)`
+    `color-mix(in srgb, ${colors.bg} ${isMac ? (dark ? 64 : 72) : transparent ? 24 : dark ? 30 : 42}%, transparent)`
   )
   st.setProperty('--glass-blur', '28px')
   // 图一布局是全部主题共享的固定骨架；旧 layout 字段只保留兼容，不再改变结构。
@@ -1355,6 +1356,7 @@ onUnmounted(() => {
             <span data-ui="App:9fb26325a181" v-if="store.noticesUnread" class="bell-dot"></span>
           </button>
 
+          <template v-if="!isMac">
           <span data-ui="App:2d64ba8e392c" class="top-divider"></span>
 
           <button data-ui="App:e3e46a2d0aaf" class="win-btn" title="最小化" @click="win('minimize')">
@@ -1372,6 +1374,7 @@ onUnmounted(() => {
               <path d="M6 6l12 12M18 6 6 18" />
             </svg>
           </button>
+          </template>
         </div>
 
         <!-- 通知中心下拉 -->

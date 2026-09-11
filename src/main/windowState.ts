@@ -135,6 +135,11 @@ export function isEffectivelyMaximized(win: BrowserWindow): boolean {
 /** 最大化/还原切换（渲染层标题栏按钮唯一入口） */
 export function toggleMaximize(win: BrowserWindow): void {
   if (win.isDestroyed()) return
+  if (process.platform !== 'win32') {
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+    return
+  }
   if (win.isMaximized()) {
     // 理论上不会走到（真实最大化已被 normalizeRealMaximize 收编），兜底还原
     win.unmaximize()
@@ -156,6 +161,7 @@ export function toggleMaximize(win: BrowserWindow): void {
 /** 启动时按持久化状态恢复最大化（显示器失效时 getDisplayMatching 自动回落主屏） */
 export function applyMaximized(win: BrowserWindow): void {
   if (win.isDestroyed() || win.isMaximized() || fakeMaximized) return
+  if (process.platform !== 'win32') { win.maximize(); return }
   const display = screen.getDisplayMatching(win.getBounds())
   preMaxBounds = win.getNormalBounds()
   win.setBounds(display.workArea)
@@ -164,6 +170,7 @@ export function applyMaximized(win: BrowserWindow): void {
 
 /** 系统吸附（Win+↑ / 拖到屏幕顶）触发的真实最大化 → 收编为假最大化 */
 export function normalizeRealMaximize(win: BrowserWindow): void {
+  if (process.platform !== 'win32') return
   if (win.isDestroyed() || !win.isMaximized()) return
   const display = screen.getDisplayMatching(win.getBounds())
   win.unmaximize()

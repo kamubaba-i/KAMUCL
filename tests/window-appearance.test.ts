@@ -14,9 +14,14 @@ test('Windows 主窗口使用真正透明背景和 DWM Acrylic 材质', () => {
   assert.equal(options.thickFrame, true)
 })
 
-test('非 Windows 平台保留透明窗口但不请求 Windows 独占材质', () => {
+test('macOS 使用原生毛玻璃和红绿灯，不使用普通透明无框窗口', () => {
   const options = windowAppearance('darwin')
-  assert.equal(options.transparent, true)
+  assert.equal(options.transparent, false)
+  assert.equal(options.frame, true)
+  assert.equal(options.titleBarStyle, 'hiddenInset')
+  assert.equal(options.vibrancy, 'under-window')
+  assert.equal(options.visualEffectState, 'active')
+  assert.deepEqual(options.trafficLightPosition, { x: 16, y: 16 })
   assert.equal(options.backgroundColor, '#00000000')
   assert.equal(options.backgroundMaterial, undefined)
 })

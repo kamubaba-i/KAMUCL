@@ -3,6 +3,10 @@
    ============================================================ */
 
 /* -------- 图一深色绿玻璃的首帧回退值（设置加载后由主题色板覆盖） -------- */
+/* Keep the native traffic lights clear of branding and editable page content. */
+html[data-platform="darwin"] .sidebar { padding-top: 38px; }
+html[data-platform="darwin"] .shell { border-radius: 0; }
+
 :root {
   --bg: #10191b;
   --bg-2: rgba(13, 23, 26, 0.72);
