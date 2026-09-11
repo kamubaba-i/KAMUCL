@@ -1308,18 +1308,7 @@ onUnmounted(() => {
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
-        <div data-ui="App:bf9ade9a884c" class="search-box">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-          <input data-ui="App:fa8c61171be4"
-            v-model="store.searchKeyword"
-            class="search-input"
-            placeholder="搜索游戏版本、模组、资源包…"
-            @keydown.enter="store.currentView = /^\d+(?:\.\d+)+$/.test(store.searchKeyword.trim()) ? 'game' : 'community'"
-          />
-        </div>
+        <div class="topbar-spacer" aria-hidden="true"></div>
 
         <div data-ui="App:5f4d42b34aae" class="top-actions">
           <button data-ui="App:e7efd70d16b8" v-if="store.currentView !== 'home'" class="top-btn dl-toggle" @click="dlOpen = !dlOpen">
@@ -2024,44 +2013,7 @@ onUnmounted(() => {
   height: 16px;
 }
 
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 400px;
-  max-width: 46%;
-  height: var(--ctl-h);
-  padding: 0 var(--space-4);
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-dim);
-  -webkit-app-region: no-drag;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
-}
-.search-box:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.search-box svg {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-}
-.search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-family: inherit;
-}
-.search-input::placeholder {
-  color: var(--text-dim);
-  opacity: 0.75;
-}
+.topbar-spacer { flex: 1; align-self: stretch; }
 
 .top-actions {
   display: flex;

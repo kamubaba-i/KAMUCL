@@ -5,6 +5,7 @@ import { store, toast, selectedInstance, selectInstance } from '../store'
 import { instanceKey } from '@shared/modCompatibility'
 import { communityFileMatchesInstance, usesCommunityLoader } from '@shared/communityPolicy'
 import { mcmodSearchUrl } from '@shared/communityLinks'
+import SelectMenu from '../components/SelectMenu.vue'
 import MarqueeText from '../components/MarqueeText.vue'
 import ModInstallDialog from '../components/ModInstallDialog.vue'
 import type {
@@ -466,18 +467,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
     <div class="card search-card">
       <div class="filter-row">
         <span class="muted">兼容筛选：{{ query.mcVersion || '全部 Minecraft' }}<template v-if="supportsLoader"> / {{ query.loader || '全部 Loader' }}</template><template v-else> · 不按模组加载器筛选</template></span>
-        <select
-          v-if="store.installed.length"
-          class="select filter-select instance-filter"
-          :value="currentInstance ? instanceKey(currentInstance) : ''"
-          title="按已安装实例带入其 MC 版本与 Loader"
-          @change="useInstance(($event.target as HTMLSelectElement).value)"
-        >
-          <option value="" disabled selected>选择实例…</option>
-          <option v-for="v in store.installed.filter((x) => !x.failed && !x.incomplete)" :key="instanceKey(v)" :value="instanceKey(v)">
-            {{ v.id }}（{{ v.mcVersion }}{{ v.loader ? ` · ${v.loader}` : '' }}）
-          </option>
-        </select>
+        <SelectMenu v-if="store.installed.length" class="filter-select instance-filter" :model-value="currentInstance ? instanceKey(currentInstance) : ''" placeholder="选择实例…" :options="store.installed.filter(x => !x.failed && !x.incomplete).map(v => ({value:instanceKey(v),label:v.id+'（'+v.mcVersion+(v.loader?' · '+v.loader:'')+'）'}))" @change="useInstance" />
         <button class="btn btn-ghost btn-sm" @click="useCurrentInstance">使用当前实例</button>
       </div>
       <div class="search-row">
@@ -513,9 +503,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
       </div>
 
       <div class="filter-row">
-        <select v-model="query.source" class="select filter-select" @change="onFilterChange">
-          <option v-for="o in sourceOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-        </select>
+        <SelectMenu v-model="query.source" class="filter-select" :options="sourceOptions" @change="onFilterChange" />
         <!-- 可搜索版本下拉：完整 MC 版本列表（远程清单数据源） -->
         <div class="ver-filter">
           <input
@@ -545,12 +533,8 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
             <div v-if="!filteredVersionOptions.length" class="ver-menu-empty">无匹配版本</div>
           </div>
         </div>
-        <select v-if="supportsLoader" v-model="query.loader" class="select filter-select" @change="onFilterChange">
-          <option v-for="o in loaderOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-        </select>
-        <select v-model="query.sort" class="select filter-select" @change="onFilterChange">
-          <option v-for="o in sortOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-        </select>
+        <SelectMenu v-if="supportsLoader" v-model="query.loader" class="filter-select" :options="loaderOptions" @change="onFilterChange" />
+        <SelectMenu v-model="query.sort" class="filter-select" :options="sortOptions" @change="onFilterChange" />
       </div>
     </div>
 
@@ -667,7 +651,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
           </div>
           <div class="filter-row">
             <label class="modal-field">Minecraft 版本<input v-model="modal.mcVersion" class="input" list="mod-minecraft-versions" placeholder="全部版本" @change="loadFiles"/></label>
-            <label v-if="usesCommunityLoader(modal.kind)" class="modal-field">Loader<select v-model="modal.loader" class="select" @change="loadFiles"><option v-for="l in loaderOptions" :key="l.value" :value="l.value">{{ l.label }}</option></select></label>
+            <label v-if="usesCommunityLoader(modal.kind)" class="modal-field">Loader<SelectMenu v-model="modal.loader" :options="loaderOptions" @change="loadFiles" /></label>
             <datalist id="mod-minecraft-versions"><option v-for="v in manifestVersions" :key="v" :value="v"/></datalist>
           </div>
 
@@ -701,11 +685,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
           <!-- 目标版本（整合包安装即新实例，无需选择） -->
           <template v-if="!isModpack">
             <p class="modal-label">下载到版本</p>
-            <select v-if="targetOptions.length" v-model="modal.versionId" class="select" @change="selectDownloadInstance">
-              <option v-for="v in targetOptions" :key="instanceKey(v)" :value="instanceKey(v)">
-                {{ v.id }} · {{ v.mcVersion }} / {{ v.loader }} {{ v.loaderVersion }} · {{ v.folder }}
-              </option>
-            </select>
+            <SelectMenu v-if="targetOptions.length" v-model="modal.versionId" :options="targetOptions.map(v => ({value:instanceKey(v),label:v.id+' · '+v.mcVersion+' / '+(v.loader || '纯净版')+' · '+v.folder}))" @change="selectDownloadInstance" />
             <p v-else class="files-error">没有与所选文件兼容的已安装实例；可调整文件筛选，或在游戏版本页安装。</p>
           </template>
           <p v-else class="muted pack-tip">整合包将下载后自动创建独立实例并安装</p>
@@ -803,7 +783,8 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
   gap: var(--space-3);
   flex-wrap: wrap;
 }
-.filter-select {
+:deep(.filter-select) {
+  width: auto;
   flex: 1;
   min-width: 140px;
 }

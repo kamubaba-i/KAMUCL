@@ -120,7 +120,7 @@ const batchResults=ref<ModOperationResult[]>([]),catalogError=ref('')
 const localSearch=ref(''),modFilter=ref('all'),sortBy=ref('name'),catalog=ref<Record<string,ManagedMod>>({}),selection=ref(new Set<string>()),batchBusy=ref(false),switchFile=ref('')
 const keyword = computed(() => (localSearch.value||store.searchKeyword).trim().toLowerCase())
 const filtered = computed(() => {
- const rows=entries.value.filter(e=>(!keyword.value||(e.name+' '+(catalog.value[e.name]?.name||'')).toLowerCase().includes(keyword.value))&&(props.rel!=='mods'||modFilter.value==='all'||modFilter.value==='enabled'&&/\.jar$/i.test(e.name)||modFilter.value==='disabled'&&/\.jar\.disabled$/i.test(e.name)||modFilter.value==='locked'&&catalog.value[e.name]?.locked||modFilter.value==='updates'&&updatePanel.report?.entries.some(m=>m.fileName===e.name&&m.update)))
+ const rows=entries.value.filter(e=>(!keyword.value||(e.name+' '+(catalog.value[e.name]?.name||'')).toLowerCase().includes(keyword.value))&&(props.rel!=='mods'||modFilter.value==='all'||modFilter.value==='enabled'&&/\.jar$/i.test(e.name)||modFilter.value==='disabled'&&/\.jar\.disabled$/i.test(e.name)||modFilter.value==='locked'&&catalog.value[e.name]?.locked))
  return rows.sort((a,b)=>sortBy.value==='date'?b.mtime-a.mtime:sortBy.value==='size'?b.size-a.size:a.name.localeCompare(b.name,'zh-CN',{numeric:true}))
 })
 async function loadCatalog(generation:number){if(props.rel!=='mods')return;const v=currentVersion.value;if(!v)return;try{const list=await window.kamucl.invoke('mods:catalog',v.id,v.folder||activeFolder.value) as ManagedMod[];if(generation===loadGeneration){catalog.value=Object.fromEntries(list.map(m=>[m.fileName,m]));catalogError.value=''}}catch(e){if(generation===loadGeneration){catalog.value={};catalogError.value=errText(e)}}}
@@ -422,7 +422,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 
     <div v-if="currentVersion && props.rel==='mods'" class="fm-controls">
       <input v-model="localSearch" class="input fm-search" aria-label="搜索本地模组" placeholder="搜索文件名或模组名称…"/>
-      <SelectMenu v-model="modFilter" :options="[{value:'all',label:'全部状态'},{value:'enabled',label:'已启用'},{value:'disabled',label:'已禁用'},{value:'locked',label:'已锁定'},{value:'updates',label:updatePanel.report?'可更新':'可更新（先检测）'}]"/>
+      <SelectMenu v-model="modFilter" :options="[{value:'all',label:'全部状态'},{value:'enabled',label:'已启用'},{value:'disabled',label:'已禁用'},{value:'locked',label:'已锁定'}]"/>
       <SelectMenu v-model="sortBy" :options="[{value:'name',label:'名称排序'},{value:'date',label:'最近修改'},{value:'size',label:'文件大小'}]"/>
       <button class="btn btn-ghost" @click="selectAll()">选择当前页</button>
     </div>
@@ -522,11 +522,11 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
-  flex-wrap: nowrap; /* 头部永不换行，按钮组位置固定 */
+  flex-wrap: wrap;
 }
 .fm-head-left {
   flex: 1;
-  min-width: 0; /* 允许文本收缩，把空间让给按钮组 */
+  min-width: 140px;
 }
 .fm-path {
   max-width: 100%;
@@ -543,9 +543,10 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex-shrink: 0; /* 按钮组固定尺寸，永不因文本长度移位 */
+  flex-wrap: wrap;
+  max-width: 100%;
 }
-.fm-ver-select {
+:deep(.fm-ver-select) {
   max-width: 240px;
   min-width: 180px;
 }
