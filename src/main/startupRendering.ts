@@ -6,6 +6,7 @@ import { launcherLogWarn } from './core/launcherLog'
  * the window, store pixels or bypass the renderer/compositor/animation readiness gates.
  */
 export function prepareStartupFrames(window: BrowserWindow): void {
+  const contents = window.webContents
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const stop = () => {
@@ -14,16 +15,16 @@ export function prepareStartupFrames(window: BrowserWindow): void {
     clearTimeout(timer)
     clearTimeout(watchdog)
     ipcMain.removeListener('boot:renderer-ready', ready)
-    window.webContents.removeListener('dom-ready', pump)
+    contents.removeListener('dom-ready', pump)
     window.removeListener('closed', stop)
-    if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.setBackgroundThrottling(true)
+    if (!window.isDestroyed() && !contents.isDestroyed()) contents.setBackgroundThrottling(true)
   }
-  const ready = (event: Electron.IpcMainEvent) => { if (event.sender === window.webContents) stop() }
+  const ready = (event: Electron.IpcMainEvent) => { if (event.sender === contents) stop() }
   const pump = async () => {
-    if (stopped || window.isDestroyed() || window.webContents.isDestroyed()) { stop(); return }
+    if (stopped || window.isDestroyed() || contents.isDestroyed()) { stop(); return }
     try {
       // Electron owns/relinquishes the capturer count; only one request may be in flight.
-      await window.webContents.capturePage({ x: 0, y: 0, width: 1, height: 1 })
+      await contents.capturePage({ x: 0, y: 0, width: 1, height: 1 })
     } catch (error) {
       launcherLogWarn('startup', '首帧预绘制不可用，继续使用默认绘制流程', error)
       stop()
@@ -37,5 +38,5 @@ export function prepareStartupFrames(window: BrowserWindow): void {
   watchdog.unref()
   window.once('closed', stop)
   ipcMain.on('boot:renderer-ready', ready)
-  window.webContents.once('dom-ready', pump)
+  contents.once('dom-ready', pump)
 }
