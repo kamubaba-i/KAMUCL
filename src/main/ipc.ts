@@ -1,4 +1,5 @@
 import { planModMigration, applyModMigration } from './core/modMigration'
+import { registerInstanceCenterIpc } from './core/instanceCenterIpc'
 import { resolveResourceDirectory, listResourceEntries, requireResourceVersion } from './core/resourceDirectory'
 import { importResourceFiles } from './core/resourceFiles'
 import { exitHistory } from './core/exitHistory'
@@ -87,6 +88,7 @@ function errText(err: unknown): string {
 }
 
 export function registerIpc(getWin: () => BrowserWindow | null): void {
+  registerInstanceCenterIpc(getWin)
   ipcMain.handle(IPC.exitHistoryList, () => exitHistory().list())
   ipcMain.handle(IPC.exitHistoryAck, () => exitHistory().acknowledge())
   ipcMain.handle(IPC.exitHistoryClear, () => exitHistory().clearHistory())
@@ -753,8 +755,8 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.gameRestart, (_e, versionId: string, folder: string, forceToken?: string) => launch.restartGame(versionId, folder, forceToken))
   ipcMain.handle(IPC.gameRestartCancel, () => launch.cancelRestart())
   // 导出启动失败日志包（保存对话框在 main 弹出）
-  ipcMain.handle(IPC.launchExportLogs, (_e, versionId: string) =>
-    exportLaunchLogs(getWin(), String(versionId ?? ''))
+  ipcMain.handle(IPC.launchExportLogs, (_e, versionId: string, folder?: string) =>
+    withGameFolder(folder || folderOfVersion(versionId), () => exportLaunchLogs(getWin(), String(versionId ?? '')))
   )
 
   // ---------------- 游戏目录迁移 ----------------

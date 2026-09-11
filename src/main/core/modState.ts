@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 interface DirectoryState { aliases:Record<string,string>; locks:Record<string,boolean> }
+export function exportModState(dir:string){return read(dir)}
+export function importModState(dir:string,value:unknown){const s=value as DirectoryState;if(!s||typeof s!=='object'||!s.aliases||!s.locks)throw new Error('模组状态记录无效');write(dir,{aliases:{...s.aliases},locks:{...s.locks}})}
 function stateFile(dir:string){const real=fs.existsSync(dir)?fs.realpathSync(dir):path.resolve(dir);return path.join(app.getPath('userData'),'mod-state',crypto.createHash('sha256').update(process.platform==='win32'?real.toLowerCase():real).digest('hex')+'.json')}
 function read(dir:string):DirectoryState{try{const v=JSON.parse(fs.readFileSync(stateFile(dir),'utf8'));return {aliases:v.aliases||{},locks:v.locks||{}}}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw new Error('模组锁定记录无法读取，请先恢复记录后重试');return {aliases:{},locks:{}}}}
 function write(dir:string,s:DirectoryState){const f=stateFile(dir);fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f+'.tmp',JSON.stringify(s));fs.renameSync(f+'.tmp',f)}

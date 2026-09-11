@@ -2,20 +2,25 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { downloadFile } from './download'
+import { protectModChange } from './changeProtection'
 export interface ModReplacement { oldName?:string; oldSha1?:string; name:string; sha1:string; url?:string; size?:number }
 export const modHash=async(file:string)=>crypto.createHash('sha1').update(await fs.promises.readFile(file)).digest('hex')
 export function safeModName(name:string){if(typeof name!=='string'||path.basename(name)!==name||/[\\/:\0]/.test(name)||!/^.+\.jar(?:\.disabled)?$/i.test(name))throw new Error('无效的模组文件名');return name}
 export async function validateModFile(dir:string,name:string,sha1?:string){safeModName(name);const p=path.join(dir,name),s=await fs.promises.lstat(p);if(!s.isFile()||s.isSymbolicLink())throw new Error('模组不是普通文件');if(sha1&&await modHash(p)!==sha1)throw new Error('模组文件已变化，请重新检查：'+name)}
 /** Caller holds the directory write lock. Downloads never touch the current files. */
-export async function replaceModFiles(dir:string,items:ModReplacement[],validate?:()=>Promise<void>){
+export async function replaceModFiles(dir:string,items:ModReplacement[],validate?:()=>Promise<void>,signal?:AbortSignal,onProgress?:(fraction:number)=>void){
  const names=new Set<string>(),olds=new Set<string>()
  for(const i of items){safeModName(i.name);if(!/^[a-f0-9]{40}$/i.test(i.sha1)||!i.url?.startsWith('https://'))throw new Error('文件缺少可信哈希或下载地址');const k=i.name.toLowerCase();if(names.has(k))throw new Error('目标文件名重复：'+i.name);names.add(k);if(i.oldName){safeModName(i.oldName);if(olds.has(i.oldName.toLowerCase()))throw new Error('重复的源文件');olds.add(i.oldName.toLowerCase());await validateModFile(dir,i.oldName,i.oldSha1)}}
  const stage=await fs.promises.mkdtemp(path.join(path.dirname(dir),'.kamucl-mod-change-')),backups:Array<{original:string;backup:string}>=[],written:Array<{file:string;sha1:string}>=[]
  let canClean=true
  try{
-  for(let n=0;n<items.length;n++){const i=items[n];await downloadFile(i.url!,path.join(stage,'new-'+n),undefined,i.sha1,undefined,undefined,[],{size:i.size})}
+  for(let n=0;n<items.length;n++){signal?.throwIfAborted();const i=items[n];await downloadFile(i.url!,path.join(stage,'new-'+n),(done,total)=>onProgress?.((n+(total?done/total:0))/items.length),i.sha1,undefined,signal,[],{size:i.size})}
   await validate?.()
   for(const i of items){if(i.oldName)await validateModFile(dir,i.oldName,i.oldSha1);if(fs.existsSync(path.join(dir,i.name))&&i.name!==i.oldName)throw new Error('目标文件已存在，未覆盖：'+i.name)}
+  await protectModChange(dir,items.flatMap(i=>i.oldName?[i.oldName,i.name]:[i.name]),'模组版本修改前',signal)
+  await validate?.()
+  for(const i of items)if(i.oldName)await validateModFile(dir,i.oldName,i.oldSha1)
+  signal?.throwIfAborted()
   try{
    canClean=false
    for(let n=0;n<items.length;n++){const i=items[n];if(i.oldName){const original=path.join(dir,i.oldName),backup=path.join(stage,'old-'+n);await fs.promises.rename(original,backup);backups.push({original,backup})}}

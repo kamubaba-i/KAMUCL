@@ -41,7 +41,7 @@ export class ExitJournal {
     if (code !== 0 && !intentional) this.add(s, pending.kind, `${pending.kind === 'game' ? `游戏「${pending.label}」` : '启动器'}异常退出（代码 ${code ?? '未知'}）。`, { ...pending.context, exitCode: code, endedAt: new Date().toISOString() })
     delete s.pending[id]; this.save(s)
   }
-  fault(kind: ExitRecord['kind'], text: string) { const s = this.read(); this.add(s, kind, text); this.save(s) }
+  fault(kind: ExitRecord['kind'], text: string, context?: Record<string, unknown>) { const s = this.read(); this.add(s, kind, text, context); this.save(s) }
   list() { return this.read().history }
   acknowledge() { const s = this.read(); s.history.forEach(e => { e.seen = true }); this.save(s) }
   clearHistory() { const s = this.read(); s.history = []; this.save(s) }

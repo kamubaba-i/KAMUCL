@@ -62,8 +62,10 @@ test('failed repair cannot pass integrity verification or launch', async () => {
   const root = temp(), server = http.createServer((_req, res) => res.writeHead(404).end())
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
   try {
+    fs.writeFileSync(path.join(root, 'client.jar'), 'damaged but recoverable original')
     await assert.rejects(ensureLaunchArtifact({ dest: path.join(root, 'client.jar'), url: `http://127.0.0.1:${(server.address() as { port: number }).port}/bad` }, 'official'), /下载失败/)
-    assert(!fs.existsSync(path.join(root, 'client.jar')))
+    assert.equal(fs.readFileSync(path.join(root, 'client.jar'),'utf8'),'damaged but recoverable original')
+    assert(!fs.readdirSync(root).some(n=>n.startsWith('.kamucl-repair-')))
   } finally { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); fs.rmSync(root, { recursive: true, force: true }) }
 })
 

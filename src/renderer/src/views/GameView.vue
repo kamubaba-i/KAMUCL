@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { openInstanceCenter } from '../instanceCenter'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
   addFolder,
@@ -1148,6 +1149,7 @@ async function confirmIsolation() {
               <span class="switch-ui"></span>
             </span>
           </label>
+          <button class="btn btn-ghost btn-sm" @click="openInstanceCenter(v)">管理实例</button>
           <button
             class="icon-btn installed-folder"
             :title="`打开 ${v.id} 的版本文件夹`"

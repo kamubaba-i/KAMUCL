@@ -246,8 +246,10 @@ export async function fetchVersionManifest(
 
 /** 同步读取本地版本 json（容错 BOM 头）；versions/ 没有时回退到 .kamucl/base 依赖原版区 */
 export function readVersionJson(id: string): VersionJson {
+  if(typeof id!=='string'||!id||id==='.'||id==='..'||/[\\/:\x00]/.test(id))throw new Error('无效的版本 ID')
   let p = versionJsonPath(id)
   if (!fs.existsSync(p) && fs.existsSync(baseVersionJsonPath(id))) p = baseVersionJsonPath(id)
+  if(fs.lstatSync(p).isSymbolicLink()||fs.lstatSync(path.dirname(p)).isSymbolicLink())throw new Error('版本文件不能使用符号链接')
   const raw = fs.readFileSync(p, 'utf-8')
   return JSON.parse(raw.replace(/^﻿/, '')) as VersionJson
 }
@@ -627,7 +629,10 @@ export function clientJarPath(id: string): string {
 export function resolveVersionChain(id: string): { merged: VersionJson; baseId: string } {
   const chain: VersionJson[] = []
   let cur: VersionJson | null = readVersionJson(id)
+  const seen = new Set<string>()
   while (cur) {
+    if (seen.has(cur.id) || chain.length >= 32) throw new Error('版本继承链循环或过长')
+    seen.add(cur.id)
     chain.push(cur)
     cur = cur.inheritsFrom ? readVersionJson(cur.inheritsFrom) : null
   }
