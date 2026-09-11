@@ -89,3 +89,4 @@ import './launch-speed-1059.test'
 
 import './voxlink-replacement.test'
 import './game-exit-1064.test'
+import './frp-delete-1065.test'

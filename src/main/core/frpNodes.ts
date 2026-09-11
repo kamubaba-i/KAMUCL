@@ -152,7 +152,7 @@ async function apiGet(path: string, accessKey: string, body?: Record<string, unk
     } catch {
       /* 保留原文 */
     }
-    throw new Error(`natfrp API ${path} 请求失败（HTTP ${resp.status}）：${detail}`)
+    throw new Error(`natfrp API ${path} 请求失败（HTTP ${resp.status}）：${detail.split(accessKey).join('***')}`)
   }
   try {
     return JSON.parse(text) as unknown
@@ -162,6 +162,27 @@ async function apiGet(path: string, accessKey: string, body?: Record<string, unk
 }
 
 export interface FrpCreateTunnel { name: string; node: number; localPort: number; remotePort?: number }
+/** Explicit, single-target deletion using the official /tunnel/delete contract.
+ * A 200 response alone is insufficient; verify the account's uncached tunnel list. */
+export async function deleteFrpTunnel(accessKey: string, id: string): Promise<{ remoteDisconnectPending: boolean }> {
+  const key = String(accessKey ?? '').trim()
+  if (!key || !/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) throw new Error('隧道或账号无效，无法删除')
+  const exists = async () => {
+    const rows = await apiGet('/tunnels', key)
+    if (!Array.isArray(rows) || rows.some(r => !Number.isSafeInteger(r?.id))) throw new Error('无法确认远端隧道列表，请刷新后重试删除')
+    return rows.some(r => r.id === Number(id))
+  }
+  cache = null
+  try {
+    if (!await exists()) return { remoteDisconnectPending: false }
+    const result = await apiGet('/tunnel/delete', key, { ids: id }) as { deleted?: number[]; failed?: number[] }
+    if (!Array.isArray(result?.deleted) || !Array.isArray(result.failed)) throw new Error('删除结果不完整，请重试确认远端状态')
+    // Official `failed` means deleted but the online connection could not be kicked.
+    if (!result.deleted.includes(Number(id)) && !result.failed.includes(Number(id))) throw new Error('樱花穿透未确认删除该隧道，请检查隧道是否被锁定')
+    if (await exists()) throw new Error('远端仍存在该隧道，尚未确认删除成功，请稍后重试')
+    return { remoteDisconnectPending: result.failed.includes(Number(id)) }
+  } finally { cache = null }
+}
 /** Explicit user action only; no retries of POSTs, which might otherwise create duplicate tunnels. */
 export async function createFrpTunnel(accessKey: string, input: FrpCreateTunnel): Promise<{id: number; name: string}> {
   const name = String(input?.name ?? '').trim()
