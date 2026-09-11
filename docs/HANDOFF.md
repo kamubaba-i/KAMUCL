@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 17:49 ｜ 当前版本：**1.0.58**（已验证、打包和发布）
+> 更新时间：2026-09-11 18:21 ｜ 当前版本：**1.0.59**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,11 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.59：启动准备并行化与便携 EXE 无损压缩**。说明见 [LAUNCH-PERFORMANCE-1.0.59.md](LAUNCH-PERFORMANCE-1.0.59.md)。游戏文件、账号和 Java 同时准备；依赖仍做完整内容校验，四路读取；Java 冷探测异步，同一目录同一主版本共用在途准备，失败等待所有已开始分支结束。200 个文件 / 112.5MiB 样本串行中位数 203.5ms、并行 83.5ms；不代表进入 Minecraft 主菜单的总时间。EXE 从 67,699,472 降至 67,234,317 字节（约 0.69%），运行组件和视觉资源完整保留。
+
+发布：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.59 ，Release ID `386947754`，标签源码 `6d880d14459a13fd388c100184e04dab75a625dc`，main 独立历史 cherry-pick `9e84406`。390 项测试、类型检查、生产构建与交互通过，Windows EXE/ZIP 启动与 29 个 portable 文件逐项 SHA256 通过。Mac ARM64/Intel 原生 APP 与 DMG 验证 https://github.com/kamubaba-i/KAMUCL/actions/runs/34588000755 全部通过，未 Apple 公证。六个包和统一 SHA256SUMS.txt 共七个 Release 附件均已核对远端 digest 和大小，归档 `release/final-1.0.59`。相关证据见 `out/test-1059.log`、`out/release-1.0.59-proof.json`、`out/release-1.0.59-payload.json`、`out/network-ui-qAOC5x`。wuhui 未操作，未结束用户游戏进程。
+
 
 **1.0.58：实例管理中心与本地诊断**。实现和验证说明见 [INSTANCE-CENTER-1.0.58.md](INSTANCE-CENTER-1.0.58.md)。源码包含复制/备份/恢复事务、模组改动保护、独立会话日志、运行环境检查及修复；生产界面验证脚本为 `scripts/verify-instance-center-ui.cjs`。Mac 构建工作流现从同一次原生构建直接输出 APP ZIP 和已挂载启动验证的 DMG，避免再次依赖已发布附件。
 
