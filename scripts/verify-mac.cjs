@@ -21,7 +21,7 @@ async function main(){
  let id=0;const pending=new Map();ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(pending.has(m.id)){pending.get(m.id)(m);pending.delete(m.id)}})
  const call=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;const timer=setTimeout(()=>reject(Error(method+' timeout')),15000);pending.set(n,m=>{clearTimeout(timer);m.error?reject(Error(JSON.stringify(m.error))):resolve(m.result)});ws.send(JSON.stringify({id:n,method,params}))})
  let content=''
- for(let i=0;i<30;i++){const r=await call('Runtime.evaluate',{expression:'document.body.innerText',returnByValue:true});content=r.result.value||'';if(content.includes('首页')&&content.includes(version))break;await wait(1000)}
+ for(let i=0;i<30;i++){try { const r=await call('Runtime.evaluate',{expression:'document.body.innerText',returnByValue:true});content=r.result.value||''; } catch(e) { if(!String(e).includes('Cannot find default execution context'))throw e; }if(content.includes('首页')&&content.includes(version))break;await wait(1000)}
  assert(content.includes('首页')&&content.includes(version),'main UI missing')
  await wait(3000)
  const screenshot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(proof,'main.png'),Buffer.from(screenshot.data,'base64'))
