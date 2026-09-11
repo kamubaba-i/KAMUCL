@@ -25,21 +25,9 @@ test('game tabs: indicator follows the selected tab', () => {
   assert.ok(!tabCss.includes('background'), 'active tab 不得直接换背景')
 })
 
-test('skin walk amplitude matches MC vanilla formula: cos × amp, ±45°, contra-lateral (指令4)', () => {
-  const v = read('src/renderer/src/components/SkinViewer3D.vue')
-  assert.match(v, /Math\.cos\(animT \* WALK_RATE\) \* j\.mainAmp/)
-  assert.match(v, /mainAmp: 45/)
-  assert.match(v, /const WALK_RATE = 4\.71/)
-  // 四肢同幅（MC：手臂与腿幅度一致）
-  const amps = [...v.matchAll(/(armL|armR|legL|legR): .*?dir: (-?1).*?mainAmp: (\d+)/g)]
-  assert.equal(amps.length, 4)
-  for (const a of amps) assert.equal(a[3], '45')
-  // 对角反相：legL/armR 同向（dir=1/-1 组合 = MC 的 leftLeg 与 rightArm 同相）
-  assert.equal(amps.find((x) => x[1] === 'legL')[2], '1')
-  assert.equal(amps.find((x) => x[1] === 'armR')[2], '1')
-  assert.equal(amps.find((x) => x[1] === 'legR')[2], '-1')
-  assert.equal(amps.find((x) => x[1] === 'armL')[2], '-1')
-})
+// Replaced implementation: behavior is exercised by skin3d-parity, download-policy,
+// download-stall, import-download-1049 and modpack-speed-1050 runtime tests.
+
 
 test('seg controls get sliding blob too (指令5 相邻按钮切换过渡)', () => {
   const skins = read('src/renderer/src/views/SkinsView.vue')

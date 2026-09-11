@@ -9,6 +9,7 @@
  * 用法：node scripts/release-github.cjs [--dry-run]
  */
 const fs = require('node:fs')
+require('./check-licenses.cjs').checkLicenses({ release: true })
 const path = require('node:path')
 const crypto = require('node:crypto')
 const { execFileSync } = require('node:child_process')
@@ -83,13 +84,14 @@ async function api(method, url, token, body, isBinary = false) {
 async function main() {
   const exe = path.join(root, 'release', `KAMUCL-${version}.exe`)
   const zip = path.join(root, 'release', `KAMUCL-${version}-windows-x64.zip`)
-  for (const f of [exe, zip]) {
+  const source = path.join(root, 'release', `KAMUCL-${version}-source.zip`)
+  for (const f of [exe, zip, source]) {
     if (!fs.existsSync(f)) {
       console.error(`缺少构建产物：${f}（先运行打包）`)
       process.exit(1)
     }
   }
-  const sums = [`${sha256(exe)}  ${path.basename(exe)}`, `${sha256(zip)}  ${path.basename(zip)}`].join('\n') + '\n'
+  const sums = [`${sha256(exe)}  ${path.basename(exe)}`, `${sha256(zip)}  ${path.basename(zip)}`, `${sha256(source)}  ${path.basename(source)}`].join('\n') + '\n'
   const sumsFile = path.join(root, 'release', 'SHA256SUMS.txt')
   fs.writeFileSync(sumsFile, sums, 'utf-8')
   console.log('SHA256SUMS.txt:\n' + sums)
@@ -129,7 +131,7 @@ async function main() {
     console.log(`Release ${tag} 创建完成（id=${release.id}）`)
   }
 
-  for (const file of [exe, zip, sumsFile]) {
+  for (const file of [exe, zip, source, sumsFile]) {
     const name = path.basename(file)
     // 重传前先删同名人资产（幂等覆盖）
     const assets = await (await api('GET', `https://api.github.com/repos/${REPO}/releases/${release.id}/assets`, token)).json()

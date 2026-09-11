@@ -83,3 +83,5 @@ import './mod-migration-1053.test'
 import './workbench-mod-management-1054.test'
 import './instance-center-1058.test'
 import './launch-speed-1059.test'
+
+import './voxlink-replacement.test'
