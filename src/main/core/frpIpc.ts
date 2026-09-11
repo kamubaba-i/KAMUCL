@@ -35,6 +35,10 @@ export const FRP_IPC = {
 } as const
 
 export function registerFrpIpc(ipcMain: IpcMain): void {
+  ipcMain.handle('frp:delete-tunnel', async (_event, payload: { id?: string; confirmed?: boolean }) => {
+    if (!payload?.id || payload.confirmed !== true) throw new Error('请先确认删除该隧道')
+    return frpManager.remove(String(payload.id))
+  })
   ipcMain.handle('frp:create-tunnel', (_e, payload: {accessKey: string; tunnel: FrpCreateTunnel}) => createFrpTunnel(String(payload?.accessKey ?? ''), payload?.tunnel))
   ipcMain.handle(FRP_IPC.start, async (_event, payload: FrpStartPayload) => {
     if (!payload || typeof payload !== 'object') throw new Error('参数无效')

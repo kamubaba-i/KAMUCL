@@ -72,3 +72,29 @@ test('FRP 相同隧道 ID 在不同密钥下分别管理，重复请求合并',a
   await Promise.all([f.manager.start(f.ids[0]),f.manager.start(f.ids[0]),f.manager.start(other)])
   assert.equal(f.workers.length,2);await f.manager.stop(other);assert.equal(f.workers[0].status().status,'running')
 })
+
+test('FRP 删除远端成功后只移除目标，保存墓碑防止旧列表复活，重启不恢复',async t=>{
+ const f=fixture(t);await Promise.all(f.ids.map(id=>f.manager.start(id)));const calls:string[]=[]
+ Object.assign(f.deps,{deleteRemote:async(key:string,id:string)=>{calls.push(key+':'+id);assert.equal(f.workers[0].state.pid,null);return {remoteDisconnectPending:false}}})
+ await f.manager.remove(f.ids[0]);assert.deepEqual(calls,['fixture-key:11']);assert.equal(f.manager.list().tunnels.length,1);assert.equal(f.workers[1].state.status,'running')
+ f.manager.register('fixture-key',[{id:11,name:'旧响应',nodeName:'旧节点',localIp:'127.0.0.1',localPort:1}]);assert.equal(f.manager.list().tunnels.length,1)
+ const saved=readFrpRegistry(f.file);assert(saved.deletedIds?.includes(f.ids[0]));assert(!saved.tunnels.some(r=>r.id===f.ids[0]))
+})
+test('FRP 远端拒绝或未知结果保留卡片，停止自动恢复，密钥不泄露',async t=>{
+ const f=fixture(t);await f.manager.start(f.ids[0]);Object.assign(f.deps,{deleteRemote:async()=>{throw Error('locked fixture-key')}})
+ await assert.rejects(f.manager.remove(f.ids[0]),/locked \*\*\*/);assert.equal(f.manager.list().tunnels.length,2);assert.equal(readFrpRegistry(f.file).tunnels[0].desired,false)
+ assert(!f.manager.list().tunnels[0].message?.includes('fixture-key'))
+})
+test('FRP 删除中禁止重新启动、合并重复提交、取消迟到的启动',async t=>{
+ let ready!:()=>void;const f=fixture(t,async()=>{await new Promise<void>(r=>ready=r);return {id:11,localPort:1}})
+ const start=f.manager.start(f.ids[0]);await new Promise(r=>setImmediate(r));let release!:()=>void,calls=0
+ Object.assign(f.deps,{deleteRemote:async()=>{calls++;await new Promise<void>(r=>release=r);return {remoteDisconnectPending:false}}})
+ const a=f.manager.remove(f.ids[0]),b=f.manager.remove(f.ids[0]);await assert.rejects(f.manager.start(f.ids[0]),/正在删除/);ready();await start
+ await new Promise(r=>setImmediate(r));assert.equal(calls,1);release();await Promise.all([a,b]);assert.equal(f.workers[0].starts.length,0)
+})
+test('FRP 远端已删但本地保存失败可重试，不谎报远端失败，也不恢复隧道',async t=>{
+ const f=fixture(t);let remote=0;Object.assign(f.deps,{deleteRemote:async()=>{remote++;return {remoteDisconnectPending:true}}})
+ const save=f.deps.save;f.deps.save=data=>{if(data.deletedIds?.length)throw Error('disk full');save(data)}
+ await assert.rejects(f.manager.remove(f.ids[0]),/远端隧道已删除.*本地记录保存失败/);assert.equal(readFrpRegistry(f.file).tunnels[0].desired,false)
+ f.deps.save=save;const result=await f.manager.remove(f.ids[0]);assert(result.remoteDisconnectPending);assert.equal(f.manager.list().tunnels.length,1)
+})

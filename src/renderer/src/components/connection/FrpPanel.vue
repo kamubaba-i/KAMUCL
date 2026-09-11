@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import ConnectionPanel from './ConnectionPanel.vue'
+import ConfirmModal from '../ConfirmModal.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
 import { copyText } from '../../api'
 import { toast } from '../../store'
@@ -13,6 +14,23 @@ const form = reactive({ accessKey: '' })
 const operations = reactive(new Set<string>())
 const stopping = reactive(new Set<string>())
 const errorMsg = ref('')
+const deleteTarget = ref<ManagedTunnel | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
+function askDelete(t: ManagedTunnel) { if (t.deleting) return; deleteError.value = ''; deleteTarget.value = t }
+function cancelDelete() { if (!deleting.value) deleteTarget.value = null }
+async function confirmDelete() {
+  const target = deleteTarget.value
+  if (!target || deleting.value) return
+  deleting.value = true; deleteError.value = ''
+  try {
+    const result = await kamucl.invoke('frp:delete-tunnel', { id: target.id, confirmed: true }) as { remoteDisconnectPending: boolean }
+    tunnels.value = tunnels.value.filter(t => t.id !== target.id)
+    nodesResult.value = null; deleteTarget.value = null
+    toast(result.remoteDisconnectPending ? '远端隧道已删除，本地连接已停止；其他设备连接可能尚未断开' : `已从樱花穿透删除「${target.name}」`, result.remoteDisconnectPending ? 'info' : 'success')
+  } catch(e) { deleteError.value = errText(e); toast(deleteError.value, 'error') }
+  finally { deleting.value = false; await refreshStatus() }
+}
 const nodesResult = ref<FrpNodesResult | null>(null)
 const nodesLoading = ref(false)
 const nodesError = ref('')
@@ -39,7 +57,7 @@ async function refreshStatus() {
   } catch(e) { errorMsg.value = errText(e) }
 }
 async function control(t: ManagedTunnel, stop: boolean) {
-  if (stop ? stopping.has(t.id) : operations.has(t.id)) return
+  if (t.deleting || (stop ? stopping.has(t.id) : operations.has(t.id))) return
   if (stop) stopping.add(t.id)
   operations.add(t.id); errorMsg.value = ''
   try {
@@ -91,6 +109,7 @@ onBeforeUnmount(() => { disposed = true; unsubscribe?.() })
 
 <template>
   <div class="frp-page">
+    <ConfirmModal :open="!!deleteTarget" title="删除樱花隧道" :message="deleteTarget ? `确认删除「${deleteTarget.name}」（#${deleteTarget.config?.tunnelId}）？这会从樱花穿透账号中永久删除该隧道，停止本地连接并取消自动恢复，无法撤销。其他隧道不受影响。${deleteError ? '\n' + deleteError : ''}` : ''" confirm-text="从樱花穿透删除" :busy="deleting" @confirm="confirmDelete" @cancel="cancelDelete" />
     <section class="frp-overview" data-ui="frp:overview">
       <div><h2>我的隧道</h2><p>每条隧道独立连接，随时启停。</p></div>
       <div class="frp-metrics"><span><b>{{ connected }}</b> 已连接</span><span><b>{{ restoring }}</b> 下次恢复</span><button class="btn btn-ghost" @click="refreshStatus">刷新状态</button></div>
@@ -104,10 +123,10 @@ onBeforeUnmount(() => { disposed = true; unsubscribe?.() })
     </ConnectionPanel>
     <section class="frp-tunnel-grid" aria-label="隧道控制区域" data-ui="frp:tunnels">
       <article v-for="t in tunnels" :key="t.id" class="frp-tunnel-card" :class="{ connected: t.status === 'running' }" :data-ui="'frp:tunnel:' + t.id">
-        <header><div><h3>{{ t.name }}</h3><p>{{ t.nodeName || '节点信息待读取' }} · #{{ t.config?.tunnelId }}</p></div><ConnectionStatus :tone="tone(t)" :label="t.busy ? '正在准备' : statusLabel[t.status]" /></header>
+        <header><div><h3>{{ t.name }}</h3><p>{{ t.nodeName || '节点信息待读取' }} · #{{ t.config?.tunnelId }}</p></div><ConnectionStatus :tone="tone(t)" :label="t.deleting ? '正在删除' : t.busy ? '正在准备' : statusLabel[t.status]" /></header>
         <div class="frp-endpoints"><div><span>本地服务</span><strong>{{ t.localIp }}:{{ t.config?.localPort || '未配置' }}</strong></div><div><span>远程地址</span><strong>{{ t.remoteAddress || (t.status === 'running' ? '等待服务返回地址' : '连接后显示') }}</strong><button v-if="t.remoteAddress" class="btn btn-ghost btn-sm" @click="copyRemote(t.remoteAddress)">复制地址</button></div></div>
         <p class="frp-tunnel-message" :class="{ danger: tone(t) === 'danger' }">{{ t.busy ? '正在检查隧道并准备连接…' : t.message }}</p>
-        <footer><small>{{ t.desired ? '下次打开启动器将自动恢复' : '已停止自动恢复' }}</small><div class="frp-card-actions"><button v-if="!active(t) && !t.busy" class="btn btn-gold" :disabled="operations.has(t.id)" @click="control(t, false)">{{ tone(t) === 'danger' ? '重试连接' : '启动隧道' }}</button><button v-if="active(t) || t.desired || t.busy" class="btn btn-ghost" :disabled="stopping.has(t.id)" @click="control(t, true)">{{ t.busy ? '取消启动' : '停止隧道' }}</button></div></footer>
+        <footer><small>{{ t.desired ? '下次打开启动器将自动恢复' : '已停止自动恢复' }}</small><div class="frp-card-actions"><button v-if="!active(t) && !t.busy" class="btn btn-gold" :disabled="t.deleting || operations.has(t.id)" @click="control(t, false)">{{ tone(t) === 'danger' ? '重试连接' : '启动隧道' }}</button><button v-if="active(t) || t.desired || t.busy" class="btn btn-ghost" :disabled="t.deleting || stopping.has(t.id)" @click="control(t, true)">{{ t.busy ? '取消启动' : '停止隧道' }}</button><button class="btn btn-danger btn-sm" :disabled="t.deleting" @click="askDelete(t)">删除隧道</button></div></footer>
         <details class="frp-card-logs"><summary>运行日志 · {{ t.logs.length }} 条</summary><div class="connection-log-viewport"><p v-if="!t.logs.length" class="connection-muted">尚无日志</p><p v-for="(entry, i) in t.logs" :key="i" class="mono connection-log-line">[{{ entry.stream }}] {{ entry.text }}</p></div></details>
       </article>
       <div v-if="!tunnels.length" class="frp-empty"><h3>还没有读取隧道</h3><p>读取账号后，每条隧道会在这里拥有独立的控制卡片。没有隧道时，可在下方创建。</p></div>
