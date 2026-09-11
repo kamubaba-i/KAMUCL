@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 17:39 ｜ 当前版本：**1.0.58**
+> 更新时间：2026-09-11 17:49 ｜ 当前版本：**1.0.58**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -14,6 +14,10 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ## 1. 当前进度快照
 
 **1.0.58：实例管理中心与本地诊断**。实现和验证说明见 [INSTANCE-CENTER-1.0.58.md](INSTANCE-CENTER-1.0.58.md)。源码包含复制/备份/恢复事务、模组改动保护、独立会话日志、运行环境检查及修复；生产界面验证脚本为 `scripts/verify-instance-center-ui.cjs`。Mac 构建工作流现从同一次原生构建直接输出 APP ZIP 和已挂载启动验证的 DMG，避免再次依赖已发布附件。
+
+发布：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.58 ，Release ID `386931488`。标签与构建源码为 master `fe3253a213cb5277d3ef5123cb8f9d14c10e1a2b`，main cherry-pick `751a8ab`；两分支独立历史保留，wuhui 未操作。Windows EXE/ZIP、Mac ARM64 与 Intel APP ZIP/DMG 共六个包，统一 `SHA256SUMS.txt`，七个远端附件均核对 GitHub SHA256 digest 和大小。成品归档 `release/final-1.0.58`，含发布验证 JSON。
+
+验证证据：386 项测试全部通过（`out/test-1058-final.log`），类型检查及构建通过。Windows `out/release-1.0.58-proof.json`；生产页面 `out/network-ui-UQmEwu`（包含截图原图、分页、另存为、长列表、弹窗和窄窗口）。Mac 原生工作流 https://github.com/kamubaba-i/KAMUCL/actions/runs/34585426458 两架构全部成功，下载后再次验证哈希；挂载 DMG 启动证据在 `out/1058-mac-arm64/mac-proof-arm64`、`out/1058-mac-x64/mac-proof-x64`。Mac 沿用 ad-hoc 签名，未做 Apple Developer ID 签名及公证。
 
 **v1.0.57 补充 DMG 应用安装镜像**：`KAMUCL-1.0.57-mac-arm64.dmg` 和 `KAMUCL-1.0.57-mac-x64.dmg` 已附加到相同 Release，内含 KAMUCL.app、Applications 快捷入口和安装说明。此次仅封装已发布 ZIP 中的相同应用，版本保持 1.0.57，原 ZIP/Windows 附件及标签不变。Mac 原生验证运行 https://github.com/kamubaba-i/KAMUCL/actions/runs/34575051141 ：ZIP 哈希、签名结构、hdiutil verify、只读挂载后的实际主界面启动全部通过。未做 Apple 开发者签名及公证。DMG 发布摘要独立放在 SHA256SUMS-DMG.txt，成品归档 `release/final-1.0.57`；证据 `out/dmg-arm64-ci`、`out/dmg-x64-ci`、`out/upload-dmg.log`。打包流程提交 master `9c25e07`、main `65ad879`。
 
