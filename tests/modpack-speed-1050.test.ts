@@ -40,3 +40,10 @@ test('整合包失败后重试复用已校验缓存；实例修改不污染缓�
   const cachedA=fs.readdirSync(cache).find(n=>fs.readFileSync(path.join(cache,n)).equals(a))!;fs.writeFileSync(path.join(cache,cachedA),'corrupted');await downloadModpackFiles(tasks,()=>{},'official',undefined,cache);assert.equal(aRequests,2)
  }finally{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));fs.rmSync(root,{recursive:true,force:true})}
 })
+
+test('corrupt assembled ranges are discarded before whole-file fallback', {timeout:15000},async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'kamucl-range-hash-')),data=Buffer.alloc(8*1024*1024,42),hash=crypto.createHash('sha1').update(data).digest('hex'),dest=path.join(root,'verified.jar');let full=0
+ const server=http.createServer((req,res)=>{const range=req.headers.range?.match(/^bytes=(\d+)-(\d+)$/);if(range){const start=Number(range[1]),end=Number(range[2]);res.writeHead(206,{'content-range':`bytes ${start}-${end}/${data.length}`,'content-length':end-start+1});res.end(Buffer.alloc(end-start+1,17))}else{assert.equal(req.headers.range,undefined,'fallback must start from byte zero');full++;res.writeHead(200,{'content-length':data.length});res.end(data)}})
+ await new Promise<void>(r=>server.listen(0,'127.0.0.1',r))
+ try{downloadLimiter.configure({downloadThreads:8,downloadSpeedKBps:0});await downloadFile(`http://127.0.0.1:${(server.address() as any).port}/file`,dest,undefined,hash,'official',undefined,[],{size:data.length});assert.equal(full,1);assert(fs.readFileSync(dest).equals(data))}finally{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));fs.rmSync(root,{recursive:true,force:true})}
+})
