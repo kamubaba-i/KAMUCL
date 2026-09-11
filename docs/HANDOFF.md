@@ -13,6 +13,14 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 
 ## 1. 当前进度快照
 
+**v1.0.57 补充 DMG 应用安装镜像**：`KAMUCL-1.0.57-mac-arm64.dmg` 和 `KAMUCL-1.0.57-mac-x64.dmg` 已附加到相同 Release，内含 KAMUCL.app、Applications 快捷入口和安装说明。此次仅封装已发布 ZIP 中的相同应用，版本保持 1.0.57，原 ZIP/Windows 附件及标签不变。Mac 原生验证运行 https://github.com/kamubaba-i/KAMUCL/actions/runs/34575051141 ：ZIP 哈希、签名结构、hdiutil verify、只读挂载后的实际主界面启动全部通过。未做 Apple 开发者签名及公证。DMG 发布摘要独立放在 SHA256SUMS-DMG.txt，成品归档 `release/final-1.0.57`；证据 `out/dmg-arm64-ci`、`out/dmg-x64-ci`、`out/upload-dmg.log`。打包流程提交 master `9c25e07`、main `65ad879`。
+
+```text
+36081e0da4695ff304113e1e77fdfc9eb0086ddff4a0d5b2a7fa3f555616578e  KAMUCL-1.0.57-mac-arm64.dmg
+2afd01c6da2d5d5bb7cb8b05fe28eb419668ab8be951b21704a249442fc611e6  KAMUCL-1.0.57-mac-x64.dmg
+```
+
+
 **1.0.57 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.57 ，Release ID 386823722。新增 mac-arm64 / mac-x64 ZIP（内含 KAMUCL.app），使用原生 GitHub macos-15 / macos-15-intel runner 构建和 ad-hoc 签名；未使用 Apple 开发者证书签名或公证，首次运行可能需要系统确认，Mac 更新手动下载对应架构 ZIP。Windows 成品同版本更新。
 
 构建/启动验证工作流 `.github/workflows/mac-build.yml`；成功运行 https://github.com/kamubaba-i/KAMUCL/actions/runs/34569450136 。实际打包主程序通过 CDP 验证首页与版本并截屏，二进制架构、ASAR 版本及依赖和归档 SHA256 通过；没有声称所有 Minecraft/第三方联机功能完成 Mac 实机验收。截图/证明 `out/mac-arm64-ci-final/mac-proof-arm64`、`out/mac-x64-ci-final/mac-proof-x64`。旧 `scripts/pack-mac.mjs` 不用于本版交付。
