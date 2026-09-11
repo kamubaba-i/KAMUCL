@@ -4,281 +4,123 @@ import ConnectionPanel from './ConnectionPanel.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
 import { copyText } from '../../api'
 import { toast } from '../../store'
+import type { ManagedTunnel } from '../../../../main/core/frpManager'
+import type { FrpNodesResult } from '../../../../main/core/frpNodes'
 
-type FrpStatus = 'idle' | 'starting' | 'running' | 'auth_failed' | 'tunnel_offline' | 'error' | 'stopped'
-interface FrpState {
-  status: FrpStatus
-  config: { accessKey: string; tunnelId: string; localPort: number } | null
-  remoteAddress: string | null
-  pid: number | null
-  startedAt: string | null
-  message: string
-  logs: Array<{ ts: string; stream: 'stdout' | 'stderr' | 'system'; text: string }>
-}
-interface FrpEvent {
-  type: 'status' | 'log' | 'ready' | 'error' | 'stopped'
-  status?: FrpStatus
-  remoteAddress?: string | null
-  data?: { ts: string; stream: 'stdout' | 'stderr' | 'system'; text: string } | string
-  message?: string
-}
-/** 与 src/main/core/frpNodes.ts 的 FrpNodeInfo / FrpTunnelInfo 字段一致 */
-interface FrpNodeInfo {
-  id: number; name: string; host: string; description: string
-  vip: number; free: boolean; online: boolean; load: number | null
-  udp: boolean; mainland: boolean; canCreate: boolean; noProtect: boolean; beta: boolean
-}
-interface FrpTunnelInfo {
-  id: number; name: string; type: string; node: number; nodeName: string | null
-  online: boolean; status: number; localIp: string; localPort: number; remote: string
-}
-interface FrpNodesResult { fetchedAt: string; nodes: FrpNodeInfo[]; tunnels: FrpTunnelInfo[] | null }
-
-const kamucl = (window as unknown as {
-  kamucl: {
-    invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
-    on: (channel: string, cb: (...args: unknown[]) => void) => () => void
-  }
-}).kamucl
-
-const state = ref<FrpState>({
-  status: 'idle',
-  config: null,
-  remoteAddress: null,
-  pid: null,
-  startedAt: null,
-  message: '尚未启动',
-  logs: []
-})
-const busy = ref(false)
+const kamucl = window.kamucl
+const tunnels = ref<ManagedTunnel[]>([])
+const form = reactive({ accessKey: '' })
+const operations = reactive(new Set<string>())
+const stopping = reactive(new Set<string>())
 const errorMsg = ref('')
-
-const form = reactive({
-  accessKey: '',
-  tunnelId: '',
-  localPort: '' // 留空 → 自动读取 MC 局域网端口
-})
-
-const statusLabel: Record<FrpStatus, string> = {
-  idle: '尚未启动',
-  starting: '正在连接',
-  running: '隧道已连接',
-  auth_failed: '认证失败',
-  tunnel_offline: '隧道离线',
-  error: '异常',
-  stopped: '已停止'
-}
-const statusTone = (s: FrpStatus): 'neutral' | 'success' | 'danger' | 'pending' => {
-  if (s === 'running' || s === 'starting') return s === 'running' ? 'success' : 'pending'
-  if (s === 'auth_failed' || s === 'tunnel_offline' || s === 'error') return 'danger'
-  return 'neutral'
-}
-/** 上次保存的配置（userData/frp-config.json 经 frp:status 回填），驱动「一键开始」 */
-const hasSavedConfig = computed(() => !!form.accessKey.trim() && !!form.tunnelId.trim())
-const running = computed(() => state.value.status === 'running' || state.value.status === 'starting')
-
-async function refreshStatus(): Promise<void> {
-  try {
-    const res = (await kamucl.invoke('frp:status')) as FrpState
-    state.value = res
-    if (res.config && !form.accessKey) {
-      form.accessKey = res.config.accessKey
-      form.tunnelId = res.config.tunnelId
-      form.localPort = res.config.localPort ? String(res.config.localPort) : ''
-    }
-  } catch (e) {
-    // 首次启动可能尚未实现 IPC，吞掉即可
-    void e
-  }
-}
-
-async function onStart(): Promise<void> {
-  if (busy.value) return
-  errorMsg.value = ''
-  busy.value = true
-  try {
-    const localPort = Number(form.localPort) || 0
-    await kamucl.invoke('frp:start', {
-      accessKey: form.accessKey.trim(),
-      tunnelId: form.tunnelId.trim(),
-      localPort
-    })
-  } catch (e) {
-    errorMsg.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    busy.value = false
-    void refreshStatus()
-  }
-}
-
-async function onStop(): Promise<void> {
-  if (busy.value) return
-  errorMsg.value = ''
-  busy.value = true
-  try {
-    await kamucl.invoke('frp:stop')
-  } catch (e) {
-    errorMsg.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    busy.value = false
-    void refreshStatus()
-  }
-}
-
-const creation = reactive({name: 'Minecraft', node: '', localPort: '', remotePort: ''})
-const creating = ref(false)
-const selectedTunnel = computed(() => nodesResult.value?.tunnels?.find(t => String(t.id) === form.tunnelId))
-const creatableNodes = computed(() => visibleNodes.value.filter(n => n.online && n.canCreate))
-watch(() => form.accessKey, () => { nodesResult.value = null; form.tunnelId = '' })
-async function copyWebsite() { toast(await copyText('https://www.natfrp.com/') ? '已复制樱花穿透网址' : '复制失败', 'info') }
-async function createTunnel() {
-  if (creating.value) return
-  creating.value = true; errorMsg.value = ''
-  try {
-    const result = await kamucl.invoke('frp:create-tunnel', {accessKey: form.accessKey.trim(), tunnel: {name: creation.name, node: Number(creation.node), localPort:Number(creation.localPort), remotePort:Number(creation.remotePort) || undefined}}) as {id:number}
-    await loadNodes(true); form.tunnelId = String(result.id)
-    toast('隧道已创建并选中，可以直接启动', 'success')
-  } catch(e) { errorMsg.value = (e as Error).message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') }
-  finally { creating.value = false }
-}
-async function copyRemote(): Promise<void> {
-  if (!state.value.remoteAddress) return
-  try {
-    await navigator.clipboard.writeText(state.value.remoteAddress)
-    toast('已复制远程地址', 'info')
-  } catch {
-    toast('复制失败', 'info')
-  }
-}
-
-// ---- 节点参考（api.natfrp.com/v4，主进程缓存 10 分钟；默认折叠，点开才拉取/展开） ----
 const nodesResult = ref<FrpNodesResult | null>(null)
 const nodesLoading = ref(false)
 const nodesError = ref('')
 const onlyFree = ref(true)
-const visibleNodes = computed<FrpNodeInfo[]>(() => {
-  const all = nodesResult.value?.nodes ?? []
-  return onlyFree.value ? all.filter((n) => n.free) : all
-})
-
-async function loadNodes(refresh = false): Promise<void> {
-  if (nodesLoading.value) return
-  nodesLoading.value = true
-  nodesError.value = ''
+const creation = reactive({ name: 'Minecraft', node: '', localPort: '', remotePort: '' })
+const creating = ref(false)
+const visibleNodes = computed(() => onlyFree.value ? (nodesResult.value?.nodes || []).filter(n => n.free) : nodesResult.value?.nodes || [])
+const creatableNodes = computed(() => visibleNodes.value.filter(n => n.online && n.canCreate))
+const connected = computed(() => tunnels.value.filter(t => t.status === 'running').length)
+const restoring = computed(() => tunnels.value.filter(t => t.desired).length)
+const busy = computed(() => creating.value || nodesLoading.value)
+let disposed = false
+const statusLabel: Record<string, string> = { idle: '未启动', starting: '正在连接', running: '已连接', auth_failed: '认证失败', tunnel_offline: '隧道不可用', error: '连接失败', stopped: '已停止' }
+const active = (t: ManagedTunnel) => t.status === 'running' || t.status === 'starting'
+const tone = (t: ManagedTunnel): 'neutral' | 'success' | 'danger' | 'pending' => t.busy ? 'pending' : t.status === 'running' ? 'success' : t.status === 'starting' ? 'pending' : ['auth_failed', 'tunnel_offline', 'error'].includes(t.status) ? 'danger' : 'neutral'
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+watch(() => form.accessKey, () => { nodesResult.value = null })
+async function refreshStatus() {
   try {
-    const result = (await kamucl.invoke('frp:nodes', { accessKey: form.accessKey.trim(), refresh })) as FrpNodesResult
+    const result = await kamucl.invoke('frp:status') as { accessKey: string; tunnels: ManagedTunnel[] }
+    if (disposed) return
+    tunnels.value = result.tunnels || []
+    if (!form.accessKey && result.accessKey) form.accessKey = result.accessKey
+  } catch(e) { errorMsg.value = errText(e) }
+}
+async function control(t: ManagedTunnel, stop: boolean) {
+  if (stop ? stopping.has(t.id) : operations.has(t.id)) return
+  if (stop) stopping.add(t.id)
+  operations.add(t.id); errorMsg.value = ''
+  try {
+    await kamucl.invoke(stop ? 'frp:stop' : 'frp:start', { id: t.id })
+    if (stop) toast(`已停止「${t.name}」，下次启动不会自动恢复`, 'success')
+  } catch(e) { errorMsg.value = errText(e); toast(errorMsg.value, 'error') }
+  finally { operations.delete(t.id); stopping.delete(t.id); await refreshStatus() }
+}
+async function loadNodes(refresh = false, notify = true): Promise<boolean> {
+  if (nodesLoading.value) return false
+  nodesLoading.value = true; nodesError.value = ''
+  try {
+    const result = await kamucl.invoke('frp:nodes', { accessKey: form.accessKey.trim(), refresh }) as FrpNodesResult
     if (!Array.isArray(result?.nodes)) throw new Error('节点列表查询失败，请重试')
     if (!Array.isArray(result.tunnels)) throw new Error('隧道列表查询失败，请检查密钥权限后重试')
-    nodesResult.value = result
-    if (!nodesResult.value.tunnels.some(t => String(t.id) === form.tunnelId)) form.tunnelId = ''
-    toast(`已读取成功：${result.tunnels.length} 条隧道，${result.nodes.length} 个节点`, 'success')
-  } catch (e) {
-    nodesError.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : String(e)
-    toast(`读取失败：${nodesError.value}`, 'error')
-  } finally {
-    nodesLoading.value = false
-  }
+    if (disposed) return false
+    nodesResult.value = result; await refreshStatus()
+    if (notify) toast(`已读取成功：${result.tunnels.length} 条隧道，${result.nodes.length} 个节点`, 'success')
+    return true
+  } catch(e) { if (!disposed) { nodesError.value = errText(e); toast(`读取失败：${nodesError.value}`, 'error') }; return false }
+  finally { nodesLoading.value = false }
 }
-function onReferenceToggle(event: Event): void {
-  // 首次展开且已保存过访问密钥时拉取节点，读取结果与手动刷新使用同一提示。
-  if ((event.target as HTMLDetailsElement).open && !nodesResult.value && !nodesLoading.value && form.accessKey.trim()) void loadNodes()
+async function createTunnel() {
+  if (creating.value) return
+  creating.value = true; errorMsg.value = ''
+  try {
+    await kamucl.invoke('frp:create-tunnel', { accessKey: form.accessKey.trim(), tunnel: { name: creation.name, node: Number(creation.node), localPort: Number(creation.localPort), remotePort: Number(creation.remotePort) || undefined } })
+    const loaded = await loadNodes(true, false)
+    toast(loaded ? '隧道已创建，可在隧道卡片中启动' : '隧道已创建，请刷新列表后查看', loaded ? 'success' : 'info')
+  } catch(e) { errorMsg.value = errText(e); toast(errorMsg.value, 'error') }
+  finally { creating.value = false }
 }
-
-const logsContainer = ref<HTMLElement | null>(null)
-function handleEvent(event: FrpEvent): void {
-  if (!event) return
-  if (event.type === 'log' && event.data && typeof event.data === 'object') {
-    state.value.logs = [...state.value.logs, event.data].slice(-200)
-    void nextTickScroll()
-    return
-  }
-  if (event.type === 'status') {
-    state.value.status = event.status ?? state.value.status
-    if (event.message) state.value.message = event.message
-  }
-  if (event.type === 'ready') {
-    state.value.remoteAddress = event.remoteAddress ?? null
-    state.value.status = 'running'
-    state.value.message = `已连接，远程地址 ${state.value.remoteAddress}`
-  }
-  if (event.type === 'error') {
-    state.value.status = 'error'
-    if (event.message) state.value.message = event.message
-  }
-  if (event.type === 'stopped') {
-    state.value.status = event.status ?? 'stopped'
-    state.value.message = event.message ?? state.value.message
-  }
-}
-
-function nextTickScroll(): void {
-  requestAnimationFrame(() => {
-    const el = logsContainer.value
-    if (el) el.scrollTop = el.scrollHeight
-  })
-}
-
-let unsubscribe: (() => void) | null = null
+async function copyWebsite() { toast(await copyText('https://www.natfrp.com/') ? '已复制樱花穿透网址' : '复制失败', 'info') }
+async function copyRemote(address: string) { toast(await copyText(address) ? '已复制远程地址' : '复制失败', 'info') }
+function onReferenceToggle(event: Event) { if ((event.target as HTMLDetailsElement).open && !nodesResult.value && !nodesLoading.value && form.accessKey.trim()) void loadNodes() }
+let unsubscribe: (() => void) | undefined
 onMounted(async () => {
-  unsubscribe = kamucl.on('frp:event', (raw) => handleEvent(raw as FrpEvent))
+  unsubscribe = kamucl.on('frp:event', (raw: unknown) => {
+    const t = (raw as { tunnel?: ManagedTunnel })?.tunnel
+    if (!t || disposed) return
+    const index = tunnels.value.findIndex(x => x.id === t.id)
+    if (index >= 0) tunnels.value[index] = t
+    else tunnels.value.push(t)
+  })
   await refreshStatus()
 })
-onBeforeUnmount(() => {
-  unsubscribe?.()
-})
+onBeforeUnmount(() => { disposed = true; unsubscribe?.() })
 </script>
 
 <template>
   <div class="frp-page">
-    <!-- 状态区：隧道状态 + 远程地址（好友直接连接用） -->
-    <ConnectionPanel
-      title="连接状态"
-      subtitle="隧道与远程地址的实时状态，全部来自 frpc 真实事件"
-    >
-      <template #action>
-        <ConnectionStatus :tone="statusTone(state.status)" :label="statusLabel[state.status]" />
-      </template>
-
-      <div v-if="running || state.remoteAddress" class="remote-card" :class="{ ok: state.status === 'running' }">
-        <p class="remote-label">远程地址（好友直接连接用）</p>
-        <p class="remote-line">
-          <code class="mono">{{ state.remoteAddress ?? '尚未分配' }}</code>
-          <button v-if="state.remoteAddress" class="btn btn-ghost copy-mini" @click="copyRemote">复制地址</button>
-        </p>
-        <p class="connection-muted">{{ state.message }}</p>
-        <ol v-if="state.remoteAddress" class="join-guide">
-          <li>保持游戏与「对局域网开放」的世界运行</li>
-          <li>好友打开「多人游戏」→「直接连接」</li>
-          <li>粘贴上方地址并加入</li>
-        </ol>
-        <p v-if="!state.remoteAddress && !running" class="connection-muted">
-          启动隧道并通过认证后，这里会显示 frpc 分配的远程地址。
-        </p>
-      </div>
-      <p v-else class="connection-muted">{{ errorMsg || '按下方步骤获取访问密钥、选择隧道。连接后这里显示可分享的地址。' }}</p>
-      <p v-if="errorMsg" class="connection-error" role="alert">{{ errorMsg }}</p>
-    </ConnectionPanel>
-
-    <ConnectionPanel title="1 · 获取访问密钥" subtitle="登录樱花穿透，在用户信息页复制访问密钥，粘贴后读取账号内的隧道。">
-      <div class="frp-guide-links"><a class="btn btn-ghost" href="https://www.natfrp.com/" target="_blank" rel="noreferrer">打开樱花穿透 ↗</a><button class="btn btn-ghost" @click="copyWebsite">复制网址</button><a href="https://doc.natfrp.com/" target="_blank" rel="noreferrer">使用帮助 ↗</a></div>
-      <p class="connection-muted selectable">https://www.natfrp.com/</p>
-      <label class="connection-field"><span>访问密钥</span><input v-model="form.accessKey" class="input" type="password" autocomplete="off" placeholder="粘贴用户信息页的访问密钥" :disabled="running || busy || creating || nodesLoading" /><small>密钥仅保存在本机，并用于连接樱花穿透服务。</small></label>
-      <button class="btn btn-gold" :disabled="nodesLoading || !form.accessKey.trim()" @click="loadNodes(true)">{{ nodesLoading ? '正在读取…' : '读取我的隧道与节点' }}</button>
+    <section class="frp-overview" data-ui="frp:overview">
+      <div><h2>我的隧道</h2><p>每条隧道独立连接，随时启停。</p></div>
+      <div class="frp-metrics"><span><b>{{ connected }}</b> 已连接</span><span><b>{{ restoring }}</b> 下次恢复</span><button class="btn btn-ghost" @click="refreshStatus">刷新状态</button></div>
+    </section>
+    <p class="frp-restore-note">关闭启动器时，会记住未手动停止的隧道，下次打开自动恢复。点击某条隧道的“停止”只影响该隧道。好友可在游戏的“直接连接”中填入远程地址。</p>
+    <p v-if="errorMsg" class="connection-error" role="alert">{{ errorMsg }}</p>
+    <ConnectionPanel title="樱花穿透账号" subtitle="填写访问密钥，读取账号中的隧道与节点。已连接的隧道不会被其他隧道的操作打断。">
+      <div class="frp-account-row"><label class="connection-field"><span>访问密钥</span><input v-model="form.accessKey" class="input" type="password" autocomplete="off" placeholder="粘贴用户信息页的访问密钥" :disabled="busy" /></label><button class="btn btn-gold" :disabled="busy || !form.accessKey.trim()" @click="loadNodes(true)">{{ nodesLoading ? '正在读取…' : '读取我的隧道与节点' }}</button></div>
+      <div class="frp-guide-links"><a href="https://www.natfrp.com/" target="_blank" rel="noreferrer">打开樱花穿透 ↗</a><button class="btn btn-ghost btn-sm" @click="copyWebsite">复制网址</button><a href="https://doc.natfrp.com/" target="_blank" rel="noreferrer">使用帮助 ↗</a><small>密钥仅保存在本机。</small></div>
       <p v-if="nodesError" class="connection-error" role="alert">{{ nodesError }}</p>
     </ConnectionPanel>
+    <section class="frp-tunnel-grid" aria-label="隧道控制区域" data-ui="frp:tunnels">
+      <article v-for="t in tunnels" :key="t.id" class="frp-tunnel-card" :class="{ connected: t.status === 'running' }" :data-ui="'frp:tunnel:' + t.id">
+        <header><div><h3>{{ t.name }}</h3><p>{{ t.nodeName || '节点信息待读取' }} · #{{ t.config?.tunnelId }}</p></div><ConnectionStatus :tone="tone(t)" :label="t.busy ? '正在准备' : statusLabel[t.status]" /></header>
+        <div class="frp-endpoints"><div><span>本地服务</span><strong>{{ t.localIp }}:{{ t.config?.localPort || '未配置' }}</strong></div><div><span>远程地址</span><strong>{{ t.remoteAddress || (t.status === 'running' ? '等待服务返回地址' : '连接后显示') }}</strong><button v-if="t.remoteAddress" class="btn btn-ghost btn-sm" @click="copyRemote(t.remoteAddress)">复制地址</button></div></div>
+        <p class="frp-tunnel-message" :class="{ danger: tone(t) === 'danger' }">{{ t.busy ? '正在检查隧道并准备连接…' : t.message }}</p>
+        <footer><small>{{ t.desired ? '下次打开启动器将自动恢复' : '已停止自动恢复' }}</small><div class="frp-card-actions"><button v-if="!active(t) && !t.busy" class="btn btn-gold" :disabled="operations.has(t.id)" @click="control(t, false)">{{ tone(t) === 'danger' ? '重试连接' : '启动隧道' }}</button><button v-if="active(t) || t.desired || t.busy" class="btn btn-ghost" :disabled="stopping.has(t.id)" @click="control(t, true)">{{ t.busy ? '取消启动' : '停止隧道' }}</button></div></footer>
+        <details class="frp-card-logs"><summary>运行日志 · {{ t.logs.length }} 条</summary><div class="connection-log-viewport"><p v-if="!t.logs.length" class="connection-muted">尚无日志</p><p v-for="(entry, i) in t.logs" :key="i" class="mono connection-log-line">[{{ entry.stream }}] {{ entry.text }}</p></div></details>
+      </article>
+      <div v-if="!tunnels.length" class="frp-empty"><h3>还没有读取隧道</h3><p>读取账号后，每条隧道会在这里拥有独立的控制卡片。没有隧道时，可在下方创建。</p></div>
+    </section>
+    <details class="frp-create-details"><summary>＋ 创建新隧道</summary>
 
-    <ConnectionPanel title="2 · 选择隧道并启动" subtitle="选择账号中已创建的 TCP 隧道，连接到它配置的本地游戏端口。">
-      <label class="connection-field"><span>我的隧道</span><select v-model="form.tunnelId" class="input" :disabled="running || busy || !nodesResult?.tunnels"><option value="">{{ nodesResult?.tunnels?.length ? '请选择隧道' : '请先读取隧道，或在下方创建' }}</option><option v-for="t in nodesResult?.tunnels || []" :key="t.id" :value="String(t.id)" :disabled="t.type !== 'tcp' || t.status !== 0">{{ t.name || '#' + t.id }} · {{ t.nodeName || '节点 ' + t.node }} · {{ t.type.toUpperCase() }} · {{ t.localIp }}:{{ t.localPort }}{{ t.status !== 0 ? '（不可用）' : '' }}</option></select></label>
-      <div v-if="selectedTunnel" class="connection-result"><strong>本地游戏：{{ selectedTunnel.localIp }}:{{ selectedTunnel.localPort }}</strong><p class="connection-muted">在 Minecraft 中「对局域网开放」，端口需与此一致。若游戏端口变化，可创建新隧道，或在樱花穿透网站修改后刷新列表。</p></div>
-      <div class="connection-actions main-actions"><button v-if="!running" class="btn btn-gold main-btn" :disabled="busy || !selectedTunnel" @click="onStart">{{ busy ? '正在连接…' : '启动选中隧道' }}</button><button v-else class="btn btn-ghost main-btn" :disabled="busy" @click="onStop">停止隧道</button><button class="btn btn-ghost" :disabled="busy" @click="refreshStatus">刷新状态</button></div>
-    </ConnectionPanel>
-
-    <ConnectionPanel title="创建新隧道" subtitle="选择服务节点，再填入游戏局域网端口。创建成功后自动选中，不会自动运行。">
+    <ConnectionPanel title="创建新隧道" subtitle="选择服务节点，再填入游戏局域网端口。创建成功后显示独立卡片，不会自动运行。">
       <div class="frp-create-grid"><label class="connection-field"><span>隧道名称</span><input v-model="creation.name" class="input" maxlength="64" placeholder="例如：好友生存世界" /></label><label class="connection-field"><span>服务节点</span><select v-model="creation.node" class="input"><option value="">{{ nodesResult ? '选择可用节点' : '请先读取节点' }}</option><option v-for="n in creatableNodes" :key="n.id" :value="String(n.id)">{{ n.name }} · {{ n.free ? '免费' : '专业版' }}{{ n.load !== null ? ' · ' + n.load + '%' : '' }}</option></select></label><label class="connection-field"><span>本地端口</span><input v-model="creation.localPort" class="input" type="number" min="1" max="65535" placeholder="游戏对局域网开放后显示的端口" /></label><label class="connection-field"><span>远程端口（可选）</span><input v-model="creation.remotePort" class="input" type="number" min="1" max="65535" placeholder="留空由樱花穿透分配" /></label></div>
       <label class="frp-free"><input v-model="onlyFree" type="checkbox" />仅显示免费节点</label>
       <button class="btn btn-gold" :disabled="creating || !form.accessKey.trim() || !creation.node || !creation.localPort" @click="createTunnel">{{ creating ? '正在创建…' : '创建 TCP 隧道' }}</button>
     </ConnectionPanel>
 
+    </details>
     <!-- 参考信息区：节点参考（默认折叠，点开才展开/查询） -->
     <section class="connection-panel">
       <header class="connection-panel-head">
@@ -333,19 +175,35 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <!-- 日志区：窄、默认收起 -->
-    <details class="connection-details log-details">
-      <summary>frpc 运行日志（{{ state.logs.length }} 条）</summary>
-      <div ref="logsContainer" class="connection-log-viewport">
-        <p v-if="!state.logs.length" class="connection-muted">尚无日志。</p>
-        <p v-for="(entry, i) in state.logs" :key="i" class="mono connection-log-line">
-          <span class="connection-muted">[{{ entry.stream }}]</span> {{ entry.text }}
-        </p>
-      </div>
-    </details>
   </div>
 </template>
 <style scoped>
+.frp-overview { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap }
+.frp-overview h2 { margin:0 0 8px; font-size:24px }
+.frp-overview p,.frp-restore-note { color:var(--text-dim); line-height:1.7; margin:0 }
+.frp-metrics { display:flex; align-items:center; gap:20px; flex-wrap:wrap; color:var(--text-dim) }
+.frp-metrics b { color:var(--text); font-size:24px; margin-right:6px }
+.frp-restore-note { padding:14px 18px; background:var(--accent-soft); border:1px solid var(--border); border-radius:var(--radius-md) }
+.frp-account-row { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:14px }
+.frp-account-row .connection-field { flex:1; min-width:200px }
+.frp-tunnel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px }
+.frp-tunnel-card { min-width:0; padding:22px; border:1px solid var(--border); background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); display:flex; flex-direction:column; gap:18px }
+.frp-tunnel-card.connected { border-color:color-mix(in srgb,var(--ok) 55%,var(--border)) }
+.frp-tunnel-card header,.frp-tunnel-card footer { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap }
+.frp-tunnel-card h3 { margin:0 0 6px; font-size:18px; overflow-wrap:anywhere }
+.frp-tunnel-card header p,.frp-tunnel-card small { color:var(--text-dim); margin:0 }
+.frp-endpoints { padding:14px; background:var(--card-2); border-radius:var(--radius-md); display:grid; gap:14px }
+.frp-endpoints>div { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0 }
+.frp-endpoints span { width:100%; font-size:12px; color:var(--text-dim) }
+.frp-endpoints strong { font-size:14px; overflow-wrap:anywhere; user-select:text }
+.frp-tunnel-message { margin:0; line-height:1.6; font-size:13px; color:var(--text-dim); overflow-wrap:anywhere }
+.frp-tunnel-message.danger { color:var(--danger) }
+.frp-card-actions { display:flex; gap:8px; flex-wrap:wrap }
+.frp-tunnel-card footer { margin-top:auto }
+.frp-card-logs { padding-top:12px; border-top:1px solid var(--border) }
+.frp-card-logs summary,.frp-create-details>summary { cursor:pointer; color:var(--text-dim); padding:8px 0 }
+.frp-empty { grid-column:1/-1; border:1px dashed var(--border); padding:32px; text-align:center; border-radius:var(--radius-md); color:var(--text-dim) }
+@media(max-width:1100px) { .frp-tunnel-grid { grid-template-columns:1fr } }
 .frp-guide-links{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.selectable{user-select:text}.frp-create-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.frp-free{display:flex;gap:8px;align-items:center;font-size:13px;margin:16px 0}@media(max-width:750px){.frp-create-grid{grid-template-columns:1fr}}
 .frp-page { display: flex; flex-direction: column; gap: var(--sec-gap); min-width: 0; }
 .remote-card {

@@ -20,7 +20,7 @@ import { loadWindowState, trackWindowState, applyMaximized, toggleMaximize, norm
 import { stopDirectHost } from './core/directConnect'
 import { stopVoxlinkOnQuit } from './core/voxlink'
 import { stopTerracottaOnQuit } from './core/terracotta'
-import { frpController } from './core/frp'
+import { frpManager } from './core/frpService'
 import { applyPendingIfAny, getPendingUpdate } from './core/applyUpdate'
 import { startMemoryTrim } from './core/memTrim'
 import type { MemoryTrimController } from './core/memTrim'
@@ -108,6 +108,7 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
   })
   if (startup) { prepareStartupFrames(win); startup.attach(win) }
   else   win.on('ready-to-show', () => win?.show())
+  win.webContents.once('did-finish-load', () => { void frpManager.restore().catch(error => launcherLogWarn('frp', '恢复隧道失败', error)) })
   applyNativeAppearance(win, getSettings())
   if (windowState?.maximized) applyMaximized(win)
   trackWindowState(win)
@@ -256,7 +257,7 @@ app.on('window-all-closed', () => {
   void stopDirectHost()
   void stopVoxlinkOnQuit()
   void stopTerracottaOnQuit()
-  frpController.dispose()
+  void frpManager.shutdown().catch(error => launcherLogWarn('frp', '关闭隧道失败', error))
   launcherLogInfo('main', '所有窗口已关闭，开始清理联机相关资源')
   if (process.platform !== 'darwin') app.quit()
 })

@@ -48,15 +48,15 @@ test('联机多页结构：landing=方式选择，每种方式独立页并保留
   assert.ok(!view.includes("'direct'"), '不得残留玩家直连页面态')
 })
 
-test('FRP 页重排：一键开始 + 状态区/主操作区/参考折叠/日志窄区 + 宽松节点行', () => {
+test('FRP 页重排：独立隧道卡片、启停与恢复提示、参考折叠及宽松节点行', () => {
   const panel = read('src/renderer/src/components/connection/FrpPanel.vue')
   // 主流程：一键开始（上次配置预填） + 刷新状态
-  for (const text of ['启动选中隧道', '刷新状态', 'frp:status', 'frp:start', 'frp:create-tunnel']) {
+  for (const text of ['启动隧道', '停止隧道', '下次打开自动恢复', '刷新状态', 'frp:status', 'frp:start', 'frp:create-tunnel']) {
     assert.ok(panel.includes(text), `FrpPanel 缺少：${text}`)
   }
   // 节点参考与运行日志默认折叠（details 不带 open 属性）
   assert.match(panel, /<details class="reference-details"(?:\s[^>]*)?>/ )
-  assert.match(panel, /<details class="connection-details log-details">(?:\s[^>]*)?>/)
+  assert.match(panel, /<details class="frp-card-logs">/)
   assert.ok(!panel.includes(' open'), '折叠区默认不得展开（不应出现 open 属性）')
   // 节点列表：宽松行（自适应高度 + 内边距），行间距 ≥ --space-2，不再固定小行高
   const scoped = panel.slice(panel.indexOf('<style'))
