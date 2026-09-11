@@ -1,0 +1,53 @@
+name: macOS packages
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/mac-build.yml', 'scripts/verify-mac.cjs', 'package.json']
+permissions:
+  contents: read
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package native application
+        run: npx electron-builder --mac dir --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Sign locally, verify and archive
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          APP=$(find release -maxdepth 2 -name KAMUCL.app -print -quit)
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          node scripts/verify-mac.cjs "$APP" "$ARCH"
+          VERSION=$(node -p "require('./package.json').version")
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "release/KAMUCL-${VERSION}-mac-${ARCH}.zip"
+          cd release
+          shasum -a 256 "KAMUCL-${VERSION}-mac-${ARCH}.zip" > "SHA256SUMS-mac-${ARCH}.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-${{ matrix.arch }}
+          path: |
+            release/*-mac-*.zip
+            release/SHA256SUMS-mac-*.txt
+            release/mac-proof-*
+          if-no-files-found: error
