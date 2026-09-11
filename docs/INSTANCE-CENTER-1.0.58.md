@@ -24,7 +24,7 @@
 
 - `npm test`：386 项通过，包括新增备份哈希/篡改、取消、源变化、自动保留、独立复制、锁定状态、新副本和覆盖恢复、中文路径、运行占用、目录链接拒绝、日志会话隔离、精确前置及修复失败回退。
 - `npx tsc --noEmit`、`npm run build`。
-- 构建后，在清除 ELECTRON_RUN_AS_NODE 的环境中运行 Electron `scripts/verify-instance-center-ui.cjs`：生产 renderer 配合隔离 IPC 夹具，验证入口、长列表、弹窗 Esc、浅/深色、窄窗口及无意外启动。
+- 构建后，在清除 ELECTRON_RUN_AS_NODE 的环境中运行 Electron `scripts/verify-instance-center-ui.cjs`：生产 renderer 配合隔离 IPC 夹具，验证入口、长列表、弹窗 Esc、浅/深色、窄窗口、截图原图/分页/另存为及无意外启动。
 - Windows 便携包/ZIP：`node scripts/verify-release-1054.cjs`（自动读取当前版本）。
 - Mac 原生 ARM64/Intel runner 构建 APP ZIP 与 DMG，验证签名结构、DMG 完整性及只读挂载后的实际首页启动；保留本地 ad-hoc 签名，未使用 Apple Developer ID 或公证。
 - 文件事务端到端使用临时实例和 JAR 夹具；没有宣称逐一运行全部 Minecraft/加载器组合。原生应用启动证据与单元测试证据分别保存。
