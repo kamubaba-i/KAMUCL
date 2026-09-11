@@ -13,6 +13,7 @@ function fixture() {
   let destroyed = false, throttling = false, count = 0
   let settle = () => {}, fail = (_e: Error) => {}
   const window = Object.assign(new EventEmitter(), { webContents: contents, isDestroyed: () => destroyed })
+  Object.defineProperty(window, 'webContents', { get() { if (destroyed) throw new Error('Object has been destroyed'); return contents } })
   const timers: Array<{fn: () => void; ms: number; canceled: boolean; unref: () => void}> = []
   const warnings: unknown[] = []
   const module = { exports: {} as any }
