@@ -220,7 +220,8 @@ export function windowsQuote(arg: string): string {
   return out + '\\'.repeat(backslashes * 2) + '"'
 }
 
-class DetachedGameProcess extends EventEmitter implements GameProcessHandle {
+export class DetachedGameProcess extends EventEmitter implements GameProcessHandle {
+  private outputClosed: Promise<void>[] = []
   pid: number | undefined
   exitCode: number | null = null
   signalCode: string | null = null
@@ -239,11 +240,17 @@ class DetachedGameProcess extends EventEmitter implements GameProcessHandle {
     this.pid = pid
     this.stdout = this.pump(api, outRead)
     this.stderr = this.pump(api, errRead)
-    void api.waitForExit(hProcess).then(() => {
+    void api.waitForExit(hProcess).then(async () => {
       const code = api.getExitCode(hProcess)
       this.exitCode = code === STILL_ACTIVE ? null : code
       api.close(hProcess)
       this.emit('exit', this.exitCode, this.signalCode)
+      // Match ChildProcess: final diagnostics may still be in the stdout/stderr pipes.
+      // A descendant retaining a pipe must not leave launcher state stuck forever.
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, 2000)
+        void Promise.all(this.outputClosed).then(() => { clearTimeout(timer); resolve() })
+      })
       this.emit('close', this.exitCode, this.signalCode)
     })
   }
@@ -251,12 +258,15 @@ class DetachedGameProcess extends EventEmitter implements GameProcessHandle {
   /** koffi 异步 ReadFile 泵：数据到达 push 进流；broken pipe（对端关闭）→ 关读端并结束流 */
   private pump(api: Kernel32Api, readHandle: number): Readable {
     const stream = new Readable({ read() { /* 推模式：数据到达即 push */ } })
+    let finish!: () => void
+    this.outputClosed.push(new Promise<void>(resolve => { finish = resolve }))
     api.pumpStream(
       readHandle,
       (chunk) => { stream.push(chunk) },
       () => {
         api.close(readHandle)
         stream.push(null)
+        finish()
       }
     )
     return stream

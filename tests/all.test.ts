@@ -88,3 +88,4 @@ import './instance-center-1058.test'
 import './launch-speed-1059.test'
 
 import './voxlink-replacement.test'
+import './game-exit-1064.test'

@@ -273,7 +273,7 @@ export function markNoticesRead() {
 export async function loadExitNotices() {
   try {
     const records = await getExitHistory()
-    records.forEach((record, i) => store.notices.push({ id: -i - 1, time: record.time, text: record.text, type: record.uncertain ? 'info' : 'error', exitTarget: record.kind==='game'&&record.context?.versionId&&record.context?.folder?{id:String(record.context.versionId),folder:String(record.context.folder)}:undefined }))
+    records.forEach((record, i) => store.notices.push({ id: -i - 1, time: record.time, text: record.text, type: record.uncertain || record.context?.exitKind === 'shutdown-timeout' ? 'info' : 'error', exitTarget: record.kind==='game'&&record.context?.versionId&&record.context?.folder?{id:String(record.context.versionId),folder:String(record.context.folder)}:undefined }))
     store.notices.sort((a, b) => b.time - a.time)
     store.noticesUnread ||= records.some(record => !record.seen)
   } catch { /* Older test bridges or unreadable journal must not block startup. */ }

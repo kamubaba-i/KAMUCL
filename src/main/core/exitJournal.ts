@@ -35,10 +35,13 @@ export class ExitJournal {
     const s = this.read(), id = crypto.randomUUID()
     s.pending[id] = { kind, pid, label, context, startedAt: Date.now() }; this.save(s); return id
   }
-  end(id: string, code: number | null, intentional = false) {
+  end(id: string, code: number | null, intentional = false, shutdownTimeout = false) {
     const s = this.read(), pending = s.pending[id]
     if (!pending) return
-    if (code !== 0 && !intentional) this.add(s, pending.kind, `${pending.kind === 'game' ? `游戏「${pending.label}」` : '启动器'}异常退出（代码 ${code ?? '未知'}）。`, { ...pending.context, exitCode: code, endedAt: new Date().toISOString() })
+    if (shutdownTimeout && pending.kind === 'game') {
+      this.add(s, 'game', `游戏「${pending.label}」已关闭，退出清理超时；日志已保留。`, { ...pending.context, exitCode: code, exitKind: 'shutdown-timeout', endedAt: new Date().toISOString() })
+      s.history[0].seen = true // Informational history, not a new crash prompt on next launch.
+    } else if (code !== 0 && !intentional) this.add(s, pending.kind, `${pending.kind === 'game' ? `游戏「${pending.label}」` : '启动器'}异常退出（代码 ${code ?? '未知'}）。`, { ...pending.context, exitCode: code, endedAt: new Date().toISOString() })
     delete s.pending[id]; this.save(s)
   }
   fault(kind: ExitRecord['kind'], text: string, context?: Record<string, unknown>) { const s = this.read(); this.add(s, kind, text, context); this.save(s) }

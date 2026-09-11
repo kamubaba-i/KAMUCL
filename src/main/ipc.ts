@@ -733,7 +733,8 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
           if (s.status === 'error') launcherLogError('game', `启动状态异常：${s.text}`)
           else if (s.status === 'exited') {
             const code = s.code ?? 0
-            if (code === 0) launcherLogInfo('game', `游戏正常退出（code=0）：${s.text}`)
+            if (s.exitKind === 'shutdown-timeout') launcherLogWarn('game', `游戏退出清理超时（code=${code}）：${s.text}`)
+            else if (code === 0 || s.intentionalStop || s.intentionalRestart) launcherLogInfo('game', `游戏已退出（code=${code}）：${s.text}`)
             else launcherLogWarn('game', `游戏异常退出（code=${code}）：${s.text}`)
           } else launcherLogInfo('game', `启动状态 ${s.status}：${s.text}`)
           sendState({ ...s, versionId, folder, launchId })

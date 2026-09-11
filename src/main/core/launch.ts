@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { GameExitEvidence } from '../../shared/gameExit'
 import { createCommandWorld } from './commandWorld'
 import { autoMemoryMB } from '../../shared/memory'
 import { requestGameWindowClose, focusGameWindow, spawnGameProcess } from './gracefulClose'
@@ -727,11 +728,14 @@ async function launchOwned(
     void focusGameWindow(proc).then(() => log('[KAMUCL] 游戏窗口已聚焦')).catch(error => log(`[KAMUCL] 自动聚焦未完成：${error.message}；请点击任务栏中的 Minecraft 窗口`))
   }
 
+  const exitEvidence = new GameExitEvidence()
   const pushStdout = makeLinePusher((line) => {
+    exitEvidence.observe(line)
     stdoutStream?.write(line + '\n')
     log(line)
   })
   const pushStderr = makeLinePusher((line) => {
+    exitEvidence.observe(line)
     stderrStream?.write(line + '\n')
     log(line)
   })
@@ -760,9 +764,11 @@ async function launchOwned(
     if (!gameSession.release(token)) return
     const runS = spawnedAt ? Math.round((Date.now() - spawnedAt) / 1000) : null
     const intentional = restartPending?.sessionToken === token || gameSession.wasIntentionalStop(token)
-    if (exitRecord) rememberExit(() => exitHistory().end(exitRecord, code, intentional))
+    const exitKind = exitEvidence.classify(code, intentional, process.platform)
+    if (exitRecord) rememberExit(() => exitHistory().end(exitRecord, code, intentional, exitKind === 'shutdown-timeout'))
     if (code === 0) launchLog.info(`实例 ${versionId} 游戏正常退出（code=0${runS !== null ? `，运行 ${runS}s` : ''}）`)
     else if (intentional) launchLog.info(`实例 ${versionId} 游戏按用户要求退出（code=${code ?? '未知'}）`)
+    else if (exitKind === 'shutdown-timeout') launchLog.warn(`实例 ${versionId} 已进入退出流程，退出清理超时（code=${code}），保留日志但不弹出游玩崩溃提示`)
     else launchLog.warn(`实例 ${versionId} 游戏异常退出（code=${code ?? '未知'}${runS !== null ? `，运行 ${runS}s` : ''}），如频繁出现请导出错误日志`)
     logStream?.end()
     stdoutStream?.end()
@@ -772,7 +778,7 @@ async function launchOwned(
       lastLaunch.endedAt = new Date().toISOString()
       clearRunningGame()
     }
-    onState({ status: 'exited', code: code ?? -1, intentionalRestart: restartPending?.sessionToken === token, intentionalStop: gameSession.wasIntentionalStop(token), text: `游戏已退出 (code=${code ?? '未知'})` })
+    onState({ status: 'exited', code: code ?? -1, exitKind, intentionalRestart: restartPending?.sessionToken === token, intentionalStop: gameSession.wasIntentionalStop(token), text: exitKind === 'shutdown-timeout' ? '游戏已关闭；退出清理超时，日志已保留' : `游戏已退出 (code=${code ?? '未知'})` })
   })
   } finally {
     if (!spawned) { logStream?.end(); stdoutStream?.end(); stderrStream?.end() }
