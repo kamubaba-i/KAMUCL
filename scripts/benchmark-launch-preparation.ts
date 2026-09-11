@@ -29,7 +29,10 @@ async function main() {
       }
       samples.push(sample)
     }
-    const median = (key: keyof typeof samples[number]) => [...samples].sort((a, b) => a[key] - b[key])[3][key]
+    const median = (key: keyof typeof samples[number]) => {
+      const sorted = samples.map(sample => sample[key]).sort((a, b) => a - b)
+      return (sorted[2] + sorted[3]) / 2
+    }
     const report = { files: files.length, bytes: files.reduce((n, f) => n + f.size, 0), rounds: samples, serialMedianMs: median('serialMs'), parallelMedianMs: median('parallelMs') }
     fs.writeFileSync('out/launch-preparation-benchmark-1059.json', JSON.stringify(report, null, 2))
     console.log(JSON.stringify(report, null, 2))
