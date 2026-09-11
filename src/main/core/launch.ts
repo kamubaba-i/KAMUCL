@@ -20,7 +20,7 @@ import AdmZip from 'adm-zip'
 import type { LaunchState, ProgressEvent } from '../../shared/types'
 import { getSettings } from './settings'
 import { getValidAccount, selectedAccount } from './accounts'
-import { ensureJava, requiredMajor, scanJava, resolveJavaExecutable } from './java'
+import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable } from './java'
 import {
   assetsDir,
   allFolders,
@@ -49,6 +49,7 @@ import {
 import { downloadAll } from './download'
 import { instanceDirectoryState } from './instances'
 import { prepareLaunchAssets } from './launchAssets'
+import { mapLaunchFiles, waitForPreparation } from './launchPreparation'
 import { ensureLaunchArtifact, invalidLaunchArtifact } from './launchIntegrity'
 import { exitHistory, rememberExit } from './exitHistory'
 import { buildGameWindowArguments, resolveGameResolution } from './gameWindow'
@@ -386,147 +387,162 @@ async function launchOwned(
   emit({ stage: 'launch', progress: 0, text: '解析版本信息' })
   const { merged, baseId } = resolveChain(versionId)
   launchLog.debug(`版本链解析完成：${versionId} → 底层 ${baseId}`)
+  if (!merged.mainClass) throw new Error('版本 json 缺少 mainClass，文件可能损坏')
   const instanceConfig = readVersionJson(versionId)
   const { resolveInstanceMetadata } = await import('./instanceMetadata')
   let instanceMcVersion = resolveInstanceMetadata(instanceConfig, id => { try { return readVersionJson(id) } catch { return undefined } }).mcVersion
   const clientJar = clientJarPath(baseId)
-  emit({ stage: 'repair', progress: 0, text: '校验游戏本体完整性' })
-  await ensureLaunchArtifact({ ...readVersionJson(baseId).downloads?.client, dest: clientJar }, settings.mirror,
-    (done, total) => emit({ stage: 'repair', progress: total ? done / total : 0, text: '修复游戏本体' }))
-  // Renamed vanilla profiles can lose their canonical id in launcher metadata.
-  try {
-    const manifest = new AdmZip(clientJar).readAsText('version.json')
-    const canonical = manifest && JSON.parse(manifest).id
-    if (typeof canonical === 'string' && canonical) instanceMcVersion = canonical
-  } catch { /* Older clients have no embedded version.json; keep resolved metadata. */ }
-
-  // 默认按键同步（总开关开启时覆盖实例 options.txt 的 key_* 项，其余行原样保留）
-  const { syncDefaultGameOptions } = await import('./defaultGameOptions')
-  const gameOptionsResult = syncDefaultGameOptions(effectiveGameDir, instanceMcVersion)
-  if (gameOptionsResult.applied.length) log(`[KAMUCL] 已同步 ${gameOptionsResult.applied.length} 项默认游戏选项并校验写入`)
-  if (gameOptionsResult.unsupported.length) log(`[KAMUCL] 当前版本不支持：${gameOptionsResult.unsupported.join('、')}`)
-  if (settings.resourcePackSync) {
-    const { syncDefaultResourcePacks } = await import('./defaultResourcePacks')
-    const count = syncDefaultResourcePacks(effectiveGameDir, instanceMcVersion, clientJarPath(baseId))
-    if (count) log(`[KAMUCL] 已装载 ${count} 个默认材质包`)
-  }
-  if (settings.keySync) {
-    try {
-      const { syncKeysToGameDir, keySyncSupportedForVersion } = await import('./keybindings')
-      if (!keySyncSupportedForVersion(instanceMcVersion)) {
-        log(`[KAMUCL] Minecraft ${instanceMcVersion} 的键位为数字 keycode 格式，跳过按键同步`)
-      } else if (syncKeysToGameDir(effectiveGameDir)) log('[KAMUCL] 已同步默认按键到 options.txt')
-    } catch (error) {
-      log(`[KAMUCL] 默认按键同步失败（不影响启动）：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  if (!merged.mainClass) throw new Error('版本 json 缺少 mainClass，文件可能损坏')
-
-  // a1) 依赖库完整性：缺失则自动补下（含 fabric/quilt 的 maven 坐标库）
-  const libTasks = libraryTasks(merged)
-  const reused = reuseExternalRuntimeLibraries(merged, settings.folders.map(f => f.path), librariesDir(), libTasks.map(t => t.dest))
-  if (reused) log(`[KAMUCL] 已复用注册目录中 ${reused} 个运行库文件`)
-  await repairNeoRuntime(merged, clientJar, readVersionJson(baseId), emit)
-  const launchFiles = launchLibraryFiles(merged)
-  const damaged = [] as typeof launchFiles
-  for (let i = 0; i < launchFiles.length; i++) {
-    emit({ stage: 'repair', progress: i / launchFiles.length, text: `校验依赖库 ${i + 1}/${launchFiles.length}` })
-    if (await invalidLaunchArtifact(launchFiles[i])) damaged.push(launchFiles[i])
-  }
-  // Restore bad downloads concurrently; wait for every worker before ending preparation.
-  let repairIndex = 0, repaired = 0
-  const repairs = await Promise.allSettled(Array.from({ length: Math.min(8, damaged.length) }, async () => {
-    while (repairIndex < damaged.length) {
-      const file = damaged[repairIndex++]
-      await ensureLaunchArtifact(file, settings.mirror)
-      launchLog.info(`已修复依赖库 ${path.basename(file.dest)}`)
-      emit({ stage: 'repair', progress: ++repaired / damaged.length, text: `修复依赖库 ${repaired}/${damaged.length}` })
-    }
-  }))
-  const repairFailure = repairs.find(result => result.status === 'rejected')
-  if (repairFailure?.status === 'rejected') throw repairFailure.reason
-
-  // b) 账号
   const account = selectedAccount()
   if (!account) throw new Error('尚未选择账号，请先在账号页添加并选择一个账号')
-  // 外置登录的会话验证、元数据预取与 agent 校验彼此独立，并行避免拉长启动准备。
-  const [validAccount, externalAuthArgs] = await Promise.all([
-    getValidAccount(account),
-    yggdrasil.launchArguments(account)
+  const timed = async <T>(stage: string, work: () => Promise<T>): Promise<T> => {
+    const started = Date.now()
+    try { return await work() }
+    finally { log(`[KAMUCL] 启动准备 · ${stage}：${Date.now() - started}ms`) }
+  }
+  const [{ classpath, nativesPath, launchAssets }, [validAccount, externalAuthArgs], javaPath] = await waitForPreparation([
+    () => timed('游戏文件与配置', async () => {
+      emit({ stage: 'repair', progress: 0, text: '校验游戏本体完整性' })
+      await ensureLaunchArtifact({ ...readVersionJson(baseId).downloads?.client, dest: clientJar }, settings.mirror,
+        (done, total) => emit({ stage: 'repair', progress: total ? done / total : 0, text: '修复游戏本体' }))
+      // Renamed vanilla profiles can lose their canonical id in launcher metadata.
+      try {
+        const manifest = new AdmZip(clientJar).readAsText('version.json')
+        const canonical = manifest && JSON.parse(manifest).id
+        if (typeof canonical === 'string' && canonical) instanceMcVersion = canonical
+      } catch { /* Older clients have no embedded version.json; keep resolved metadata. */ }
+
+      // 默认按键同步（总开关开启时覆盖实例 options.txt 的 key_* 项，其余行原样保留）
+      const { syncDefaultGameOptions } = await import('./defaultGameOptions')
+      const gameOptionsResult = syncDefaultGameOptions(effectiveGameDir, instanceMcVersion)
+      if (gameOptionsResult.applied.length) log(`[KAMUCL] 已同步 ${gameOptionsResult.applied.length} 项默认游戏选项并校验写入`)
+      if (gameOptionsResult.unsupported.length) log(`[KAMUCL] 当前版本不支持：${gameOptionsResult.unsupported.join('、')}`)
+      if (settings.resourcePackSync) {
+        const { syncDefaultResourcePacks } = await import('./defaultResourcePacks')
+        const count = syncDefaultResourcePacks(effectiveGameDir, instanceMcVersion, clientJarPath(baseId))
+        if (count) log(`[KAMUCL] 已装载 ${count} 个默认材质包`)
+      }
+      if (settings.keySync) {
+        try {
+          const { syncKeysToGameDir, keySyncSupportedForVersion } = await import('./keybindings')
+          if (!keySyncSupportedForVersion(instanceMcVersion)) {
+            log(`[KAMUCL] Minecraft ${instanceMcVersion} 的键位为数字 keycode 格式，跳过按键同步`)
+          } else if (syncKeysToGameDir(effectiveGameDir)) log('[KAMUCL] 已同步默认按键到 options.txt')
+        } catch (error) {
+          log(`[KAMUCL] 默认按键同步失败（不影响启动）：${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+
+
+      // a1) 依赖库完整性：缺失则自动补下（含 fabric/quilt 的 maven 坐标库）
+      const libTasks = libraryTasks(merged)
+      const reused = reuseExternalRuntimeLibraries(merged, settings.folders.map(f => f.path), librariesDir(), libTasks.map(t => t.dest))
+      if (reused) log(`[KAMUCL] 已复用注册目录中 ${reused} 个运行库文件`)
+      await repairNeoRuntime(merged, clientJar, readVersionJson(baseId), emit)
+      const launchFiles = launchLibraryFiles(merged)
+      let checkedLibraries = 0, lastCheckProgress = 0
+      const invalid = await mapLaunchFiles(launchFiles, async file => {
+        const reason = await invalidLaunchArtifact(file)
+        checkedLibraries++
+        if (checkedLibraries === launchFiles.length || Date.now() - lastCheckProgress >= 80) {
+          lastCheckProgress = Date.now()
+          emit({ stage: 'repair', progress: checkedLibraries / launchFiles.length, text: `校验依赖库 ${checkedLibraries}/${launchFiles.length}` })
+        }
+        return reason
+      })
+      const damaged = launchFiles.filter((_, index) => invalid[index])
+      // Restore bad downloads concurrently; wait for every worker before ending preparation.
+      let repairIndex = 0, repaired = 0
+      const repairs = await Promise.allSettled(Array.from({ length: Math.min(8, damaged.length) }, async () => {
+        while (repairIndex < damaged.length) {
+          const file = damaged[repairIndex++]
+          await ensureLaunchArtifact(file, settings.mirror)
+          launchLog.info(`已修复依赖库 ${path.basename(file.dest)}`)
+          emit({ stage: 'repair', progress: ++repaired / damaged.length, text: `修复依赖库 ${repaired}/${damaged.length}` })
+        }
+      }))
+      const repairFailure = repairs.find(result => result.status === 'rejected')
+      if (repairFailure?.status === 'rejected') throw repairFailure.reason
+
+      // d) classpath 与 natives 解压
+      emit({ stage: 'launch', progress: 0.5, text: '准备运行库与 natives' })
+      const { artifacts, natives } = resolvedLibraries(merged)
+      const nativesPath = nativesDir(versionId)
+      fs.mkdirSync(nativesPath, { recursive: true })
+      for (const jar of natives) {
+        if (!fs.existsSync(jar)) continue
+        try {
+          const zip = new AdmZip(jar)
+          for (const entry of zip.getEntries()) {
+            if (entry.isDirectory || entry.entryName.startsWith('META-INF/')) continue
+            zip.extractEntryTo(entry, nativesPath, true, true)
+          }
+        } catch {
+          // 单个 natives 解压失败不阻断启动
+        }
+      }
+      const classpath = [...new Set([...artifacts, ...natives, clientJar])].join(path.delimiter)
+
+      // Existing installations may belong to another repository. Languages and sounds must
+      // use its asset index/objects, not an unrelated launcher's empty default cache.
+      const launchAssets = await prepareLaunchAssets(
+        merged,
+        [path.join(folderOfVersion(versionId), 'assets'), assetsDir(), ...allFolders().map(folder => path.join(folder, 'assets'))],
+        assetsDir(),
+        effectiveGameDir,
+        async tasks => {
+          emit({ stage: 'repair', progress: 0, text: `补全游戏资源（含语言文件）${tasks.length} 项` })
+          await downloadAll(tasks, (done, total, speed) =>
+            emit({ stage: 'repair', progress: total ? done / total : 1, text: `补全游戏资源 ${done}/${total}`, speed }), 8, settings.mirror)
+        }
+      )
+      log(`[KAMUCL] 游戏资源：${launchAssets.root}；索引：${launchAssets.indexId}`)
+
+      return { classpath, nativesPath, launchAssets }
+    }),
+    () => timed('账号验证', () => waitForPreparation([
+      () => getValidAccount(account), () => yggdrasil.launchArguments(account)
+    ])),
+    () => timed('Java 环境', async () => {
+      // c) Java：版本独立指定 > 手动指定 > 自动管理
+      emit({ stage: 'java', progress: 0, text: '检查 Java 环境' })
+      let javaPath: string
+      const versionJava = instanceConfig._javaPath
+      if (instanceConfig._javaAuto === true) {
+        javaPath = await ensureJava(merged, emit)
+      } else if (versionJava) {
+        if (!fs.existsSync(versionJava)) {
+          throw new Error(`该版本指定的 Java 不存在（${versionJava}），请在版本设置中重新选择`)
+        }
+        javaPath = versionJava
+        emit({ stage: 'java', progress: 1, text: '使用该版本指定的 Java' })
+      } else if (settings.javaAuto) {
+        javaPath = await ensureJava(merged, emit)
+      } else if (settings.javaPath) {
+        if (!fs.existsSync(settings.javaPath)) {
+          throw new Error('手动指定的 Java 路径不存在，请在设置中重新选择')
+        }
+        javaPath = settings.javaPath
+        emit({ stage: 'java', progress: 1, text: '使用手动指定的 Java' })
+      } else {
+        const need = requiredMajor(merged)
+        const found = (await scanJavaForLaunch()).find((j) => j.major === need && j.is64Bit)
+        if (!found) {
+          throw new Error(
+            `该版本需要 Java ${need} (64位)，但未找到（Java 自动管理已关闭）。请在设置中选择 Java 或开启自动管理`
+          )
+        }
+        javaPath = found.path
+        emit({ stage: 'java', progress: 1, text: `使用本机 Java ${found.version}` })
+      }
+      launchLog.info(`选定 Java（需要 major ${requiredMajor(merged)}）：${javaPath}`)
+
+      const selectedJavaPath = javaPath
+      javaPath = await resolveJavaExecutable(javaPath)
+      if (selectedJavaPath !== javaPath) log(`[KAMUCL] Java 转发入口已解析到真实运行时: ${javaPath}`)
+      return javaPath
+    })
   ])
 
-  // c) Java：版本独立指定 > 手动指定 > 自动管理
-  emit({ stage: 'java', progress: 0, text: '检查 Java 环境' })
-  let javaPath: string
-  const versionJava = instanceConfig._javaPath
-  if (instanceConfig._javaAuto === true) {
-    javaPath = await ensureJava(merged, emit)
-  } else if (versionJava) {
-    if (!fs.existsSync(versionJava)) {
-      throw new Error(`该版本指定的 Java 不存在（${versionJava}），请在版本设置中重新选择`)
-    }
-    javaPath = versionJava
-    emit({ stage: 'java', progress: 1, text: '使用该版本指定的 Java' })
-  } else if (settings.javaAuto) {
-    javaPath = await ensureJava(merged, emit)
-  } else if (settings.javaPath) {
-    if (!fs.existsSync(settings.javaPath)) {
-      throw new Error('手动指定的 Java 路径不存在，请在设置中重新选择')
-    }
-    javaPath = settings.javaPath
-    emit({ stage: 'java', progress: 1, text: '使用手动指定的 Java' })
-  } else {
-    const need = requiredMajor(merged)
-    const found = scanJava().find((j) => j.major === need && j.is64Bit)
-    if (!found) {
-      throw new Error(
-        `该版本需要 Java ${need} (64位)，但未找到（Java 自动管理已关闭）。请在设置中选择 Java 或开启自动管理`
-      )
-    }
-    javaPath = found.path
-    emit({ stage: 'java', progress: 1, text: `使用本机 Java ${found.version}` })
-  }
-  launchLog.info(`选定 Java（需要 major ${requiredMajor(merged)}）：${javaPath}`)
-
-  // d) classpath 与 natives 解压
-  emit({ stage: 'launch', progress: 0.5, text: '准备运行库与 natives' })
-  const { artifacts, natives } = resolvedLibraries(merged)
-  const nativesPath = nativesDir(versionId)
-  fs.mkdirSync(nativesPath, { recursive: true })
-  for (const jar of natives) {
-    if (!fs.existsSync(jar)) continue
-    try {
-      const zip = new AdmZip(jar)
-      for (const entry of zip.getEntries()) {
-        if (entry.isDirectory || entry.entryName.startsWith('META-INF/')) continue
-        zip.extractEntryTo(entry, nativesPath, true, true)
-      }
-    } catch {
-      // 单个 natives 解压失败不阻断启动
-    }
-  }
-  const classpath = [...new Set([...artifacts, ...natives, clientJar])].join(path.delimiter)
-
-  // Existing installations may belong to another repository. Languages and sounds must
-  // use its asset index/objects, not an unrelated launcher's empty default cache.
-  const launchAssets = await prepareLaunchAssets(
-    merged,
-    [path.join(folderOfVersion(versionId), 'assets'), assetsDir(), ...allFolders().map(folder => path.join(folder, 'assets'))],
-    assetsDir(),
-    effectiveGameDir,
-    async tasks => {
-      emit({ stage: 'repair', progress: 0, text: `补全游戏资源（含语言文件）${tasks.length} 项` })
-      await downloadAll(tasks, (done, total, speed) =>
-        emit({ stage: 'repair', progress: total ? done / total : 1, text: `补全游戏资源 ${done}/${total}`, speed }), 8, settings.mirror)
-    }
-  )
-  log(`[KAMUCL] 游戏资源：${launchAssets.root}；索引：${launchAssets.indexId}`)
-
-  // f) 变量替换表
-  const selectedJavaPath = javaPath
-  javaPath = await resolveJavaExecutable(javaPath)
-  if (selectedJavaPath !== javaPath) log(`[KAMUCL] Java 转发入口已解析到真实运行时: ${javaPath}`)
   const userProperties = serializeYggdrasilUserProperties(validAccount.userProperties)
   const vars: Record<string, string> = {
     auth_player_name: validAccount.username,

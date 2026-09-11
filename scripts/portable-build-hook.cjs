@@ -72,6 +72,24 @@ module.exports = function beforePack() {
   NsisTarget.prototype.computeFinalScript = function (script, ...args) {
     return original.call(this, this.isPortable ? repairPortableScript(script, { cacheKey: runtimeCacheKey() }) : script, ...args)
   }
+  // Lossless archive tuning only: all runtime files, codecs, GPU fallbacks and
+  // notices remain byte-identical. The dictionary is used only during first
+  // extraction; the existing warm runtime cache is unchanged.
+  const buildPackage = NsisTarget.prototype.buildAppPackage
+  NsisTarget.prototype.buildAppPackage = async function (appOutDir, arch) {
+    if (!this.isPortable || this.options.useZip || this.packager.compression === 'store') {
+      return buildPackage.call(this, appOutDir, arch)
+    }
+    const path = require('node:path'), fs = require('node:fs/promises')
+    const { Arch } = require('builder-util')
+    const { archive } = require('app-builder-lib/out/targets/archive')
+    const { hashFile } = require('app-builder-lib/out/util/hash')
+    const info = this.packager.appInfo
+    const file = path.join(this.outDir, `${info.sanitizedName}-${info.version}-${Arch[arch]}.nsis.7z`)
+    const excluded = this.getPreCompressedFileExtensions()?.map(extension => `*${extension}`)
+    await archive('7z', file, appOutDir, { withoutDir: true, compression: this.packager.compression, dictSize: 128, excluded })
+    return { path: file, size: (await fs.stat(file)).size, sha512: await hashFile(file) }
+  }
   NsisTarget.prototype.__kamuclQuotedPortable = true
 }
 module.exports.repairPortableScript = repairPortableScript
