@@ -642,6 +642,7 @@ export interface LaunchState {
   code?: number
   intentionalRestart?: boolean
   intentionalStop?: boolean
+  exitKind?: import('./gameExit').GameExitKind
 }
 
 // ---------------- IPC 通道（invoke: 前端 await 调用） ----------------

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shouldReportGameCrash, signedExitCode } from '@shared/gameExit'
 const isMac = window.kamucl.platform === 'darwin'
 import LaunchNotice from './components/LaunchNotice.vue'
 import { instanceCenter, openInstanceCenter } from './instanceCenter'
@@ -1142,13 +1143,12 @@ onMounted(async () => {
         launchFail.title = '游戏启动失败'
         launchFail.text = s.text
       } else if (s.status === 'exited') {
-        if (s.code && !s.intentionalRestart && !s.intentionalStop) {
-          // 非 0 退出码 = 崩溃，同样提供日志导出
+        if (shouldReportGameCrash(s)) {
           launchFail.open = true
-          launchFail.title = `游戏异常退出（代码 ${s.code}）`
+          launchFail.title = `游戏异常退出（代码 ${signedExitCode(s.code ?? null) ?? '未知'}）`
           launchFail.text = '游戏进程崩溃或被异常终止。可导出错误日志（含 crash-report 与 latest.log）用于排查。'
         } else {
-          toast('游戏已退出', 'info')
+          toast(s.exitKind === 'shutdown-timeout' ? s.text : '游戏已退出', 'info')
         }
         // 游戏退出后只扫描刚运行的实例，避免共享 servers.dat 被错误关联到其他版本。
         const exitedVersionId = s.versionId || store.launchingVersionId
