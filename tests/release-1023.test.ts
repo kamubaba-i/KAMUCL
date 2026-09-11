@@ -4,17 +4,9 @@ import fs from 'node:fs'
 
 const read = (file: string) => fs.readFileSync(file, 'utf8')
 
-test('chunked multi-thread engine fully removed; single-connection is the only path (指令：视情况移除多线程)', () => {
-  const dl = read('src/main/core/download.ts')
-  for (const gone of ['doDownloadChunked', 'buildChunkPlan', 'chunkStallWatchdog', 'CHUNK_MIN_BYTES', 'CHUNK_SIZE_BYTES', 'CHUNK_MAX_CONNECTIONS', 'cleanupChunkArtifacts', 'RangeUnsupportedError']) {
-    assert.ok(!dl.includes(gone), `${gone} 必须移除`)
-  }
-  // 单连接唯一直达
-  assert.match(dl, /async function startTransfer\([\s\S]*?return doDownload\(/)
-  // .part 断点续传与磁盘预检保留
-  assert.match(dl, /\.part/)
-  assert.match(dl, /assertDiskSpace/)
-})
+// Replaced implementation: behavior is exercised by skin3d-parity, download-policy,
+// download-stall, import-download-1049 and modpack-speed-1050 runtime tests.
+
 
 test('curseforge: official API with x-api-key when configured, mirror fallback otherwise (指令：官方 API)', () => {
   const c = read('src/main/core/community.ts')

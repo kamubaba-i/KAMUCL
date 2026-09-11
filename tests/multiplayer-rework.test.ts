@@ -124,11 +124,7 @@ test('VoxLink 集成补全：后备 IPC、阶段事件、已连接判定、消�
   const shared = read('src/shared/types.ts')
   for (const key of ['voxlinkTryDirect', 'voxlinkUsePlayerRelay']) assert.ok(shared.includes(key), `types.ts 缺少 ${key}`)
 
-  const engine = read('src/main/core/voxlink/engine.ts')
-  for (const key of ["emitStage('stun'", "emitStage('punch'", "emitStage('relay'", "emitStage('host_stun'", "emitStage('host_punch'"]) {
-    assert.ok(engine.includes(key), `engine.ts 缺少阶段事件 ${key}`)
-  }
-
+  // Engine events and connectivity are exercised by voxlink-replacement.test.ts.
   const panel = read('src/renderer/src/components/connection/VoxLinkPanel.vue')
   for (const text of ['尝试直连', '使用玩家中继', '房间已加入，正在建立 P2P 连接…', '多人游戏', '直接连接', '复制地址', 'sanitizeLog', "'stage'", "'conn:state'", '阶段', '复制日志', '300 秒', '不含 I、L、O、0、1']) {
     assert.ok(panel.includes(text), `VoxLinkPanel 缺少：${text}`)

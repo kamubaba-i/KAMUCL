@@ -24,19 +24,9 @@ test('game view: per-version launch button before delete (新增2)', () => {
   assert.match(gv, /@click="launchVersion\(v\)"/)
 })
 
-test('skin viewer: cape preview via HMCL-style flip, 64x32 layout, cape prop watch (新增3；1.0.16 起用物晖重写版实现)', () => {
-  const viewer = read('src/renderer/src/components/SkinViewer3D.vue')
-  assert.match(viewer, /function attachCapeMesh/)
-  // 披风 10×16×1，正面 UV (1,1)，180° 翻转朝后挂背部
-  assert.match(viewer, /faceRegions\(1, 1, 10, 16, 1\)/)
-  assert.match(viewer, /rotation\.y = Math\.PI/)
-  assert.match(viewer, /joint\.position\.set\(0, 24, -2\.7\)/)
-  // cape prop 监听重载
-  assert.match(viewer, /watch\(\s*\(\) => props\.cape/)
-  const skins = read('src/renderer/src/views/SkinsView.vue')
-  assert.match(skins, /const activeCape = computed/)
-  assert.match(skins, /:cape="activeCape"/)
-})
+// Replaced implementation: behavior is exercised by skin3d-parity, download-policy,
+// download-stall, import-download-1049 and modpack-speed-1050 runtime tests.
+
 
 test('launch: game process survives launcher exit via CreateProcessW detach + running state restore (修复5；1.0.16 起用物晖 gracefulClose 实现)', () => {
   const launch = read('src/main/core/launch.ts')

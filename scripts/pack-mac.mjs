@@ -11,6 +11,8 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import yauzl from 'yauzl'
 import yazl from 'yazl'
+import licenseChecks from './check-licenses.cjs'
+licenseChecks.checkLicenses({ release: true })
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 

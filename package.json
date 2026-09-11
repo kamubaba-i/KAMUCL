@@ -1,7 +1,7 @@
 {
   "name": "kamucl",
   "productName": "KAMUCL",
-  "version": "1.0.59",
+  "version": "1.0.60",
   "description": "KAMUCL - 简约美观的一键式 Minecraft 启动器",
   "main": "out/main/index.js",
   "scripts": {
@@ -12,7 +12,8 @@
     "dist": "npm run build && electron-builder --win portable zip",
     "dist:win": "npm run build && electron-builder --win portable zip",
     "dist:mac": "electron-vite build && electron-builder --mac zip --x64 --arm64",
-    "dist:all": "electron-vite build && electron-builder --win portable zip --mac zip --x64 --arm64"
+    "dist:all": "electron-vite build && electron-builder --win portable zip --mac zip --x64 --arm64",
+    "license:check": "node scripts/check-licenses.cjs"
   },
   "build": {
     "appId": "com.kamucl.launcher",
@@ -25,7 +26,11 @@
       "out/preload/**",
       "out/renderer/**",
       "package.json",
-      "!out/**/*.map"
+      "!out/**/*.map",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "licenses/**",
+      "docs/CORRESPONDING_SOURCE.md"
     ],
     "asar": true,
     "compression": "maximum",
@@ -71,12 +76,14 @@
     "@electron/packager": "^20.3.0",
     "@types/adm-zip": "^0.5.7",
     "@types/node": "^22.9.0",
+    "@types/three": "0.185.0",
     "@vitejs/plugin-vue": "^5.2.0",
     "asar": "^3.2.0",
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
     "sharp": "^0.35.4",
+    "skinview-utils": "0.7.1",
     "three": "^0.185.1",
     "tsx": "^4.23.13",
     "typescript": "^5.6.3",
@@ -84,5 +91,6 @@
     "vue": "^3.5.13",
     "yauzl": "^3.4.0",
     "yazl": "^3.3.1"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE"
 }

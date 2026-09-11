@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import UpdateDialogShell from '../components/UpdateDialogShell.vue'
+const ThirdPartyNotices = defineAsyncComponent(() => import('../components/ThirdPartyNotices.vue'))
 import {
   addCustomJava,
   applyLocalUpdate,
@@ -61,6 +62,7 @@ async function save(patch: Partial<Settings>) {
 
 // ---------------- 关于与更新 ----------------
 const appVersion = __APP_VERSION__
+const showLicenses = ref(false)
 const updateCheckState = ref<'idle' | 'checking' | 'latest' | 'failed'>('idle')
 let lastManualCheck = 0
 
@@ -1014,6 +1016,8 @@ async function onRemovePlugin(p: PluginInfo) {
           <div class="upd-row">
             <span class="upd-label">当前版本</span>
             <span class="upd-value">v{{ appVersion }}</span>
+            <button class="btn btn-ghost btn-sm" @click="showLicenses = true">第三方许可</button>
+            <ThirdPartyNotices v-if="showLicenses" @dismiss="showLicenses = false" />
             <button class="btn btn-ghost btn-sm" :disabled="updateCheckState === 'checking'" @click="onCheckUpdate">
               <span v-if="updateCheckState === 'checking'" class="spin"></span>
               {{ updateCheckState === 'checking' ? '检查中' : '检查更新' }}

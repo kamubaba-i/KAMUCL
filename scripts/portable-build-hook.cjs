@@ -66,6 +66,7 @@ function runtimeCacheKey(root = require('node:path').resolve(__dirname, '..')) {
 }
 
 module.exports = function beforePack() {
+  require('./check-licenses.cjs').checkLicenses({ release: true })
   const { NsisTarget } = require('app-builder-lib/out/targets/nsis/NsisTarget')
   if (NsisTarget.prototype.__kamuclQuotedPortable) return
   const original = NsisTarget.prototype.computeFinalScript
