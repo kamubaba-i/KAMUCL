@@ -228,7 +228,7 @@ async function segmented(url: string, dest: string, expected: Integrity, signal:
   } catch(error) {
     signal?.throwIfAborted()
     await clear()
-    if(error instanceof InvalidContent)return receive(url,dest+'.part',expected,signal,progress,fallback)
+    if(error instanceof InvalidContent) { await fs.promises.rm(dest+'.part',{force:true}); return receive(url,dest+'.part',expected,signal,progress,fallback) }
     throw error
   } finally { signal?.removeEventListener('abort',cancel);controller.abort() }
 }
