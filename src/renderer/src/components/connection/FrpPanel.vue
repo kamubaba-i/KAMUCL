@@ -166,17 +166,21 @@ async function loadNodes(refresh = false): Promise<void> {
   nodesLoading.value = true
   nodesError.value = ''
   try {
-    nodesResult.value = (await kamucl.invoke('frp:nodes', { accessKey: form.accessKey.trim(), refresh })) as FrpNodesResult
-    if (!nodesResult.value?.tunnels) throw new Error('隧道列表查询失败，请检查密钥权限后重试')
+    const result = (await kamucl.invoke('frp:nodes', { accessKey: form.accessKey.trim(), refresh })) as FrpNodesResult
+    if (!Array.isArray(result?.nodes)) throw new Error('节点列表查询失败，请重试')
+    if (!Array.isArray(result.tunnels)) throw new Error('隧道列表查询失败，请检查密钥权限后重试')
+    nodesResult.value = result
     if (!nodesResult.value.tunnels.some(t => String(t.id) === form.tunnelId)) form.tunnelId = ''
+    toast(`已读取成功：${result.tunnels.length} 条隧道，${result.nodes.length} 个节点`, 'success')
   } catch (e) {
     nodesError.value = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : String(e)
+    toast(`读取失败：${nodesError.value}`, 'error')
   } finally {
     nodesLoading.value = false
   }
 }
 function onReferenceToggle(event: Event): void {
-  // 首次展开且已保存过访问密钥时自动拉一次节点（失败只展示真实错误，不打扰）
+  // 首次展开且已保存过访问密钥时拉取节点，读取结果与手动刷新使用同一提示。
   if ((event.target as HTMLDetailsElement).open && !nodesResult.value && !nodesLoading.value && form.accessKey.trim()) void loadNodes()
 }
 
