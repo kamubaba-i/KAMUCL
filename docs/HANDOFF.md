@@ -1,6 +1,6 @@
 # KAMUCL 项目交接文档（给 Codex）
 
-> 更新时间：2026-09-11 12:16 ｜ 当前版本：**1.0.56**（已验证、打包和发布）
+> 更新时间：2026-09-11 14:30 ｜ 当前版本：**1.0.57**（已验证、打包和发布）
 > 工作区：E:\KAMUCL（git 仓库）
 
 ---
@@ -12,6 +12,22 @@ KAMUCL 是卡慕SaMa 的 Minecraft 启动器：Electron 33+ + Vue 3（script set
 ---
 
 ## 1. 当前进度快照
+
+**1.0.57 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.57 ，Release ID 386823722。新增 mac-arm64 / mac-x64 ZIP（内含 KAMUCL.app），使用原生 GitHub macos-15 / macos-15-intel runner 构建和 ad-hoc 签名；未使用 Apple 开发者证书签名或公证，首次运行可能需要系统确认，Mac 更新手动下载对应架构 ZIP。Windows 成品同版本更新。
+
+构建/启动验证工作流 `.github/workflows/mac-build.yml`；成功运行 https://github.com/kamubaba-i/KAMUCL/actions/runs/34569450136 。实际打包主程序通过 CDP 验证首页与版本并截屏，二进制架构、ASAR 版本及依赖和归档 SHA256 通过；没有声称所有 Minecraft/第三方联机功能完成 Mac 实机验收。截图/证明 `out/mac-arm64-ci-final/mac-proof-arm64`、`out/mac-x64-ci-final/mac-proof-x64`。旧 `scripts/pack-mac.mjs` 不用于本版交付。
+
+首轮 Intel 验证过早访问尚未创建的 JS 上下文，已增加有限重试；同时修复启动过程中窗口关闭后的 webContents 访问，完善销毁模拟测试。375 项全量测试、4 项启动定向回归、TypeScript、构建通过；Windows EXE/ZIP 启动入口证明 `out/release-1.0.57-proof.json`。
+
+源码提交 master `bf74ad9`、`c022373`、`b2cc4d6`（tag），main `0e1a9fb`、`a0f510b`、`b430482`。Mac 产物对应 c022373，后续 b2cc4d6 仅修改测试。发布附件五项全部核对大小与 SHA256、标签及 latest：`out/publish-1057.log`。完整成品归档 `release/final-1.0.57`。
+
+```text
+08825ded2e2aa6bf1549dde0fc6ac735b3b46982f9d71669aa66132c6342bcdb  KAMUCL-1.0.57.exe
+f8dec7c7f2be9306ff92e8aebc1d774aa05fb461537b7fb47f68d3d869f2c632  KAMUCL-1.0.57-windows-x64.zip
+0e2705f73fb1e79d6d43c08c5f4c8b38b091d27450b0a413d9804d13fd9b8da4  KAMUCL-1.0.57-mac-arm64.zip
+efc5320db5aefcdbd2be306dc978c4e0ef1958a5b400661ed25a82c9e599d11f  KAMUCL-1.0.57-mac-x64.zip
+```
+
 
 **1.0.56 已发布**：https://github.com/kamubaba-i/KAMUCL/releases/tag/v1.0.56 ，Release ID 386781827。master `058e4c4`，main cherry-pick `165af63`。社区资源的来源/加载器/排序/实例选择统一 SelectMenu，浮层采用 card-solid 材质；组件显式透传布局属性，键盘从当前选项开始；重复清理窗口所有状态显示关闭入口；移除模组可更新分类及顶部全局搜索，模组标题操作栏响应式换行。
 
