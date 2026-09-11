@@ -113,7 +113,7 @@ onMounted(() => {
   <Teleport to="body">
     <div v-if="open" class="modal-mask" @pointerdown.self="emit('close')">
       <div class="modal dup-modal">
-        <h3 class="modal-title">清理重复 MOD</h3>
+        <div class="dup-header"><h3 class="modal-title">清理重复 MOD</h3><button type="button" class="btn btn-ghost" aria-label="关闭清理重复模组" title="关闭" @click="emit('close')">✕</button></div>
 
         <div class="dup-tabs">
           <button class="game-tab" :class="{ active: tab === 'single' }" @click="tab = 'single'">本版本清理</button>
@@ -197,6 +197,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.dup-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.dup-header .modal-title { margin: 0; }
 .dup-modal {
   width: 560px;
   max-height: 84vh;

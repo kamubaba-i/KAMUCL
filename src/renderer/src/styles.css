@@ -581,7 +581,7 @@ input[type='number'] {
   min-width: 150px;
   max-height: 300px;
   overflow-y: auto;
-  background: var(--card-2);
+  background: color-mix(in srgb, var(--card-solid, var(--card)) 96%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-2);

@@ -5,6 +5,8 @@
  */
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 
+defineOptions({ inheritAttrs: false })
+
 const props = defineProps<{
   modelValue: string
   options: Array<{ value: string; label: string }>
@@ -36,7 +38,9 @@ function toggle() {
       ? { left: rect.left + 'px', bottom: innerHeight - rect.top + 6 + 'px', minWidth: rect.width + 'px', maxHeight: maxH + 'px' }
       : { left: rect.left + 'px', top: rect.bottom + 6 + 'px', minWidth: rect.width + 'px', maxHeight: maxH + 'px' }
   }
+  active.value = Math.max(0, props.options.findIndex(o => o.value === props.modelValue))
   open.value = true
+  void nextTick(() => menuEl.value?.querySelector<HTMLElement>('[data-focused=true]')?.scrollIntoView({block:'nearest'}))
   addEventListener('pointerdown', onPointerDown, true)
   addEventListener('keydown', onKeydown, true)
 }
@@ -63,6 +67,7 @@ onBeforeUnmount(close)
 
 <template>
   <button
+    v-bind="$attrs"
     ref="buttonEl"
     type="button"
     class="select-menu-btn"
@@ -127,7 +132,7 @@ onBeforeUnmount(close)
   padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: color-mix(in srgb, var(--card-solid, var(--card)) 96%, transparent);
   backdrop-filter: blur(24px) saturate(130%);
   -webkit-backdrop-filter: blur(24px) saturate(130%);
   box-shadow: var(--shadow);
@@ -138,6 +143,7 @@ onBeforeUnmount(close)
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-shrink: 0;
   min-height: var(--row-h);
   padding: 4px 12px;
   border: none;
