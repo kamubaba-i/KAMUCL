@@ -444,21 +444,12 @@ async function installVanillaUnlocked(
         .map((v) => v.dir)
         .concat(versionDirs.map((v) => path.join(v.folder, '.kamucl', 'base')))
         .filter((dir) => path.resolve(dir) !== path.resolve(path.dirname(jarPath)))
-      await downloadFile(
-        client.url,
-        jarPath,
-        (d, t) =>
-          emit({
-            stage: 'client',
-            progress: t ? d / t : 0,
-            text: `下载游戏本体 ${fmtMB(d)}${t ? '/' + fmtMB(t) : ''}`,
-            source: sourceText
-          }),
-        client.sha1,
-        mirror,
-        signal,
-        [],
-        { size: client.size, reuseDirs }
+      await downloadAll(
+        [{ url: client.url, dest: jarPath, sha1: client.sha1, size: client.size, reuseDirs }],
+        (_done, _total, speed, detail) => emit({stage:'client', progress:detail.fraction ?? 0,
+          bytesDone:detail.bytesDone, bytesTotal:detail.bytesTotal ?? undefined, indeterminate:detail.indeterminate,
+          speed, etaSeconds:detail.etaSeconds ?? undefined, text:'下载游戏本体 '+fmtMB(detail.bytesDone), source:sourceText}),
+        getSettings().downloadThreads, mirror, signal
       )
     }
 
@@ -726,7 +717,7 @@ export async function migrateFlattenedInstances(
 }
 
 /** flatten 实例自愈：json 自包含不缺，仅补客户端 jar（不重写 json） */
-export async function installClientJarOnly(id: string, emit: ProgressEmit): Promise<void> {
+export async function installClientJarOnly(id: string, emit: ProgressEmit, signal?: AbortSignal): Promise<void> {
   const j = readVersionJson(id)
   const client = j.downloads?.client
   if (!client?.url) throw new Error('实例 json 缺少客户端下载信息，无法自动补全')
@@ -742,7 +733,7 @@ export async function installClientJarOnly(id: string, emit: ProgressEmit): Prom
       }),
     client.sha1,
     mirror,
-    undefined,
+    signal,
     [],
     { size: client.size }
   )

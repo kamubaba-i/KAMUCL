@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { withDeadline } from '@shared/deadline'
 // 服务器页：服务器列表管理 + SLP 实时状态 + 一键进服
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
@@ -250,13 +251,13 @@ async function doLaunch(s: ServerEntry, versionId: string) {
     const target = targets.value.find(
       (item) => item.id === versionId && (!s.folder || normalizedPath(item.folder) === normalizedPath(s.folder))
     )
-    const prepared = await prepareServerLaunch(s.id, versionId, target?.folder ?? s.folder)
+    const prepared = await withDeadline(() => prepareServerLaunch(s.id, versionId, target?.folder ?? s.folder), 15000, '服务器启动准备超时，请检查实例目录是否可访问后重试')
     store.settings = await getSettings()
     await refreshInstalled()
     await selectInstance(prepared.versionId, prepared.folder)
     store.launchingVersionId = prepared.versionId
     store.launchingFolder = prepared.folder
-    await launchGame(prepared.versionId, prepared.directJoin ? prepared.address : undefined)
+    await launchGame(prepared.versionId, prepared.directJoin ? prepared.address : undefined, prepared.folder)
     servers.value = await listServers()
     toast(
       prepared.directJoin
@@ -367,7 +368,7 @@ async function copyAddress(s: ServerEntry) {
         <ServerListItem v-for="s in filteredServers" :key="s.id" :server="s" :ping="pingOf(s)" :pending="pings[s.id] === 'loading'" :active="activeServer?.id === s.id" :select-mode="selectMode" :checked="selected.has(s.id)" @select="activeId = s.id" @toggle="toggleSelect(s.id)" @connect="onCardDblClick(s)" />
         <p class="connection-muted server-list-hint">选择查看详情 · 双击快速连接</p>
       </section>
-      <ServerDetails v-if="activeServer" :server="activeServer" :ping="pingOf(activeServer)" :pending="pings[activeServer.id] === 'loading'" :busy="launchBusy || store.launchState?.status === 'running' || store.launchState?.status === 'launching'" :binding="!!bindingId" :targets="targets" :bound="boundToken(activeServer)" :missing="versionMissing(activeServer)" :last-used="formatLastUsed(activeServer.lastUsedAt)" :target-token="targetToken" :target-label="targetLabel" @bind="onBind(activeServer, $event)" @connect="onCardDblClick(activeServer)" @refresh="pingOne(activeServer)" @edit="openAdd(activeServer)" @remove="requestDelete(activeServer)" @relink="relinkMissing(activeServer)" @versions="store.currentView = 'game'" @copy="copyAddress(activeServer)" />
+      <ServerDetails v-if="activeServer" :server="activeServer" :ping="pingOf(activeServer)" :pending="pings[activeServer.id] === 'loading'" :busy="launchBusy || store.launchState?.status === 'running' || store.launchState?.status === 'launching'" :running="store.launchState?.status === 'running'" :binding="!!bindingId" :targets="targets" :bound="boundToken(activeServer)" :missing="versionMissing(activeServer)" :last-used="formatLastUsed(activeServer.lastUsedAt)" :target-token="targetToken" :target-label="targetLabel" @bind="onBind(activeServer, $event)" @connect="onCardDblClick(activeServer)" @refresh="pingOne(activeServer)" @edit="openAdd(activeServer)" @remove="requestDelete(activeServer)" @relink="relinkMissing(activeServer)" @versions="store.currentView = 'game'" @copy="copyAddress(activeServer)" />
     </div>
     <!-- 添加模态框 -->
     <Teleport to="body">

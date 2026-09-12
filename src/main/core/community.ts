@@ -16,7 +16,7 @@ import type {
   LoaderName,
   ProgressEvent
 } from '../../shared/types'
-import { downloadFile } from './download'
+import { downloadAll } from './download'
 import { readVersionJson } from './versions'
 import { instanceDirectoryState } from './instances'
 import { getSettings } from './settings'
@@ -453,12 +453,13 @@ export async function communityDownload(
 ): Promise<string> {
   const fileName = path.basename(String(file.fileName ?? '')) || 'download.bin'
   communityLog.info(`开始下载 ${target.kind} 资源 ${fileName} → 实例 ${target.versionId}`)
-  const dlProgress = (d: number, t: number) =>
+  const dlProgress = (d: number, t: number, speed: number, eta: number | null) =>
     emit({
       stage: 'download',
       progress: t ? d / t : 0,
       // 压缩包只是整合包任务的第一步；不能先报 100% 再开始安装。
       overall: target.kind === 'modpack' ? (t ? d / t : 0) * 0.1 : (t ? d / t : 0),
+      speed, etaSeconds: eta ?? undefined,
       bytesDone: d,
       bytesTotal: t || undefined,
       indeterminate: !t,
@@ -478,9 +479,13 @@ export async function communityDownload(
     file = { ...file, url: data.data }
   }
 
+  const transfer = (dest: string) => downloadAll([{url: file.url, dest, sha1: file.sha1, size: file.size || undefined}],
+    (_done,_total,speed,detail) => dlProgress(detail.bytesDone,detail.bytesTotal ?? 0,speed,detail.etaSeconds),
+    getSettings().downloadThreads, getSettings().mirror, signal)
+
   if (target.kind === 'modpack') {
     const tmpPath = path.join(os.tmpdir(), `kamucl-pack-${Date.now()}-${fileName}`)
-    await downloadFile(file.url, tmpPath, dlProgress, file.sha1, undefined, signal)
+    await transfer(tmpPath)
     // 动态 import 避免与 modpacks.ts 的循环依赖；后台异步安装，进度走 event:progress
     const { installModpack } = await import('./modpacks')
     const installProgress: ProgressEmit = (event) => emit({
@@ -519,17 +524,17 @@ export async function communityDownload(
     }
     if (worlds.length === 1) {
       const dest = path.join(savesDir, worlds[0], 'datapacks', fileName)
-      await downloadFile(file.url, dest, dlProgress, file.sha1, undefined, signal)
+      await transfer(dest)
       return dest
     }
     const dest = path.join(base, 'datapacks', fileName)
-    await downloadFile(file.url, dest, dlProgress, file.sha1, undefined, signal)
+    await transfer(dest)
     return `${dest}（提示：请将文件移入存档 saves/<世界>/datapacks 后生效）`
   }
 
   const sub = KIND_SUBDIR[target.kind]
   if (!sub) throw new Error(`不支持的资源类型: ${target.kind}`)
   const dest = path.join(base, sub, fileName)
-  await downloadFile(file.url, dest, dlProgress, file.sha1, undefined, signal)
+  await transfer(dest)
   return dest
 }

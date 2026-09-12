@@ -13,11 +13,11 @@ import { abortableDelay, inheritTaskControl, isTaskPaused, waitIfTaskPaused } fr
 import { DownloadProgressTracker, SmoothedSpeedEstimator, type DownloadProgressSnapshot } from './downloadProgress'
 
 export type MirrorPref = 'official' | 'bmclapi'
-export type ProgressFn = (done: number, total: number) => void
+export type ProgressFn = (done: number, total: number, networkBytes?: number) => void
 export interface DownloadBatchProgress extends DownloadProgressSnapshot { activeFiles?: string[]; speedBps: number; etaSeconds: number | null; paused: boolean }
 export type AllProgressFn = (done: number, total: number, speedBps: number, detail: DownloadBatchProgress) => void
-export interface DownloadTask { label?: string; url: string; urls?: string[]; dest: string; sha1?: string; sha512?: string; size?: number }
-interface Integrity { sha1?: string; sha512?: string; size?: number }
+export interface DownloadTask { label?: string; url: string; urls?: string[]; dest: string; sha1?: string; sha512?: string; sha256?: string; size?: number; reuseDirs?: string[] }
+interface Integrity { sha1?: string; sha512?: string; sha256?: string; size?: number }
 export const BMCL_MAVEN_ROOT = 'https://bmclapi2.bangbang93.com/maven/'
 export function mirrorUrl(input: string, mirror: MirrorPref): string {
   if (mirror === 'official') return input
@@ -71,7 +71,7 @@ export async function verifyFile(file: string, expected: Integrity, signal?: Abo
   if (!stat.isFile()) return '路径不是文件'
   if (expected.size !== undefined && stat.size !== expected.size) return '文件大小不符'
   if (!stat.size && expected.size !== 0) return '空文件'
-  const checks = (['sha1','sha512'] as const).filter(key => !!expected[key]).map(key => ({ key, hash: crypto.createHash(key) }))
+  const checks = (['sha1','sha512','sha256'] as const).filter(key => !!expected[key]).map(key => ({ key, hash: crypto.createHash(key) }))
   if (checks.length) {
     const stream = fs.createReadStream(file, { signal })
     for await (const bytes of stream) { signal?.throwIfAborted(); for (const check of checks) check.hash.update(bytes) }
@@ -81,7 +81,7 @@ export async function verifyFile(file: string, expected: Integrity, signal?: Abo
   return null
 }
 async function reuse(dest: string, expected: Integrity, roots: string[], signal?: AbortSignal): Promise<boolean> {
-  if (!expected.sha1 && !expected.sha512) return false
+  if (!expected.sha1 && !expected.sha512 && !expected.sha256) return false
   const own = path.resolve(path.dirname(dest)), extension = path.extname(dest).toLowerCase()
   const queue = roots.map(dir => ({ dir: path.resolve(dir), depth: 0 }))
   let visited = 0
@@ -122,7 +122,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     let offset = 0
     try { offset = (await fs.promises.stat(temporary)).size } catch { /* First request. */ }
     // Cross-source continuation without a hash cannot establish representation identity.
-    if (!expected.sha1 && !expected.sha512) offset = 0
+    if (!expected.sha1 && !expected.sha512 && !expected.sha256) offset = 0
     const headers: Record<string,string> = { 'accept-encoding': 'identity' }
     if (range) headers.Range = `bytes=${range.start + offset}-${range.end}`
     else if (offset) headers.Range = `bytes=${offset}-`
@@ -159,7 +159,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     file = await fs.promises.open(temporary, offset ? 'a' : 'w')
     reader = response.body.getReader()
     let done = offset
-    progress?.(done, total)
+    progress?.(done, total, 0)
     while (true) {
       await waitIfTaskPaused(signal)
       signal?.throwIfAborted()
@@ -177,7 +177,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
       }
       done += written; transferred += written; windowBytes += written
       if (total && done > total) throw new InvalidContent('响应数据超出声明大小')
-      progress?.(done, total)
+      progress?.(done, total, written)
     }
     if (total && done !== total) throw new InvalidContent('下载大小不符')
     await file.sync()
@@ -196,32 +196,32 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
   }
 }
 
-/** Four independent bounded ranges; cancellation keeps private resumable fragments. */
+/** Adaptive independent bounded ranges; cancellation keeps private resumable fragments. */
 async function segmented(url: string, dest: string, expected: Integrity, signal: AbortSignal | undefined, progress: ProgressFn | undefined, fallback: boolean): Promise<number> {
-  const cache = path.resolve(dest + '.segments-cache'), size = expected.size!, step = Math.ceil(size / 4)
+  const cache = path.resolve(dest + '.segments-cache'), size = expected.size!, count = Math.min(8, downloadLimiter.maxConcurrent, Math.max(2, Math.ceil(size / (2*1024*1024)))), step = Math.ceil(size / count)
   const clear = async () => { if (path.dirname(cache) !== path.dirname(path.resolve(dest))) throw new Error('缓存路径越界'); await fs.promises.rm(cache, { recursive: true, force: true }) }
-  const identity = JSON.stringify({ version: 1, size, sha1: expected.sha1, sha512: expected.sha512, step })
+  const identity = JSON.stringify({ version: 1, size, sha1: expected.sha1, sha512: expected.sha512, sha256: expected.sha256, step })
   try { const stat = await fs.promises.lstat(cache); if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('下载缓存不是普通目录') } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   let previous = ''; try { previous = await fs.promises.readFile(path.join(cache, 'identity.json'), 'utf8') } catch {}
   if (previous !== identity) { await clear(); await fs.promises.mkdir(cache, { recursive: true }); await fs.promises.writeFile(path.join(cache, 'identity.json'), identity) }
   const controller = new AbortController(), cancel = () => controller.abort(signal?.reason)
   inheritTaskControl(signal, controller.signal)
   signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel()
-  const received = [0,0,0,0]; let failure: unknown
+  const received = Array<number>(count).fill(0); let failure: unknown
   try {
-    await Promise.all(Array.from({length:4}, async (_, index) => {
+    await Promise.all(Array.from({length:count}, async (_, index) => {
       const start = index * step, end = Math.min(size, start + step) - 1, file = path.join(cache, index + '.part')
       try {
         let saved = 0; try { const st = await fs.promises.lstat(file); if (!st.isFile() || st.isSymbolicLink()) throw new Error('下载分片不是普通文件'); saved = st.size } catch(error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
         if (saved > end-start+1) { await fs.promises.rm(file); saved=0 }
         received[index]=saved
-        if (saved < end-start+1) await receive(url,file,expected,controller.signal,done=>{received[index]=done;progress?.(received.reduce((a,b)=>a+b,0),size)},fallback,{start,end})
+        if (saved < end-start+1) await receive(url,file,expected,controller.signal,(done,_total,wire)=>{received[index]=done;progress?.(received.reduce((a,b)=>a+b,0),size,wire)},fallback,{start,end})
       } catch(error) { if (!failure) failure=error; controller.abort(error) }
     }))
     signal?.throwIfAborted()
     if (failure) throw failure
     const output=await fs.promises.open(dest+'.part','w')
-    try { for(let index=0;index<4;index++) for await(const chunk of fs.createReadStream(path.join(cache,index+'.part'),{signal})) { const data=Buffer.from(chunk); let offset=0;while(offset<data.length){const result=await output.write(data,offset,data.length-offset);if(!result.bytesWritten)throw new Error('分片合并写入失败');offset+=result.bytesWritten} } await output.sync() } finally { await output.close() }
+    try { for(let index=0;index<count;index++) for await(const chunk of fs.createReadStream(path.join(cache,index+'.part'),{signal})) { const data=Buffer.from(chunk); let offset=0;while(offset<data.length){const result=await output.write(data,offset,data.length-offset);if(!result.bytesWritten)throw new Error('分片合并写入失败');offset+=result.bytesWritten} } await output.sync() } finally { await output.close() }
     const invalid=await verifyFile(dest+'.part',expected,signal)
     if(invalid) { await clear(); throw new InvalidContent(invalid) }
     await clear();return size
@@ -233,13 +233,13 @@ async function segmented(url: string, dest: string, expected: Integrity, signal:
   } finally { signal?.removeEventListener('abort',cancel);controller.abort() }
 }
 
-export async function downloadFile(url: string, dest: string, progress?: ProgressFn, sha1?: string, mirror: MirrorPref = 'official', signal?: AbortSignal, alternatives: string[] = [], integrity: { sha512?: string; size?: number; reuseDirs?: string[] } = {}): Promise<void> {
+export async function downloadFile(url: string, dest: string, progress?: ProgressFn, sha1?: string, mirror: MirrorPref = 'official', signal?: AbortSignal, alternatives: string[] = [], integrity: { sha512?: string; sha256?: string; size?: number; reuseDirs?: string[] } = {}): Promise<void> {
   return withFileJob(dest, signal, async () => {
-    const expected = { sha1, sha512: integrity.sha512, size: integrity.size }, temporary = dest + '.part'
+    const expected = { sha1, sha512: integrity.sha512, sha256: integrity.sha256, size: integrity.size }, temporary = dest + '.part'
     await fs.promises.mkdir(path.dirname(dest), { recursive: true })
     try {
       if (!await verifyFile(dest, expected, signal)) { const size = (await fs.promises.stat(dest)).size; progress?.(size, size); return }
-      if (!await verifyFile(temporary, expected, signal) && (sha1 || integrity.sha512)) { signal?.throwIfAborted(); await fs.promises.rename(temporary, dest); return }
+      if (!await verifyFile(temporary, expected, signal) && (sha1 || integrity.sha512 || integrity.sha256)) { signal?.throwIfAborted(); await fs.promises.rename(temporary, dest); return }
       if (await reuse(dest, expected, integrity.reuseDirs ?? [], signal)) { const size = (await fs.promises.stat(dest)).size; progress?.(size, size); return }
       if ((expected.size ?? 0) >= 50 * 1024 * 1024) {
         const space = diskProbe ? diskProbe(path.dirname(dest)) : await fs.promises.statfs(path.dirname(dest))
@@ -251,7 +251,7 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
         const source = candidates[index], fallback = index + 1 < candidates.length
         for (let attempt = 0; attempt < 4; attempt++) {
           try {
-            const bytes = (expected.size ?? 0) >= 8 * 1024 * 1024 && downloadLimiter.maxConcurrent >= 4 && (sha1 || integrity.sha512)
+            const bytes = (expected.size ?? 0) >= 1024 * 1024 && downloadLimiter.maxConcurrent >= 2 && (sha1 || integrity.sha512 || integrity.sha256)
               ? await segmented(source, dest, expected, signal, progress, fallback)
               : await receive(source, temporary, expected, signal, progress, fallback)
             const invalid = await verifyFile(temporary, expected, signal)
@@ -282,13 +282,14 @@ export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressF
   tasks.forEach(task => tracker.add(task.size)); tracker.seal()
   const controller = new AbortController(), abort = () => controller.abort(signal?.reason)
   signal?.addEventListener('abort', abort, { once: true }); inheritTaskControl(signal, controller.signal)
-  let cursor = 0, firstError: unknown
+  let cursor = 0, firstError: unknown, networkBytes = 0
   const report = () => {
     const snapshot = tracker.snapshot(), paused = isTaskPaused(signal)
-    const sampled = speed.sample(snapshot.bytesDone, snapshot.bytesTotal == null ? null : Math.max(0, snapshot.bytesTotal - snapshot.bytesDone), Date.now(), paused)
+    const sampled = speed.sample(networkBytes, snapshot.bytesTotal == null ? null : Math.max(0, snapshot.bytesTotal - snapshot.bytesDone), performance.now(), paused)
     progress?.(snapshot.completedFiles, tasks.length, sampled.speedBps, { ...snapshot, ...sampled, paused, activeFiles: [...active.values()] })
   }
-  const timer = setInterval(report, 200)
+  report()
+  const timer = setInterval(report, 250)
   try {
     signal?.throwIfAborted()
     if (!tasks.length) { progress?.(0,0,0,{completedFiles:0,totalFiles:0,bytesDone:0,bytesTotal:0,fraction:1,indeterminate:false,speedBps:0,etaSeconds:null,paused:false}); return }
@@ -296,12 +297,13 @@ export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressF
       while (!controller.signal.aborted && cursor < tasks.length) {
         const index = cursor++, task = tasks[index]; active.set(index, task.label ?? path.basename(task.dest))
         try {
-          await downloadFile(task.url, task.dest, (done,total) => { tracker.update(index,done,total); report() }, task.sha1, mirror, controller.signal, task.urls, { sha512: task.sha512, size: task.size })
-          tracker.complete(index, (await fs.promises.stat(task.dest)).size); active.delete(index); report()
+          await downloadFile(task.url, task.dest, (done,total,wire = 0) => { networkBytes += wire; tracker.record(index,done,total) }, task.sha1, mirror, controller.signal, task.urls, { sha512: task.sha512, sha256: task.sha256, size: task.size, reuseDirs: task.reuseDirs })
+          tracker.recordComplete(index, (await fs.promises.stat(task.dest)).size); active.delete(index)
         } catch (error) { firstError ??= error; controller.abort(error); return }
       }
     }))
     signal?.throwIfAborted()
     if (firstError) throw firstError
+    report()
   } finally { clearInterval(timer); signal?.removeEventListener('abort', abort) }
 }

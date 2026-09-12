@@ -15,7 +15,7 @@ import { app } from 'electron'
 import type { LocalUpdateCheck, ProgressEvent, ReleaseInfo, Settings, UpdateStateInfo } from '../../shared/types'
 import { IPC_EVENT } from '../../shared/types'
 import { compareSemver } from '../../shared/semver'
-import { downloadFile } from './download'
+import { downloadAll } from './download'
 import { finishTask, registerTask } from './tasks'
 import { currentVersion, fetchSha256Sums, sha256File } from './selfUpdate'
 import { logScope } from './launcherLog'
@@ -197,23 +197,23 @@ export function startUpdateDownload(release: ReleaseInfo, settings: Pick<Setting
   let slowHintSent = false
 
   const done = (async () => {
-    // 先取校验值（安全优先：取不到不开始下载）
-    const sums = await fetchSha256Sums(release.assetUrl)
-    const expected = sums?.get(release.assetName) ?? sums?.get(path.basename(dest)) ?? null
-    if (!expected) throw new Error('无法获取更新包校验值（SHA256SUMS），已中止（安全考虑）')
     try {
-      await downloadFile(
-        url,
-        dest,
-        (received, total) => {
+      // 先取校验值（安全优先：取不到不开始下载）
+      const sums = await fetchSha256Sums(release.assetUrl)
+      const expected = sums?.get(release.assetName) ?? sums?.get(path.basename(dest)) ?? null
+      if (!expected) throw new Error('无法获取更新包校验值（SHA256SUMS），已中止（安全考虑）')
+      await downloadAll(
+        [{ url, urls: alternates, dest, sha256: expected, size: release.assetSize || undefined }],
+        (_done, _total, bps, detail) => {
+          const received = detail.bytesDone, total = detail.bytesTotal ?? 0
           const now = Date.now()
-          // 低速探测：进度回调字节差估算（每 2s 一个采样窗）
-          const bps = sampleSpeed(received, now)
+          // Network-only, per-task rate from the common transfer service.
           emit(IPC_EVENT.progress, {
             stage: 'launcher-update',
             progress: total > 0 ? received / total : 0,
             text: `${mode === 'rollback' ? '回退' : '更新'}启动器 v${release.version}`,
-            speed: bps > 0 ? bps : undefined,
+            speed: bps,
+            etaSeconds: detail.etaSeconds ?? undefined,
             bytesDone: received,
             bytesTotal: total > 0 ? total : undefined,
             indeterminate: total <= 0,
@@ -229,11 +229,7 @@ export function startUpdateDownload(release: ReleaseInfo, settings: Pick<Setting
             slowSince = null
           }
         },
-        undefined,
-        'official',
-        task.controller.signal,
-        alternates,
-        { size: release.assetSize || undefined }
+        8, 'official', task.controller.signal
       )
       // 完整性校验：SHA256 不一致即失败（删除文件防误用）
       const actual = await sha256File(dest)
@@ -256,18 +252,8 @@ export function startUpdateDownload(release: ReleaseInfo, settings: Pick<Setting
   return { taskId: task.id, file: dest, done }
 }
 
-// 速度估算采样（progress 回调字节差分，2 秒窗口）
-let lastSample: { received: number; at: number } | null = null
-function sampleSpeed(received: number, now: number): number {
-  if (!lastSample || now - lastSample.at >= 2000) {
-    const bps = lastSample ? (received - lastSample.received) / ((now - lastSample.at) / 1000) : -1
-    lastSample = { received, at: now }
-    return bps
-  }
-  return -1
-}
-/** 测试用：重置速度采样 */
-export function resetSpeedSamplerForTest(): void { lastSample = null }
+/** Compatibility for existing verification harness; each download owns its estimator. */
+export function resetSpeedSamplerForTest(): void {}
 
 // ---------------- 替换脚本（纯函数，可测试） ----------------
 

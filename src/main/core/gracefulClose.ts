@@ -43,7 +43,7 @@ export function requestGameWindowClose(child: GameProcessHandle): Promise<void> 
 }
 
 /** QuickPlay 直达场景：仅激活本次启动的 JVM，确认前台结果，退出时取消等待。 */
-export function focusGameWindow(child: GameProcessHandle, timeoutMs = 90000): Promise<void> {
+export function focusGameWindow(child: GameProcessHandle, timeoutMs = 30000): Promise<void> {
   const pid = child.pid
   if (!Number.isSafeInteger(pid) || !pid || child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
   if (process.platform !== 'win32') return Promise.resolve()
@@ -293,9 +293,10 @@ export class DetachedGameProcess extends EventEmitter implements GameProcessHand
 export async function spawnGameProcess(
   javaPath: string,
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; signal?: AbortSignal }
 ): Promise<GameProcessHandle> {
   const api = process.platform === 'win32' ? await loadKernel32() : null
+  options.signal?.throwIfAborted()
   if (api) {
     const outPipe = api.createPipe()
     const errPipe = api.createPipe()
@@ -327,10 +328,16 @@ export async function spawnGameProcess(
   }
   // 回退：node spawn。POSIX 平台 detached 让进程组独立；Windows 仅在 koffi 缺失时走到这里（已记日志）
   const { spawn } = await import('node:child_process')
-  return spawn(javaPath, args, {
+  options.signal?.throwIfAborted()
+  const proc = spawn(javaPath, args, {
     cwd: options.cwd,
     ...(process.platform !== 'win32' ? { detached: true } : {})
-  }) as unknown as GameProcessHandle
+  })
+  await new Promise<void>((resolve, reject) => {
+    proc.once('error', reject)
+    proc.once('spawn', () => { proc.removeListener('error', reject); resolve() })
+  })
+  return proc as unknown as GameProcessHandle
 }
 
 /**

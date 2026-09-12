@@ -1,6 +1,7 @@
 /**
  * 游戏启动：版本链合并、classpath/natives 处理、JVM/游戏参数组装、进程管理
  */
+import { ProgressDeadline, withDeadline } from '../../shared/deadline'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -278,6 +279,13 @@ async function launchOwned(
   serverAddress: string | undefined, token: symbol, options: LaunchOptions = {}
 ): Promise<void> {
   const settings = getSettings()
+  const deadline = new ProgressDeadline(60000, () => onState({ status: 'error', text: '启动准备已连续 60 秒没有进展，已取消本次启动；正在收尾，请稍后重试。' }))
+  const originalEmit = emit
+  emit = event => {
+    if (deadline.signal.aborted) return
+    deadline.progress(JSON.stringify([event.stage, event.progress, event.bytesDone, event.text]))
+    originalEmit(event)
+  }
 
   // 日志落盘：gameDir/kamucl-logs/latest.log（每次启动覆盖）
   let logStream: fs.WriteStream | null = null
@@ -345,7 +353,7 @@ async function launchOwned(
     }
     if (flattened && !chainBroken) {
       emit({ stage: 'repair', progress: 0, text: `检测到游戏本体缺失，正在自动补全…` })
-      await installClientJarOnly(versionId, emit)
+      await installClientJarOnly(versionId, emit, deadline.signal)
       emit({ stage: 'repair', progress: 1, text: '文件补全完成' })
     } else {
       emit({
@@ -363,7 +371,7 @@ async function launchOwned(
       }
       // 加载器实例的依赖原版补进 base 区；独立原版实例仍在 versions 区修复
       const dest = baseIdProbe !== versionId && !baseInVersions ? 'base' : 'versions'
-      await installVanilla(realId, emit, dest, realId !== baseIdProbe ? baseIdProbe : undefined)
+      await installVanilla(realId, emit, dest, realId !== baseIdProbe ? baseIdProbe : undefined, deadline.signal)
       emit({ stage: 'repair', progress: 1, text: '文件补全完成' })
     }
   }
@@ -397,14 +405,14 @@ async function launchOwned(
   if (!account) throw new Error('尚未选择账号，请先在账号页添加并选择一个账号')
   const timed = async <T>(stage: string, work: () => Promise<T>): Promise<T> => {
     const started = Date.now()
-    try { return await work() }
+    try { deadline.signal.throwIfAborted(); const result = await work(); deadline.signal.throwIfAborted(); return result }
     finally { log(`[KAMUCL] 启动准备 · ${stage}：${Date.now() - started}ms`) }
   }
   const [{ classpath, nativesPath, launchAssets }, [validAccount, externalAuthArgs], javaPath] = await waitForPreparation([
     () => timed('游戏文件与配置', async () => {
       emit({ stage: 'repair', progress: 0, text: '校验游戏本体完整性' })
       await ensureLaunchArtifact({ ...readVersionJson(baseId).downloads?.client, dest: clientJar }, settings.mirror,
-        (done, total) => emit({ stage: 'repair', progress: total ? done / total : 0, text: '修复游戏本体' }))
+        (done, total) => emit({ stage: 'repair', progress: total ? done / total : 0, text: '修复游戏本体' }), deadline.signal)
       // Renamed vanilla profiles can lose their canonical id in launcher metadata.
       try {
         const manifest = new AdmZip(clientJar).readAsText('version.json')
@@ -456,7 +464,7 @@ async function launchOwned(
       const repairs = await Promise.allSettled(Array.from({ length: Math.min(8, damaged.length) }, async () => {
         while (repairIndex < damaged.length) {
           const file = damaged[repairIndex++]
-          await ensureLaunchArtifact(file, settings.mirror)
+          await ensureLaunchArtifact(file, settings.mirror, (done,total) => emit({stage:'repair',progress:total ? done/total : 0,bytesDone:done,text:`修复依赖库 ${path.basename(file.dest)}`}), deadline.signal)
           launchLog.info(`已修复依赖库 ${path.basename(file.dest)}`)
           emit({ stage: 'repair', progress: ++repaired / damaged.length, text: `修复依赖库 ${repaired}/${damaged.length}` })
         }
@@ -492,8 +500,8 @@ async function launchOwned(
         effectiveGameDir,
         async tasks => {
           emit({ stage: 'repair', progress: 0, text: `补全游戏资源（含语言文件）${tasks.length} 项` })
-          await downloadAll(tasks, (done, total, speed) =>
-            emit({ stage: 'repair', progress: total ? done / total : 1, text: `补全游戏资源 ${done}/${total}`, speed }), 8, settings.mirror)
+          await downloadAll(tasks, (done, total, speed, detail) =>
+            emit({ stage: 'repair', progress: total ? done / total : 1, text: `补全游戏资源 ${done}/${total}`, bytesDone:detail.bytesDone, speed }), settings.downloadThreads, settings.mirror, deadline.signal)
         }
       )
       log(`[KAMUCL] 游戏资源：${launchAssets.root}；索引：${launchAssets.indexId}`)
@@ -698,7 +706,9 @@ async function launchOwned(
   emit({ stage: 'launch', progress: 1, text: '启动游戏进程' })
   // 脱离式创建：游戏进程与启动器生命周期完全解耦（Windows CreateProcessW，见 gracefulClose.ts），
   // 关闭启动器时游戏继续运行；stdout/stderr 仍以管道回流，日志体验不变。
-  const proc = await spawnGameProcess(javaPath, args, { cwd: effectiveGameDir })
+  deadline.signal.throwIfAborted()
+  deadline.dispose()
+  const proc = await withDeadline(signal => spawnGameProcess(javaPath, args, { cwd: effectiveGameDir, signal }), 15000, '游戏进程创建超时，请检查 Java 与系统权限')
   gameSession.attach(token, proc)
   spawned = true
   const spawnedAt = Date.now()
@@ -719,10 +729,9 @@ async function launchOwned(
   const exitRecord = rememberExit(() => exitHistory().begin('game', proc.pid ?? 0, versionId, {
     versionId, folder: folderOfVersion(versionId), javaPath, effectiveGameDir, logDir: launchLogDir, startedAt: lastLaunch!.startedAt, pid: proc.pid
   }))
-  proc.once('spawn', () => {
-    launchLog.info(`游戏进程已启动：pid=${proc.pid}`)
-    onState({ status: 'running', text: '游戏进程已启动' })
-  })
+  // spawnGameProcess returns only after the OS confirms process creation.
+  launchLog.info(`游戏进程已启动：pid=${proc.pid}`)
+  onState({ status: 'running', text: '游戏进程已启动' })
   // QuickPlay 直达（创建命令世界/进服）：游戏窗口出现后拉到前台，避免鼠标被锁在未聚焦窗口里
   if (options.singleplayerWorld || serverAddress) {
     void focusGameWindow(proc).then(() => log('[KAMUCL] 游戏窗口已聚焦')).catch(error => log(`[KAMUCL] 自动聚焦未完成：${error.message}；请点击任务栏中的 Minecraft 窗口`))
@@ -781,6 +790,7 @@ async function launchOwned(
     onState({ status: 'exited', code: code ?? -1, exitKind, intentionalRestart: restartPending?.sessionToken === token, intentionalStop: gameSession.wasIntentionalStop(token), text: exitKind === 'shutdown-timeout' ? '游戏已关闭；退出清理超时，日志已保留' : `游戏已退出 (code=${code ?? '未知'})` })
   })
   } finally {
+    deadline.dispose()
     if (!spawned) { logStream?.end(); stdoutStream?.end(); stderrStream?.end() }
   }
 }
