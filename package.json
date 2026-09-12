@@ -11,8 +11,8 @@
     "start": "electron-vite preview",
     "dist": "npm run build && electron-builder --win portable zip",
     "dist:win": "npm run build && electron-builder --win portable zip",
-    "dist:mac": "electron-vite build && electron-builder --mac zip --x64 --arm64",
-    "dist:all": "electron-vite build && electron-builder --win portable zip --mac zip --x64 --arm64",
+    "dist:mac": "electron-vite build && electron-builder --mac zip --x64 --arm64 --config.electronVersion=33.4.11",
+    "dist:all": "electron-vite build && electron-builder --win portable zip --x64 && electron-builder --mac zip --x64 --arm64 --config.electronVersion=33.4.11",
     "license:check": "node scripts/check-licenses.cjs"
   },
   "build": {

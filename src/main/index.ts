@@ -16,7 +16,7 @@ import {
 import { getSettings, migrateLegacyAppearanceAssets } from './core/settings'
 import { windowAppearance } from './windowAppearance'
 import { applyNativeAppearance } from './nativeAppearance'
-import { loadWindowState, trackWindowState, applyMaximized, toggleMaximize } from './windowState'
+import { loadWindowState, trackWindowState, applyMaximized, toggleMaximize, restoreWindowBounds } from './windowState'
 import { stopDirectHost } from './core/directConnect'
 import { stopVoxlinkOnQuit } from './core/voxlink'
 import { stopTerracottaOnQuit } from './core/terracotta'
@@ -106,17 +106,11 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
       backgroundThrottling: !startup
     }
   })
-  // Windows constructor placement can include the invisible frame at scaled DPI.
-  // Reapply the saved outer bounds after initialization, before native maximize.
-  if (process.platform === 'win32' && windowState) {
-    win.setBounds({ width: windowState.width, height: windowState.height,
-      ...(typeof windowState.x === 'number' && typeof windowState.y === 'number'
-        ? { x: windowState.x, y: windowState.y } : {}) })
-  }
   if (startup) { prepareStartupFrames(win); startup.attach(win) }
   else   win.on('ready-to-show', () => win?.show())
   win.webContents.once('did-finish-load', () => { void frpManager.restore().catch(error => launcherLogWarn('frp', '恢复隧道失败', error)) })
   applyNativeAppearance(win, getSettings())
+  if (process.platform === 'win32' && windowState) restoreWindowBounds(win, windowState)
   if (windowState?.maximized) applyMaximized(win)
   trackWindowState(win)
   const mainWindow = win

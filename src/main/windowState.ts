@@ -118,6 +118,31 @@ export function trackWindowState(win: BrowserWindow): void {
   win.once('closed', () => { if (timer) clearTimeout(timer); timer = null })
 }
 
+/** Restore once before showing/maximizing. Fractional DPI can round Electron's
+ * logical-to-native border conversion outwards; measure that small error rather
+ * than accumulating it across launches. Never run this from resize events. */
+export function restoreWindowBounds(win: BrowserWindow, saved: WindowState): void {
+  if (win.isDestroyed() || win.isMaximized()) return
+  const current = win.getBounds(), [minWidth, minHeight] = win.getMinimumSize()
+  const target = {
+    x: saved.x ?? current.x, y: saved.y ?? current.y,
+    width: Math.max(minWidth, saved.width), height: Math.max(minHeight, saved.height)
+  }
+  let request = { ...target }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    win.setBounds(request)
+    const actual = win.getBounds()
+    const delta = { x: actual.x - target.x, y: actual.y - target.y,
+      width: actual.width - target.width, height: actual.height - target.height }
+    if (Object.values(delta).every(value => value === 0)) break
+    // Respect OS relocation/constraints; only correct small frame/DPI rounding.
+    if (Object.values(delta).some(value => Math.abs(value) > 8)) break
+    request = { x: request.x - delta.x, y: request.y - delta.y,
+      width: Math.max(minWidth, request.width - delta.width),
+      height: Math.max(minHeight, request.height - delta.height) }
+  }
+}
+
 /** Keep native maximize state authoritative for buttons, caption double-click,
  * Win+Arrow, snap layouts and persisted normal bounds. Never unmaximize inside
  * a maximize event: that reverses the OS transition and loses restore geometry. */
