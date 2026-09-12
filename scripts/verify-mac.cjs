@@ -44,10 +44,14 @@ async function main(){
  // Page.captureScreenshot excludes the OS blur. Capture the actual NSWindow over two backgrounds.
  let nativeMaterial
  try {
-   const windowId=execFileSync(fixtureExe,['--window-id',String(child.pid)],{encoding:'utf8'}).trim()
+   const nativeWindow=JSON.parse(execFileSync(fixtureExe,['--window-id',String(child.pid)],{encoding:'utf8'}))
    for(const color of ['black','white']){
-     fs.writeFileSync(control,color);await wait(1500)
-     execFileSync('/usr/sbin/screencapture',['-x','-o','-l',windowId,path.join(proof,`native-${color}.png`)])
+     fs.writeFileSync(control,color+'|'+nativeWindow.id);await wait(2000)
+     // A window-only capture omits behind-window composition. Capture the real display first.
+     const screen=path.join(proof,`desktop-${color}.png`)
+     execFileSync('/usr/sbin/screencapture',['-x','-D','1',screen])
+     const meta=await sharp(screen).metadata(),scale=meta.width/nativeWindow.screenWidth,b=nativeWindow.bounds
+     await sharp(screen).extract({left:Math.round(b.X*scale),top:Math.round(b.Y*scale),width:Math.round(b.Width*scale),height:Math.round(b.Height*scale)}).toFile(path.join(proof,`native-${color}.png`))
    }
    nativeMaterial={captured:true}
  } catch(e) { nativeMaterial={captured:false,reason:String(e.message)};console.warn('Native screen capture unavailable:',e.message) }
@@ -56,7 +60,8 @@ async function main(){
    for(const color of ['black','white']){
      const image=sharp(path.join(proof,`native-${color}.png`)),meta=await image.metadata()
      // Empty centre of the title bar, away from branding, controls and character animation.
-     const stats=await image.extract({left:Math.floor(meta.width*.5),top:Math.floor(meta.height*.025),width:30,height:12}).removeAlpha().stats()
+     const region=await image.extract({left:Math.floor(meta.width*.5),top:Math.floor(meta.height*.025),width:30,height:12}).removeAlpha().toBuffer()
+     const stats=await sharp(region).stats()
      samples.push(stats.channels.slice(0,3).map(c=>c.mean))
    }
    nativeMaterial.samples=samples;nativeMaterial.difference=Math.max(...samples[0].map((v,i)=>Math.abs(v-samples[1][i])))
