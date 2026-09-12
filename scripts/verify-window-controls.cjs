@@ -13,6 +13,7 @@ if(process.env.KAMUCL_WINDOW_REOPEN)fs.writeFileSync(path.join(root,'window-stat
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const user = koffi.load('user32.dll'), dwm = koffi.load('dwmapi.dll')
 const send = user.func('intptr_t __stdcall SendMessageW(uintptr_t, uint32_t, uintptr_t, intptr_t)')
+const getStyle = user.func('int32_t __stdcall GetWindowLongW(uintptr_t, int)')
 const rect = koffi.struct('WindowTestRect', {left:'int32',top:'int32',right:'int32',bottom:'int32'})
 const frame = dwm.func('DwmGetWindowAttribute','int',['uintptr','uint32',koffi.out(koffi.pointer(rect)),'uint32'])
 const gdi=koffi.load('gdi32.dll'),createRegion=gdi.func('uintptr_t __stdcall CreateRectRgn(int,int,int,int)'),deleteRegion=gdi.func('bool __stdcall DeleteObject(uintptr_t)')
@@ -24,7 +25,8 @@ const report = {profile:root,checks:[],material:[]}, events=[]
 let started=false
 app.on('browser-window-created', (_event, win) => {
   if (win.getTitle() !== 'KAMUCL') return
-  win.setIgnoreMouseEvents(true)
+  // setIgnoreMouseEvents(true) itself adds WS_EX_LAYERED and would mask the
+  // very startup-opacity regression this production test must detect.
   for(const name of ['maximize','unmaximize','minimize','restore'])win.on(name,()=>events.push(name))
   win.webContents.on('did-finish-load',async()=>{
     if(started)return;started=true
@@ -34,6 +36,7 @@ app.on('browser-window-created', (_event, win) => {
       if(process.env.KAMUCL_WINDOW_REOPEN){assert(win.isMaximized(),'reopen lost maximization');assert.deepEqual(win.getNormalBounds(),reopenBounds);win.unmaximize();await wait(300);assert.deepEqual(win.getBounds(),reopenBounds);report.reopen=true}
       win.setAlwaysOnTop(true)
       const raw=win.getNativeWindowHandle(),hwnd=Number(raw.length===8?raw.readBigUInt64LE():raw.readUInt32LE())
+      assert.equal(getStyle(hwnd,-20)&0x80000,0,'startup fade left the DWM window layered')
       const button=()=>win.webContents.executeJavaScript(`document.querySelector('[data-ui="App:bd7bf1eb0182"]').click()`)
       for(const display of screen.getAllDisplays()) {
         if(display.workArea.width<960||display.workArea.height<620)continue
@@ -45,6 +48,7 @@ app.on('browser-window-created', (_event, win) => {
         for(const [name,action] of [['button',button],['caption double-click',()=>message(hwnd,0xA3,2)],['system maximize',()=>message(hwnd,0x112,0xF030)]]){
           events.length=0;await action();await wait(900)
           assert(win.isMaximized(),`${name}: maximization rebounded (${events.join(',')})`)
+          assert.equal(getStyle(hwnd,-20)&0x80000,0,`${name}: layered style returned`)
           assert.equal(events.filter(e=>e==='unmaximize').length,0,`${name}: reversed native transition`)
           assert.deepEqual(win.getNormalBounds(),normal,`${name}: lost restore geometry`)
           const saved=JSON.parse(fs.readFileSync(path.join(root,'window-state.json')))
@@ -78,8 +82,10 @@ app.on('browser-window-created', (_event, win) => {
         assert(!win.isFocused() || difference>3,`maximized backdrop became opaque: ${JSON.stringify(samples)}`)
         await button();await wait(400);assert.deepEqual(win.getBounds(),normal)
         for(let cycle=0;cycle<3;cycle++){
-          await button();await wait(180);assert(win.isMaximized())
-          await message(hwnd,0xA3,2);await wait(180);assert(!win.isMaximized())
+          // Wait for Windows' native transition before sending the next one.
+          // 180 ms can still be inside the OS animation on Electron 44.
+          await button();await wait(450);assert(win.isMaximized())
+          await button();await wait(450);assert(!win.isMaximized())
         }
         await wait(300);assert.deepEqual(win.getBounds(),normal,'rapid toggle lost native placement')
         await button();await wait(500);win.minimize();await wait(300);win.restore();await wait(1400)

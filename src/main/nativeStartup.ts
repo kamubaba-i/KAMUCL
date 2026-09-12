@@ -11,7 +11,11 @@ export function showStartupWindow(window: BrowserWindow, animated = true) {
   const fade = setInterval(() => {
     if (window.isDestroyed()) { clearInterval(fade); return }
     const p = Math.min(1, (Date.now() - started) / 260)
-    window.setOpacity(p * p * (3 - 2 * p)); if (p === 1) clearInterval(fade)
+    window.setOpacity(p * p * (3 - 2 * p))
+    if (p === 1) {
+      clearInterval(fade)
+      window.emit('kamucl:startup-opacity-complete')
+    }
   }, 16)
 }
 
