@@ -10,7 +10,7 @@ export function trackMaterialLifecycle(
     pending = setTimeout(() => {
       if (window.isDestroyed()) return
       try {
-        window.setBackgroundMaterial('none')
+        // Reapply the material/frame without exposing an opaque intermediate frame.
         window.setBackgroundMaterial('acrylic')
         restoreFrame()
       } catch (error) { report(`Desktop acrylic refresh failed: ${String(error)}`) }
@@ -31,7 +31,7 @@ export function trackMaterialLifecycle(
     focusPending = setTimeout(() => {
       if (window.isDestroyed()) return
       try {
-        window.setBackgroundMaterial('none')
+        // Reapply the material/frame without exposing an opaque intermediate frame.
         window.setBackgroundMaterial('acrylic')
         restoreFrame()
       } catch (error) { report(`Desktop acrylic focus refresh failed: ${String(error)}`) }

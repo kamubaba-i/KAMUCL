@@ -16,7 +16,7 @@ import {
 import { getSettings, migrateLegacyAppearanceAssets } from './core/settings'
 import { windowAppearance } from './windowAppearance'
 import { applyNativeAppearance } from './nativeAppearance'
-import { loadWindowState, trackWindowState, applyMaximized, toggleMaximize, normalizeRealMaximize } from './windowState'
+import { loadWindowState, trackWindowState, applyMaximized, toggleMaximize } from './windowState'
 import { stopDirectHost } from './core/directConnect'
 import { stopVoxlinkOnQuit } from './core/voxlink'
 import { stopTerracottaOnQuit } from './core/terracotta'
@@ -112,8 +112,6 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
   applyNativeAppearance(win, getSettings())
   if (windowState?.maximized) applyMaximized(win)
   trackWindowState(win)
-  // 系统吸附（Win+↑/拖到顶部）走真实最大化，会溢出相邻屏——收编为假最大化
-  win.on('maximize', () => win && normalizeRealMaximize(win))
   const mainWindow = win
   // 静默瘦身钩子：最小化/隐藏触发工作集整理 + 渲染层瘦身广播；恢复不做处理（自然回涨）
   mainWindow.on('minimize', () => memTrim?.noteHidden())

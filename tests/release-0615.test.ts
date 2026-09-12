@@ -36,7 +36,7 @@ test('最大化、还原、恢复、启动时重新应用材质，关闭取消�
   for (const e of ['show', 'maximize', 'unmaximize', 'restore', 'leave-full-screen']) {
     events.emit(e)
     await new Promise(r => setTimeout(r, 110))
-    assert.deepEqual(calls.splice(0), ['none', 'acrylic'])
+    assert.deepEqual(calls.splice(0), ['acrylic'])
   }
   events.emit('maximize'); events.emit('closed')
   await new Promise(r => setTimeout(r, 110))
@@ -55,14 +55,14 @@ test('切屏切回的 focus 事件重建材质且 1s 节流，普通点击不反
   events.emit('focus')
   events.emit('focus') // 立即重复 focus 被节流吞掉
   await new Promise(r => setTimeout(r, 200))
-  assert.deepEqual(calls, ['none', 'acrylic'])
+  assert.deepEqual(calls, ['acrylic'])
   events.emit('focus')
   await new Promise(r => setTimeout(r, 200))
-  assert.deepEqual(calls.splice(0), ['none', 'acrylic'], '1s 内的 focus 被节流')
+  assert.deepEqual(calls.splice(0), ['acrylic'], '1s 内的 focus 被节流')
   await new Promise(r => setTimeout(r, 1100))
   events.emit('focus')
   await new Promise(r => setTimeout(r, 200))
-  assert.deepEqual(calls, ['none', 'acrylic'], '超过节流窗口后再次重建')
+  assert.deepEqual(calls, ['acrylic'], '超过节流窗口后再次重建')
 })
 
 test('便携包模板引用含空格/中文的TEMP路径，失败明确提示而非静默退出', () => {

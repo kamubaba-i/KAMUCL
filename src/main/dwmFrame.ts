@@ -4,7 +4,7 @@ import { app, nativeTheme, type BrowserWindow } from 'electron'
 import { launcherLog } from './core/launcherLog'
 
 /** Electron 33 最大化时会将扩展客户区重置为黑色；Acrylic 属性本身没有丢失。
- * 用独立的、无 UI 的 helper 调用公开 DWM API，不改窗口尺寸、不用桌面截图伪装。
+ * 用独立的、无 UI 的 helper 修复 DWM 客户区与最大化边框，保留系统最大化状态。
  * 原生错误隔离于主进程；helper 只接受属于当前 Electron PID 的 HWND。
  */
 export function createDwmFrameRestorer(window: BrowserWindow): () => void {
