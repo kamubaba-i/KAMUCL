@@ -40,8 +40,14 @@ function agentWithBodyTimeout(bodyTimeoutMs: number): Agent {
  *  bodyTimeoutMs 为可选增量参数：不传时行为与旧版完全一致。 */
 export function httpFetch(
   url: string,
-  init: { signal?: AbortSignal; headers?: Record<string, string>; redirect?: 'follow' | 'manual' | 'error'; method?: string; body?: string; bodyTimeoutMs?: number; separateConnection?: boolean } = {}
+  init: { signal?: AbortSignal; headers?: Record<string, string>; redirect?: 'follow' | 'manual' | 'error'; method?: string; body?: string; bodyTimeoutMs?: number; separateConnection?: boolean; systemProxy?: boolean } = {}
 ): Promise<Response> {
+  // Runtime downloads must use the same OS proxy/PAC and certificate store as
+  // the desktop app. Node fetch/undici do not inherit macOS system proxy settings.
+  if (init.systemProxy && process.versions.electron) {
+    const { systemProxy, bodyTimeoutMs, separateConnection, ...request } = init
+    return import('electron').then(({ net }) => net.fetch(url, request)) as Promise<Response>
+  }
   if (init.separateConnection) {
     const { separateConnection, bodyTimeoutMs, ...rest } = init
     return undiciFetch(url, { ...rest, dispatcher: rangeAgent }) as unknown as Promise<Response>
