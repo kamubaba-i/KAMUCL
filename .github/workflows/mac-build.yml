@@ -31,6 +31,9 @@ jobs:
       - run: npm ci
       - run: node scripts/build-bridge.cjs
       - run: npm run build
+      - name: Enable native material in disposable UI test session
+        # Hosted runner images disable transparency globally; never change this on players' Macs.
+        run: defaults write com.apple.universalaccess reduceTransparency -bool false
       - name: Package native application
         run: npx electron-builder --mac dir --${{ matrix.arch }} --publish never
         env:

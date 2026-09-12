@@ -7,7 +7,7 @@ import { exitHistory } from './core/exitHistory'
  * IPC 注册：types.ts 中 IPC 常量的全部通道
  * 事件统一通过 getWin()?.webContents.send(IPC_EVENT.xxx, payload) 推送
  */
-import { ipcMain, dialog, shell, Menu, type BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, Menu, systemPreferences, type BrowserWindow } from 'electron'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -147,7 +147,8 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.settingsGet, () => settings.getSettings())
   ipcMain.handle(IPC.appSystemInfo, () => ({
     totalMemMB: Math.floor(os.totalmem() / 1024 / 1024),
-    freeMemMB: Math.floor(os.freemem() / 1024 / 1024)
+    freeMemMB: Math.floor(os.freemem() / 1024 / 1024),
+    reducedTransparency: process.platform === 'darwin' ? systemPreferences.accessibilityDisplayShouldReduceTransparency : undefined
   }))
   ipcMain.handle(IPC.directOverview, () => direct.directOverview())
   ipcMain.handle(IPC.directHost, (_e, request: DirectHostRequest) => direct.startDirectHost(request))

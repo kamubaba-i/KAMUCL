@@ -45,6 +45,7 @@ async function main(){
  let nativeMaterial
  try {
    const nativeWindow=JSON.parse(execFileSync(fixtureExe,['--window-id',String(child.pid)],{encoding:'utf8'}))
+   console.log('Native material environment',nativeWindow)
    for(const color of ['black','white']){
      fs.writeFileSync(control,color+'|'+nativeWindow.id);await wait(2000)
      // A window-only capture omits behind-window composition. Capture the real display first.
@@ -53,9 +54,10 @@ async function main(){
      const meta=await sharp(screen).metadata(),scale=meta.width/nativeWindow.screenWidth,b=nativeWindow.bounds
      await sharp(screen).extract({left:Math.round(b.X*scale),top:Math.round(b.Y*scale),width:Math.round(b.Width*scale),height:Math.round(b.Height*scale)}).toFile(path.join(proof,`native-${color}.png`))
    }
-   nativeMaterial={captured:true}
+   nativeMaterial={captured:true,reducedTransparency:nativeWindow.reducedTransparency}
  } catch(e) { nativeMaterial={captured:false,reason:String(e.message)};console.warn('Native screen capture unavailable:',e.message) }
  if(nativeMaterial.captured){
+   assert.equal(nativeMaterial.reducedTransparency,false,'CI must enable transparency to verify native material')
    const samples=[]
    for(const color of ['black','white']){
      const image=sharp(path.join(proof,`native-${color}.png`)),meta=await image.metadata()

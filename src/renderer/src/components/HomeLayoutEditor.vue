@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /** 图一固定布局下的个性化背景与启动卡图片管理。 */
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { carouselImages, carouselDuration, MAX_CAROUSEL_IMAGES } from '@shared/appearancePolicy'
 import { updateSettings } from '../settingsUpdates'
 import {
   errText,
+  getSystemInfo,
   importBackground,
   importBackgroundMulti,
   importLaunchThumbnail,
@@ -14,6 +15,14 @@ import {
 import { store, toast } from '../store'
 import { managedImageUrl } from '../managedAssets'
 import type { BackgroundSettings, ImageFit, Settings } from '@shared/types'
+
+const reducedTransparency = ref(false)
+function refreshNativeMaterial() {
+  if (window.kamucl.platform !== 'darwin') return
+  void getSystemInfo().then(info => { reducedTransparency.value = info.reducedTransparency === true }).catch(() => {})
+}
+onMounted(() => { refreshNativeMaterial(); window.addEventListener('focus', refreshNativeMaterial) })
+onUnmounted(() => window.removeEventListener('focus', refreshNativeMaterial))
 
 function save(patch: Partial<Settings>) {
   void updateSettings(patch)
@@ -175,6 +184,9 @@ function setLaunchFit(fit: ImageFit) {
       <button class="btn btn-ghost btn-sm" @click="resetBg">恢复默认</button>
     </div>
 
+    <p v-if="reducedTransparency && store.settings?.background.mode === 'none'" class="group-hint" role="status">
+      macOS 已开启“降低透明度”，系统会将毛玻璃显示为实色。可在“系统设置 → 辅助功能 → 显示”中关闭此选项，恢复桌面毛玻璃。
+    </p>
     <div class="bg-modes">
       <button
         v-for="m in bgModes"
@@ -299,7 +311,7 @@ function setLaunchFit(fit: ImageFit) {
         />
         <span class="muted bg-val">{{ store.settings.background.blur }}px</span>
       </div>
-      <p class="muted group-hint">透明度越高图片越透；图片模糊单独控制清晰度。系统桌面毛玻璃由 Windows 管理，不受这两个图片选项影响。</p>
+      <p class="muted group-hint">透明度越高图片越透；图片模糊单独控制清晰度。系统桌面毛玻璃由操作系统管理，不受这两个图片选项影响。</p>
     </template>
   </div>
 
