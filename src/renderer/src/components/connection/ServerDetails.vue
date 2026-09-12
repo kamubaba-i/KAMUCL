@@ -3,7 +3,7 @@ import type { ServerEntry, ServerPingResult, InstalledVersion } from '@shared/ty
 import ConnectionPanel from './ConnectionPanel.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
 defineProps<{
-  server: ServerEntry; ping: ServerPingResult | null; pending: boolean; busy: boolean; binding: boolean;
+  server: ServerEntry; ping: ServerPingResult | null; pending: boolean; busy: boolean; running?: boolean; binding: boolean;
   targets: InstalledVersion[]; bound: string; missing: boolean; lastUsed: string;
   targetToken: (target: InstalledVersion) => string; targetLabel: (target: InstalledVersion) => string
 }>()
@@ -20,7 +20,7 @@ defineEmits<{ bind: [value: string]; connect: []; refresh: []; edit: []; remove:
     <div v-if="missing" class="connection-result"><ConnectionStatus tone="danger" label="关联实例缺失" /><p>原实例可能已移动或所在磁盘不可用。</p><div class="connection-actions"><button class="btn btn-ghost" @click="$emit('relink')">重新关联</button><button class="btn btn-ghost" @click="$emit('versions')">前往版本页</button></div></div>
     <p v-else-if="server.candidateVersionIds?.length" class="connection-muted">共享目录记录，请选择并确认具体实例。</p>
     <div class="connection-muted"><p v-if="server.minecraftVersion">Minecraft {{ server.minecraftVersion }}<span v-if="server.loader"> · {{ server.loader }} {{ server.loaderVersion }}</span></p><p>{{ lastUsed }}</p></div>
-    <button class="btn btn-gold server-connect" :disabled="busy || binding" @click="$emit('connect')">{{ busy ? '正在启动…' : server.versionId && !missing ? '启动并连接' : '选择实例并连接' }}<span aria-hidden="true">↗</span></button>
+    <button class="btn btn-gold server-connect" :disabled="busy || binding" @click="$emit('connect')">{{ running ? '游戏已运行' : busy ? '正在启动…' : server.versionId && !missing ? '启动并连接' : '选择实例并连接' }}<span aria-hidden="true">↗</span></button>
     <div class="connection-actions server-secondary"><button class="btn btn-ghost" :disabled="pending" @click="$emit('refresh')">刷新状态</button><button class="btn btn-ghost" @click="$emit('copy')">复制地址</button><button class="btn btn-ghost" :disabled="busy || binding" @click="$emit('edit')">编辑</button><button class="btn btn-ghost server-delete" :disabled="busy || binding" @click="$emit('remove')">删除</button></div>
     <p class="connection-muted server-footnote">状态检测失败不一定代表无法进入游戏，仍可尝试连接。</p>
   </ConnectionPanel>

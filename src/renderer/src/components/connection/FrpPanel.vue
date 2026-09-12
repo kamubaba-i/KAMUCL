@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReferenceLinks from './ReferenceLinks.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import ConnectionPanel from './ConnectionPanel.vue'
 import ConfirmModal from '../ConfirmModal.vue'
@@ -118,7 +119,12 @@ onBeforeUnmount(() => { disposed = true; unsubscribe?.() })
     <p v-if="errorMsg" class="connection-error" role="alert">{{ errorMsg }}</p>
     <ConnectionPanel title="樱花穿透账号" subtitle="填写访问密钥，读取账号中的隧道与节点。已连接的隧道不会被其他隧道的操作打断。">
       <div class="frp-account-row"><label class="connection-field"><span>访问密钥</span><input v-model="form.accessKey" class="input" type="password" autocomplete="off" placeholder="粘贴用户信息页的访问密钥" :disabled="busy" /></label><button class="btn btn-gold" :disabled="busy || !form.accessKey.trim()" @click="loadNodes(true)">{{ nodesLoading ? '正在读取…' : '读取我的隧道与节点' }}</button></div>
-      <div class="frp-guide-links"><a href="https://www.natfrp.com/" target="_blank" rel="noreferrer">打开樱花穿透 ↗</a><button class="btn btn-ghost btn-sm" @click="copyWebsite">复制网址</button><a href="https://doc.natfrp.com/" target="_blank" rel="noreferrer">使用帮助 ↗</a><small>密钥仅保存在本机。</small></div>
+      <div class="frp-account-help">
+        <ReferenceLinks :links="[{ label: '樱花穿透官网', url: 'https://www.natfrp.com/' }, { label: '使用指南', url: 'https://doc.natfrp.com/' }]">
+          <button type="button" @click="copyWebsite">复制官网地址</button>
+        </ReferenceLinks>
+        <small>访问密钥仅保存在本机</small>
+      </div>
       <p v-if="nodesError" class="connection-error" role="alert">{{ nodesError }}</p>
     </ConnectionPanel>
     <section class="frp-tunnel-grid" aria-label="隧道控制区域" data-ui="frp:tunnels">
@@ -197,6 +203,9 @@ onBeforeUnmount(() => { disposed = true; unsubscribe?.() })
   </div>
 </template>
 <style scoped>
+.frp-account-help { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; padding-top:18px; margin-top:6px; border-top:1px solid var(--border-strong); }
+.frp-account-help small { color:var(--text-dim); font-size:12px; }
+
 .frp-overview { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap }
 .frp-overview h2 { margin:0 0 8px; font-size:24px }
 .frp-overview p,.frp-restore-note { color:var(--text-dim); line-height:1.7; margin:0 }

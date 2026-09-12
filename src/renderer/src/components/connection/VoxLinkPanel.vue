@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReferenceLinks from './ReferenceLinks.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { DEFAULT_VOXLINK_ROOM_NAME, VOXLINK_ROOM_NAME_MAX, normalizeVoxlinkRoomName, isVoxlinkContentBlocked, VOXLINK_ROOM_BLOCKED_MESSAGE } from '@shared/voxlinkRoom'
 import ConnectionPanel from './ConnectionPanel.vue'
@@ -458,6 +459,7 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
       </div>
     </ConnectionPanel>
 
+    <ReferenceLinks :links="[{ label: 'GitHub', url: 'https://github.com/AUGUHDAR/VoxLink' }, { label: 'MC 百科', url: 'https://www.mcmod.cn/class/28295.html' }, { label: '联机服务', url: 'https://p2p.wuhui.icu/' }]" />
     <!-- 参考信息区：默认折叠 -->
     <details class="connection-details reference-details">
       <summary>联机说明与中继设置</summary>

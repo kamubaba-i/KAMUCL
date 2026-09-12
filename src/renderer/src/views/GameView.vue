@@ -316,9 +316,9 @@ function progressEta(id: string) {
   const p = versionProgress(id)
   const eta = p?.etaSeconds
   if (eta == null || !Number.isFinite(eta) || eta <= 3) return ''
-  if (eta >= 3600) return `约剩 ${Math.ceil(eta / 3600)}h`
-  if (eta >= 60) return `约剩 ${Math.ceil(eta / 60)}min`
-  return `约剩 ${Math.round(eta)}s`
+  if (eta >= 3600) return `本阶段约剩 ${Math.ceil(eta / 3600)}h`
+  if (eta >= 60) return `本阶段约剩 ${Math.ceil(eta / 60)}min`
+  return `本阶段约剩 ${Math.round(eta)}s`
 }
 function versionProgress(id: string) { return store.installProgress[id] ?? { stage: 'version-json', progress: 0, text: '等待下载' } }
 

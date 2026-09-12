@@ -782,9 +782,9 @@ function taskSubText(t: { stage: string; text: string }): string {
 
 function taskEtaText(seconds?: number): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 3) return ''
-  if (seconds >= 3600) return ` · 约剩 ${Math.ceil(seconds / 3600)}h`
-  if (seconds >= 60) return ` · 约剩 ${Math.ceil(seconds / 60)}min`
-  return ` · 约剩 ${Math.round(seconds)}s`
+  if (seconds >= 3600) return ` · 本阶段约剩 ${Math.ceil(seconds / 3600)}h`
+  if (seconds >= 60) return ` · 本阶段约剩 ${Math.ceil(seconds / 60)}min`
+  return ` · 本阶段约剩 ${Math.round(seconds)}s`
 }
 
 function fmtNoticeTime(ts: number): string {

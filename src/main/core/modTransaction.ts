@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { downloadFile } from './download'
+import { downloadAll } from './download'
 import { protectModChange } from './changeProtection'
 export interface ModReplacement { oldName?:string; oldSha1?:string; name:string; sha1:string; url?:string; size?:number }
 export const modHash=async(file:string)=>crypto.createHash('sha1').update(await fs.promises.readFile(file)).digest('hex')
@@ -14,7 +14,7 @@ export async function replaceModFiles(dir:string,items:ModReplacement[],validate
  const stage=await fs.promises.mkdtemp(path.join(path.dirname(dir),'.kamucl-mod-change-')),backups:Array<{original:string;backup:string}>=[],written:Array<{file:string;sha1:string}>=[]
  let canClean=true
  try{
-  for(let n=0;n<items.length;n++){signal?.throwIfAborted();const i=items[n];await downloadFile(i.url!,path.join(stage,'new-'+n),(done,total)=>onProgress?.((n+(total?done/total:0))/items.length),i.sha1,undefined,signal,[],{size:i.size})}
+  await downloadAll(items.map((i,n)=>({url:i.url!,dest:path.join(stage,'new-'+n),sha1:i.sha1,size:i.size})),(_d,_t,_speed,detail)=>onProgress?.(detail.fraction ?? 0),8,undefined,signal)
   await validate?.()
   for(const i of items){if(i.oldName)await validateModFile(dir,i.oldName,i.oldSha1);if(fs.existsSync(path.join(dir,i.name))&&i.name!==i.oldName)throw new Error('目标文件已存在，未覆盖：'+i.name)}
   await protectModChange(dir,items.flatMap(i=>i.oldName?[i.oldName,i.name]:[i.name]),'模组版本修改前',signal)
