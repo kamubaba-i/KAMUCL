@@ -821,8 +821,8 @@ export async function scanJavaInstallations(options: JavaScanOptions = {}): Prom
 /** 合并手动添加的 Java，并过滤隐藏项 */
 function mergeCustom(list: JavaInfo[]): JavaInfo[] {
   const s = getSettings()
-  const hidden = new Set((s.javaHidden ?? []).map(pathKey))
-  const auto = list.filter((j) => !hidden.has(pathKey(j.path)))
+  const hidden = new Set((s.javaHidden ?? []).flatMap(p => [pathKey(p), pathKey(realExecutable(p) ?? p)]))
+  const auto = list.filter((j) => !hidden.has(pathKey(j.path)) && !hidden.has(pathKey(realExecutable(j.path) ?? j.path)))
   const manual: JavaInfo[] = []
   for (const p of s.javaCustom ?? []) {
     const real = realExecutable(p)
