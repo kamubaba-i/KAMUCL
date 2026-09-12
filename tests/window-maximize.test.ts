@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyMaximized, isEffectivelyMaximized, toggleMaximize } from '../src/main/windowState'
+import { applyMaximized, isEffectivelyMaximized, toggleMaximize, restoreWindowBounds } from '../src/main/windowState'
 import type { BrowserWindow } from 'electron'
 
 function fixture() {
@@ -36,4 +36,29 @@ test('reopening a window restores native maximization without leaking state acro
   first.destroy(); toggleMaximize(first.window); applyMaximized(first.window)
   assert.equal(isEffectivelyMaximized(first.window), false)
   assert.deepEqual(first.calls, ['maximize'])
+})
+
+test('restoring saved bounds corrects fractional DPI rounding without a resize loop', () => {
+  const target = { x: -3000, y: 20, width: 1100, height: 700 }
+  let bounds = { ...target }, calls = 0
+  const win = { isDestroyed: () => false, isMaximized: () => false,
+    getBounds: () => bounds, getMinimumSize: () => [960, 620],
+    setBounds: (b: typeof bounds) => { calls++; bounds = { ...b, width: b.width + 2, height: b.height + 1 } }
+  } as unknown as BrowserWindow
+  restoreWindowBounds(win, target)
+  assert.deepEqual(bounds, target); assert.equal(calls, 2)
+  restoreWindowBounds(win, bounds)
+  assert.deepEqual(bounds, target); assert.equal(calls, 4)
+})
+
+test('saved bounds restoration respects OS relocation and minimum size', () => {
+  let calls = 0, bounds = { x: 0, y: 0, width: 1000, height: 700 }
+  const win = { isDestroyed: () => false, isMaximized: () => false,
+    getBounds: () => bounds, getMinimumSize: () => [960, 620],
+    setBounds: (b: typeof bounds) => { calls++; assert(b.width >= 960 && b.height >= 620); bounds = { ...b, x: 100 } }
+  } as unknown as BrowserWindow
+  restoreWindowBounds(win, { x: 0, y: 0, width: 800, height: 500 })
+  assert.equal(calls, 1, 'do not fight system relocation')
+  win.isMaximized = () => true
+  restoreWindowBounds(win, bounds); assert.equal(calls, 1)
 })

@@ -36,7 +36,9 @@ jobs:
         # Hosted runner images disable transparency globally; never change this on players' Macs.
         run: defaults write com.apple.universalaccess reduceTransparency -bool false
       - name: Package native application
-        run: npx electron-builder --mac dir --${{ matrix.arch }} --publish never
+        # This release upgrades the Windows compositor only. Keep the existing
+        # macOS runtime: Electron 44 fails GPU initialization on Intel CI.
+        run: npx electron-builder --mac dir --${{ matrix.arch }} --config.electronVersion=33.4.11 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Sign locally, verify and archive
