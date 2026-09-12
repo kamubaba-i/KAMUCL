@@ -6,7 +6,7 @@ if CommandLine.arguments.count > 2 && CommandLine.arguments[1] == "--window-id" 
     let pid = Int32(CommandLine.arguments[2])!
     let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
     if let window = windows.first(where: { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }) {
-        let result: [String: Any] = ["id": window[kCGWindowNumber as String]!, "bounds": window[kCGWindowBounds as String]!, "screenWidth": NSScreen.main!.frame.width]
+        let result: [String: Any] = ["id": window[kCGWindowNumber as String]!, "bounds": window[kCGWindowBounds as String]!, "screenWidth": NSScreen.main!.frame.width, "reducedTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
         print(String(data: try! JSONSerialization.data(withJSONObject: result), encoding: .utf8)!)
         exit(0)
     }

@@ -1248,6 +1248,8 @@ export interface ServerPingResult {
 }
 
 export interface SystemInfo {
+  /** macOS 系统辅助功能“降低透明度”；仅用于说明，不修改系统偏好。 */
+  reducedTransparency?: boolean
   /** 物理内存总量（MB，向下取整） */
   totalMemMB: number
   /** 当前空闲物理内存（MB，向下取整；随系统实时波动） */
