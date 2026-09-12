@@ -58,7 +58,7 @@ async function main() {
   await new Promise((r,j)=>{mainWs.addEventListener('open',r,{once:true});mainWs.addEventListener('error',j,{once:true})})
   await new Promise((resolve,reject)=>{
     mainWs.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.id===1)m.result?.exceptionDetails?reject(Error(JSON.stringify(m.result.exceptionDetails))):resolve()})
-    mainWs.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression:`require('electron').session.defaultSession.webRequest.onBeforeRequest({urls:['https://github.com/adoptium/*']},(details,callback)=>callback({cancel:true}))`}}))
+    mainWs.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression:`process.mainModule.require('electron').session.defaultSession.webRequest.onBeforeRequest({urls:['https://github.com/adoptium/*']},(details,callback)=>callback({cancel:true}))`}}))
   })
   // Run the official demo, without requiring or exporting player credentials.
   const idPath = path.join(folder, 'versions', installed.installedId, `${installed.installedId}.json`)
