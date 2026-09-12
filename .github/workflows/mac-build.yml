@@ -46,7 +46,6 @@ jobs:
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict "$APP"
           node scripts/verify-mac.cjs "$APP" "$ARCH"
-          node scripts/verify-mac-game.cjs "$APP" "$ARCH"
           VERSION=$(node -p "require('./package.json').version")
           ditto -c -k --sequesterRsrc --keepParent "$APP" "release/KAMUCL-${VERSION}-mac-${ARCH}.zip"
           cd release
@@ -71,6 +70,12 @@ jobs:
           hdiutil detach "$RUNNER_TEMP/dmg-mount"
           cd release
           shasum -a 256 "KAMUCL-${VERSION}-mac-${ARCH}.dmg" >> "SHA256SUMS-mac-${ARCH}.txt"
+      - name: Verify Java fallback and actual Minecraft window
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          APP=$(find release -maxdepth 2 -name KAMUCL.app -print -quit)
+          node scripts/verify-mac-game.cjs "$APP" "$ARCH"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
