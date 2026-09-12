@@ -6,6 +6,7 @@ import { AmbientLight, DirectionalLight, NearestFilter, PerspectiveCamera, Scene
 import { PreviewPlayer } from '../skinModel'
 import { loadImage, migrateLegacySkin, detectSkinVariant } from '../skin-render'
 import { beginBootTask } from '../bootTasks'
+import { createFallbackSkin } from '../fallbackSkin'
 const props = withDefaults(defineProps<{ src?: string; cape?: string; variant?: 'classic' | 'slim'; animation?: 'walk' | 'idle'; paused?: boolean }>(), { src:'', cape:'', variant:'classic', animation:'walk', paused:false })
 const container = ref<HTMLDivElement | null>(null), supported = ref(true), dragging = ref(false)
 let gl: WebGLRenderer | undefined, world: Scene, camera: PerspectiveCamera, player: PreviewPlayer
@@ -22,24 +23,15 @@ function texture(image: HTMLImageElement | HTMLCanvasElement): Texture {
   value.generateMipmaps = false; value.needsUpdate = true
   return value
 }
-function fallback(): HTMLCanvasElement {
-  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64
-  const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#906948'; ctx.fillRect(0,0,64,32)
-  ctx.fillStyle = '#39a8a8'; ctx.fillRect(16,16,40,16)
-  ctx.fillStyle = '#394a8f'; ctx.fillRect(0,16,16,16); ctx.fillRect(16,48,16,16)
-  ctx.fillStyle = '#906948'; ctx.fillRect(32,48,16,16)
-  return canvas
-}
 async function updateSkin(): Promise<void> {
   if (!gl) return
   const request = ++skinRequest
-  let image: HTMLImageElement | HTMLCanvasElement = fallback(), remote = false
+  let image: HTMLImageElement | HTMLCanvasElement = createFallbackSkin(), remote = false
   try { if (props.src) { image = migrateLegacySkin(await loadImage(props.src)); remote = true } } catch { /* Usable local fallback. */ }
   if (closed || request !== skinRequest) return
   const next = texture(image), old = skin
   skin = next; player.skin.map = next; player.skin.setOuterLayerVisible(remote)
-  player.skin.modelType = props.variant === 'slim' || (remote && detectSkinVariant(image) === 'slim') ? 'slim' : 'default'
+  player.skin.modelType = remote && (props.variant === 'slim' || detectSkinVariant(image) === 'slim') ? 'slim' : 'default'
   old?.dispose(); finishBoot(); clearTimeout(bootTimer); wake()
 }
 async function updateCape(): Promise<void> {
@@ -104,7 +96,7 @@ onMounted(()=>{
     world=new Scene();camera=new PerspectiveCamera(45,1,.5,500);player=new PreviewPlayer()
     world.add(player,new AmbientLight(0xffffff,2))
     const light=new DirectionalLight(0xffffff,1);light.position.set(-15,30,50);world.add(light)
-    skin=texture(fallback());player.skin.map=skin;player.skin.setOuterLayerVisible(false)
+    skin=texture(createFallbackSkin());player.skin.map=skin;player.skin.setOuterLayerVisible(false)
     resize=new ResizeObserver(fit);resize.observe(container.value!);fit()
     document.addEventListener('visibilitychange',visibility)
     bootTimer=setTimeout(finishBoot,150);void updateSkin();void updateCape();wake()

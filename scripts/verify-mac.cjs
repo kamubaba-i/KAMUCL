@@ -7,6 +7,10 @@ fs.mkdirSync(proof,{recursive:true})
 const binary=execFileSync('file',[exe],{encoding:'utf8'});assert(binary.includes(arch==='x64'?'x86_64':'arm64'))
 const env={...process.env};delete env.ELECTRON_RUN_AS_NODE
 const log=fs.openSync(path.join(proof,'process.log'),'w')
+const fixtureExe=path.join(proof,'material-fixture'),control=path.join(proof,'material-color.txt')
+execFileSync('swiftc',['scripts/mac-material-fixture.swift','-o',fixtureExe])
+fs.writeFileSync(control,'black')
+const fixture=spawn(fixtureExe,[control],{stdio:'ignore'})
 const child=spawn(exe,['--remote-debugging-port=9229'],{env,stdio:['ignore',log,log]})
 const wait=ms=>new Promise(r=>setTimeout(r,ms))
 async function main(){
@@ -27,7 +31,38 @@ async function main(){
  const macUI=checks.result.value;assert.equal(macUI.platform,'darwin');assert.equal(macUI.customButtons,0);assert(macUI.logoTop>=38,'native traffic light area overlaps branding');assert.equal(macUI.folderStatus,'ready','default folder missing on first launch');
  await wait(3000)
  const screenshot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(proof,'main.png'),Buffer.from(screenshot.data,'base64'))
- fs.writeFileSync(path.join(proof,'verification.json'),JSON.stringify({version,arch,binary,mainUI:true,macUI,url:page.url},null,2));ws.close()
+ // Inspect rendered default-skin pixels; a live WebGL context alone would miss the old faceless fallback.
+ const skinBounds=await call('Runtime.evaluate',{expression:`(()=>{const c=document.querySelector('.viewer3d canvas');const r=c?.getBoundingClientRect();return r?{x:r.x,y:r.y,width:r.width,height:r.height}:null})()`,returnByValue:true})
+ assert(skinBounds.result.value,'skin WebGL canvas missing')
+ const sharp=require('sharp'),bounds=skinBounds.result.value
+ const skinShot=await call('Page.captureScreenshot',{format:'png',clip:{...bounds,scale:1}})
+ fs.writeFileSync(path.join(proof,'default-skin.png'),Buffer.from(skinShot.data,'base64'))
+ const skinPixels=await sharp(Buffer.from(skinShot.data,'base64')).removeAlpha().raw().toBuffer()
+ let facePixels=0,shirtPixels=0
+ for(let i=0;i<skinPixels.length;i+=3){const [r,g,b]=skinPixels.subarray(i,i+3);if(r>140&&r>g*1.12&&g>b*1.05)facePixels++;if(g>85&&g>r*1.25&&b>r*1.2)shirtPixels++}
+ assert(facePixels>20&&shirtPixels>20,'default skin texture not rendered')
+ // Page.captureScreenshot excludes the OS blur. Capture the actual NSWindow over two backgrounds.
+ let nativeMaterial
+ try {
+   const windowId=execFileSync(fixtureExe,['--window-id',String(child.pid)],{encoding:'utf8'}).trim()
+   for(const color of ['black','white']){
+     fs.writeFileSync(control,color);await wait(1500)
+     execFileSync('/usr/sbin/screencapture',['-x','-o','-l',windowId,path.join(proof,`native-${color}.png`)])
+   }
+   nativeMaterial={captured:true}
+ } catch(e) { nativeMaterial={captured:false,reason:String(e.message)};console.warn('Native screen capture unavailable:',e.message) }
+ if(nativeMaterial.captured){
+   const samples=[]
+   for(const color of ['black','white']){
+     const image=sharp(path.join(proof,`native-${color}.png`)),meta=await image.metadata()
+     // Empty centre of the title bar, away from branding, controls and character animation.
+     const stats=await image.extract({left:Math.floor(meta.width*.5),top:Math.floor(meta.height*.025),width:30,height:12}).removeAlpha().stats()
+     samples.push(stats.channels.slice(0,3).map(c=>c.mean))
+   }
+   nativeMaterial.samples=samples;nativeMaterial.difference=Math.max(...samples[0].map((v,i)=>Math.abs(v-samples[1][i])))
+   assert(nativeMaterial.difference>2,'native macOS window still opaque over changing desktop background')
+ }
+ fs.writeFileSync(path.join(proof,'verification.json'),JSON.stringify({version,arch,binary,mainUI:true,macUI,skin:{facePixels,shirtPixels},nativeMaterial,url:page.url},null,2));ws.close()
  console.log('PASS native macOS '+arch+' packaged app '+version)
 }
-main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{child.kill('SIGTERM');fs.closeSync(log)})
+main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{child.kill('SIGTERM');fixture.kill('SIGTERM');fs.closeSync(log)})
