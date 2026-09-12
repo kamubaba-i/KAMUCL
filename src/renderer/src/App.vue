@@ -191,7 +191,7 @@ const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 const reducedMotion = ref(motionQuery.matches)
 const onMotionChange = () => { reducedMotion.value = motionQuery.matches }
 const routeDuration = computed(() => reducedMotion.value ? 0 : { enter: 180, leave: 80 })
-const { navEl, bubbleStyle, retarget: retargetNav, reset: resetNav, focusOut: navFocusOut, measure: measureNav } = useNavigationBubble(
+const { navEl, bubbleStyle, selectionStyle, retarget: retargetNav, reset: resetNav, focusOut: navFocusOut, measure: measureNav } = useNavigationBubble(
   computed(() => store.currentView),
   computed(() => [resourceExpanded.value, inResourceGroup.value, visibleNavItems.value, visibleResourceSubItems.value])
 )
@@ -1232,6 +1232,7 @@ onUnmounted(() => {
       <!-- 导航 -->
       <nav data-ui="App:adafe645f766" ref="navEl" class="nav" aria-label="主导航" @pointerover="retargetNav" @pointerleave="resetNav" @focusin="retargetNav" @focusout="navFocusOut" @scroll.passive="measureNav">
         <div data-ui="App:763b7368d7c7" class="nav-bubble" :style="bubbleStyle" aria-hidden="true"></div>
+        <div class="nav-selection" :style="selectionStyle" aria-hidden="true"></div>
         <template v-for="item in visibleNavItems" :key="item.key">
           <button data-ui="App:e2cd389fbd0f"
             class="nav-item"
@@ -1805,7 +1806,6 @@ onUnmounted(() => {
 }
 .nav-item.active {
   background: transparent;
-  box-shadow: inset 3px 0 0 var(--accent);
   color: color-mix(in srgb, var(--text) 84%, var(--accent));
 }
 .nav-bubble {
@@ -1820,8 +1820,18 @@ onUnmounted(() => {
   transition: transform 300ms cubic-bezier(.22, 1, .36, 1), width 300ms cubic-bezier(.22, 1, .36, 1), height 300ms cubic-bezier(.22, 1, .36, 1), opacity 120ms ease;
   will-change: transform;
 }
+.nav-selection {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border-radius: var(--radius-md);
+  box-shadow: inset 3px 0 0 var(--accent);
+  z-index: 2;
+  transition: transform 300ms cubic-bezier(.22, 1, .36, 1), width 300ms cubic-bezier(.22, 1, .36, 1), height 300ms cubic-bezier(.22, 1, .36, 1), opacity 120ms ease;
+}
 @media (prefers-reduced-motion: reduce) {
-  .nav-bubble { transition: none; }
+  .nav-bubble, .nav-selection { transition: none; }
 }
 .nav-icon {
   display: flex;

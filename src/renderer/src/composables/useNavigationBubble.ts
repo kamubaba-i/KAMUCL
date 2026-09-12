@@ -5,18 +5,25 @@ export function useNavigationBubble(selected: Ref<string>, layout: Ref<unknown>)
   const navEl = ref<HTMLElement | null>(null)
   const target = ref<HTMLElement | null>(null)
   const bounds = reactive({ x: 0, y: 0, width: 0, height: 0, visible: false })
+  const selection = reactive({ x: 0, y: 0, width: 0, height: 0, visible: false })
   let frame = 0
   let observer: ResizeObserver | undefined
   const measure = () => {
     const nav = navEl.value
     if (!nav) return
     const active = nav.querySelector<HTMLElement>(`[data-nav="${selected.value}"]`)
+    const root = nav.getBoundingClientRect()
+    const place = (element: HTMLElement | null | undefined, state: typeof bounds) => {
+      if (!element?.isConnected || element.closest('[inert]')) { state.visible = false; return }
+      const box = element.getBoundingClientRect()
+      Object.assign(state, { x: box.left - root.left + nav.scrollLeft, y: box.top - root.top + nav.scrollTop, width: box.width, height: box.height, visible: true })
+    }
+    place(active, selection)
     let item = target.value ?? active
     if (item?.closest('[inert]') || !item?.isConnected) item = active
     if (item?.closest('[inert]')) item = nav.querySelector('[data-nav="resources"]')
     if (!item) { bounds.visible = false; return }
-    const box = item.getBoundingClientRect(), root = nav.getBoundingClientRect()
-    Object.assign(bounds, { x: box.left - root.left + nav.scrollLeft, y: box.top - root.top + nav.scrollTop, width: box.width, height: box.height, visible: true })
+    place(item, bounds)
   }
   const retarget = (event: Event) => {
     const item = (event.target as Element).closest<HTMLElement>('[data-nav]')
@@ -51,5 +58,9 @@ export function useNavigationBubble(selected: Ref<string>, layout: Ref<unknown>)
     transform: `translate3d(${bounds.x}px, ${bounds.y}px, 0)`,
     width: `${bounds.width}px`, height: `${bounds.height}px`, opacity: bounds.visible ? 1 : 0
   }))
-  return { navEl, bubbleStyle, retarget, reset, focusOut, measure }
+  const selectionStyle = computed(() => ({
+    transform: `translate3d(${selection.x}px, ${selection.y}px, 0)`,
+    width: `${selection.width}px`, height: `${selection.height}px`, opacity: selection.visible ? 1 : 0
+  }))
+  return { navEl, bubbleStyle, selectionStyle, retarget, reset, focusOut, measure }
 }
