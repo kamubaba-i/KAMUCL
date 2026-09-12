@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { provisionJava, temurinPackage, zuluPackage } from '../src/main/core/javaSources'
+import { provisionJava, temurinPackage, zuluPackage, javaPackageSize } from '../src/main/core/javaSources'
 
 const target = { major: 25, os: 'mac' as const, arch: 'x64' as const }
 const detail = { java_version: [25, 0, 4], os: 'macos', arch: 'x86', hw_bitness: 64, archive_type: 'tar.gz', java_package_type: 'jre', availability_type: 'CA', download_url: 'https://cdn.azul.com/zulu/bin/runtime.tar.gz', sha256_hash: 'a'.repeat(64), size: 57757700 }
@@ -13,7 +13,7 @@ test('Java 25 on Intel Mac falls back after GitHub fetch failure using the backu
   const result = await provisionJava(target, read, async pkg => {
     installed.push(pkg.provider)
     if (pkg.provider === 'Eclipse Temurin') throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect failed'), { code: 'ECONNRESET' }) })
-    assert.equal(pkg.sha256, detail.sha256_hash); assert.equal(pkg.size, detail.size)
+    assert.equal(pkg.sha256, detail.sha256_hash); assert.equal(pkg.size, undefined)
     return '/verified/Contents/Home/bin/java'
   }, text => reports.push(text))
   assert.deepEqual(installed, ['Eclipse Temurin', 'Azul Zulu'])
@@ -44,4 +44,12 @@ test('cancelled Java provisioning never switches sources or publishes a runtime'
     calls++; controller.abort(new Error('cancelled')); return read(url)
   }, async () => { throw new Error('must not install') }, () => {}, controller.signal), /cancelled/)
   assert.equal(calls, 1)
+})
+
+test('Azul rounded metadata size is replaced by binary length; unavailable HEAD retains SHA256 streaming', async () => {
+  const pkg = await zuluPackage(target, read)
+  assert.equal(pkg.size, undefined)
+  assert.equal(await javaPackageSize(pkg, async () => new Response(null, { headers: { 'content-length': '57757736' } })), 57757736)
+  assert.equal(await javaPackageSize(pkg, async () => { throw new TypeError('fetch failed') }), undefined)
+  assert.equal(pkg.sha256, detail.sha256_hash)
 })

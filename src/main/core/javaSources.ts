@@ -1,6 +1,6 @@
 /** Official OpenJDK distributors. Each fallback is a new package with its own
  * trusted metadata/hash; never resume a Temurin archive into a Zulu archive. */
-export interface JavaPackage { provider: string; url: string; sha256: string; size: number }
+export interface JavaPackage { provider: string; url: string; sha256: string; size?: number }
 export interface JavaTarget { major: number; os: 'windows' | 'mac' | 'linux'; arch: 'x64' | 'aarch64' }
 type ReadJson = (url: string) => Promise<any>
 
@@ -31,7 +31,21 @@ export async function zuluPackage(target: JavaTarget, read: ReadJson): Promise<J
   if (!item) throw new Error(`Azul 没有匹配 Java ${major} ${system}/${cpu} 的 JRE`)
   const detail = await read(`https://api.azul.com/metadata/v1/zulu/packages/${item.package_uuid}`)
   if (detail.java_version?.[0] !== major || detail.os !== system || detail.arch !== cpu || detail.hw_bitness !== 64 || detail.java_package_type !== 'jre' || detail.archive_type !== archive || detail.availability_type !== 'CA') throw new Error('Azul 返回的 Java 版本或平台不匹配')
-  return verifiedPackage('Azul Zulu', detail.download_url, detail.sha256_hash, detail.size, ['cdn.azul.com'])
+  const pkg = verifiedPackage('Azul Zulu', detail.download_url, detail.sha256_hash, detail.size, ['cdn.azul.com'])
+  // Azul's API size can be rounded (25/mac-arm64 reports 56,496,600 for a
+  // 56,496,636-byte archive with the correct SHA256). Get exact size from the
+  // binary response instead; never treat this hint as an integrity constraint.
+  return { ...pkg, size: undefined }
+}
+
+export async function javaPackageSize(pkg: JavaPackage, head: (url: string) => Promise<Response>): Promise<number | undefined> {
+  if (pkg.size !== undefined) return pkg.size
+  try {
+    const response = await head(pkg.url)
+    const size = Number(response.headers.get('content-length'))
+    await response.body?.cancel()
+    return response.ok && Number.isSafeInteger(size) && size > 0 && !response.headers.get('content-encoding') ? size : undefined
+  } catch { return undefined } // Streaming transfer still enforces the full SHA256.
 }
 
 export function javaNetworkError(error: unknown): string {

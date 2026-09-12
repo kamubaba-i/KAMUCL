@@ -17,7 +17,7 @@ import { logScope } from './launcherLog'
 import { JavaProbeCache } from './javaProbeCache'
 import { mapLaunchFiles, SharedPreparation } from './launchPreparation'
 import { macJavaArchitecture } from './javaArchitecture'
-import { provisionJava } from './javaSources'
+import { provisionJava, javaPackageSize } from './javaSources'
 import { httpFetch } from './httpClient'
 const probeCache = new JavaProbeCache(() => path.join(app.getPath('userData'), 'java-probe-cache.json'))
 
@@ -934,7 +934,8 @@ async function downloadAndExtractJava(need: number, emit: ProgressEmit, architec
     const archive = path.join(staging, IS_WIN ? 'runtime.zip' : 'runtime.tar.gz')
     const extracted = path.join(staging, 'unpacked')
     try {
-      await downloadFile(pkg.url, archive, (done, total) => emit({ stage: 'java', progress: total ? done / total * .85 : 0, bytesDone: done, text: `下载 Java ${need} · ${pkg.provider} ${(done / 1048576).toFixed(1)}/${(total / 1048576).toFixed(1)} MB` }), undefined, 'official', undefined, [], { sha256: pkg.sha256, size: pkg.size, systemProxy: true, maxAttempts: 2 })
+      const size = await javaPackageSize(pkg, url => httpFetch(url, { method: 'HEAD', systemProxy: true, signal: AbortSignal.timeout(10000) }))
+      await downloadFile(pkg.url, archive, (done, total) => emit({ stage: 'java', progress: total ? done / total * .85 : 0, bytesDone: done, text: `下载 Java ${need} · ${pkg.provider} ${(done / 1048576).toFixed(1)}${total ? '/' + (total / 1048576).toFixed(1) : ''} MB` }), undefined, 'official', undefined, [], { sha256: pkg.sha256, size, systemProxy: true, maxAttempts: 2 })
       emit({ stage: 'java', progress: .9, text: `校验通过，正在解压 Java ${need} · ${pkg.provider}` })
       fs.mkdirSync(extracted)
       if (IS_WIN) new AdmZip(archive).extractAllTo(extracted, true)
