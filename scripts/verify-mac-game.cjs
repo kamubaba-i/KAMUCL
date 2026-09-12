@@ -59,7 +59,7 @@ async function main() {
   await new Promise((r,j)=>{mainWs.addEventListener('open',r,{once:true});mainWs.addEventListener('error',j,{once:true})})
   await new Promise((resolve,reject)=>{
     mainWs.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.id===1)m.result?.exceptionDetails?reject(Error(JSON.stringify(m.result.exceptionDetails))):resolve()})
-    mainWs.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression:`process.mainModule.require('electron').session.defaultSession.webRequest.onBeforeRequest({urls:['https://github.com/adoptium/*']},(details,callback)=>callback({cancel:true}))`}}))
+    mainWs.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression:`process.mainModule.require('electron').session.defaultSession.webRequest.onBeforeRequest({urls:['https://github.com/adoptium/*']},(details,callback)=>callback({cancel:true}));const cp=process.mainModule.require('child_process'),originalSpawn=cp.spawn;cp.spawn=function(...args){const child=originalSpawn.apply(this,args);if(String(args[0]).endsWith('/bin/java'))child.on('exit',(code,signal)=>console.log('[native-java-exit]',child.pid,code,signal));return child;}`}}))
   })
   // Run the official demo, without requiring or exporting player credentials.
   const idPath = path.join(folder, 'versions', installed.installedId, `${installed.installedId}.json`)
@@ -103,6 +103,13 @@ async function main() {
 main().catch(e => { console.error(e); process.exitCode = 1 }).finally(async () => {
   try { if (evaluate) events.push(...await evaluate('window.__gameTestEvents.splice(0)')) } catch {}
   fs.writeFileSync(path.join(proof, 'events.json'), JSON.stringify(events, null, 2))
+  if (process.exitCode) {
+    await wait(10000) // macOS writes its native crash report asynchronously.
+    for (const [name, command, args] of [
+      ['graphics.txt', '/usr/sbin/system_profiler', ['SPDisplaysDataType']],
+      ['native-system.log', '/usr/bin/log', ['show', '--last', '5m', '--style', 'compact', '--predicate', 'process == "java" OR eventMessage CONTAINS "java"']]
+    ]) try { fs.writeFileSync(path.join(proof, name), execFileSync(command, args, { timeout: 20000, maxBuffer: 8 * 1024 * 1024 })); } catch {}
+  }
   // Preserve native crash evidence as well as Java stdout in the disposable runner.
   for (const root of [gameFolder, path.join(process.env.HOME, 'Library/Logs/DiagnosticReports'), '/Library/Logs/DiagnosticReports']) {
     if (!root || !fs.existsSync(root)) continue
