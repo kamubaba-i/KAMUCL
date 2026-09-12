@@ -11,7 +11,7 @@ const log = fs.openSync(path.join(proof, 'launcher.log'), 'w'), env = { ...proce
 delete env.ELECTRON_RUN_AS_NODE
 const child = spawn(path.join(app, 'Contents/MacOS/KAMUCL'), ['--remote-debugging-port=9230', '--inspect=9231'], { env, stdio: ['ignore', log, log] })
 const wait = ms => new Promise(r => setTimeout(r, ms))
-let ws, mainWs, evaluate, gamePid, gameFolder, events = []
+let ws, mainWs, evaluate, gamePid, gameFolder, debuggerProcess, events = []
 async function main() {
   let page
   for (let i = 0; i < 60; i++) {
@@ -81,6 +81,14 @@ async function main() {
       for (const home of homes) {
         try { const info = JSON.parse(fs.readFileSync(path.join(home, 'running-game.json'), 'utf8')); if (info.versionId === installed.installedId) gamePid = info.pid } catch {}
       }
+    }
+    if (gamePid && arch === 'x64' && !debuggerProcess) {
+      const output = fs.openSync(path.join(proof, 'native-backtrace.txt'), 'w')
+      debuggerProcess = spawn('/usr/bin/sudo', ['/usr/bin/lldb', '--batch', '-p', String(gamePid),
+        '-o', 'process handle SIGSEGV -s false -n false -p true',
+        '-o', 'process handle SIGBUS -s false -n false -p true',
+        '-o', 'continue', '-o', 'thread backtrace all', '-o', 'detach'], { stdio: ['ignore', output, output] })
+      fs.closeSync(output)
     }
     assert(!['error', 'exited'].includes(lastState?.status), 'game failed: ' + JSON.stringify(lastState))
     if (gamePid) try { nativeWindow = JSON.parse(execFileSync(fixture, ['--window-id', String(gamePid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })) } catch {}
