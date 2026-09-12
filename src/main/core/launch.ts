@@ -17,6 +17,7 @@ import { reuseExternalRuntimeLibraries } from './externalRuntime'
 import { repairNeoRuntime } from './loaders'
 import { pathIdentity } from './folderPaths'
 import { GameSession } from './gameSession'
+import { upgradeInstalledBridge } from './bridgeUpgrade'
 import { app, screen } from 'electron'
 import AdmZip from 'adm-zip'
 import type { LaunchState, ProgressEvent } from '../../shared/types'
@@ -708,6 +709,8 @@ async function launchOwned(
   emit({ stage: 'launch', progress: 1, text: '启动游戏进程' })
   // 脱离式创建：游戏进程与启动器生命周期完全解耦（Windows CreateProcessW，见 gracefulClose.ts），
   // 关闭启动器时游戏继续运行；stdout/stderr 仍以管道回流，日志体验不变。
+  deadline.signal.throwIfAborted()
+  for (const message of await upgradeInstalledBridge(effectiveGameDir, path.join(__dirname, 'kamucl-bridge.jar').replace('app.asar', 'app.asar.unpacked'))) log('[KAMUCL] ' + message)
   deadline.signal.throwIfAborted()
   deadline.dispose()
   const proc = await withDeadline(signal => spawnGameProcess(javaPath, args, { cwd: effectiveGameDir, signal }), 15000, '游戏进程创建超时，请检查 Java 与系统权限')

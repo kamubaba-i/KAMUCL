@@ -30,6 +30,7 @@ jobs:
           java-version: "17"
       - run: npm ci
       - run: node scripts/build-bridge.cjs
+      - run: node scripts/verify-bridge-exit.cjs
       - run: npm run build
       - name: Enable native material in disposable UI test session
         # Hosted runner images disable transparency globally; never change this on players' Macs.
