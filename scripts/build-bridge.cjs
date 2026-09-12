@@ -1,6 +1,6 @@
 // Rebuild the bundled bridge from Java sources with pinned, verified compile-only dependencies.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process')
-const root=path.resolve(__dirname,'..'),bridge=path.join(root,'bridge'),classes=path.join(bridge,'build/classes'),output=path.join(bridge,'dist/kamucl-bridge-1.0.0.jar')
+const root=path.resolve(__dirname,'..'),bridge=path.join(root,'bridge'),classes=path.join(bridge,'build/classes'),output=path.join(bridge,'dist/kamucl-bridge-1.0.1.jar')
 const dependencies=[
  {file:'net/fabricmc/fabric-loader/0.19.5/fabric-loader-0.19.5.jar',base:'https://maven.fabricmc.net/',hash:'93044e4dd46de5d8136701292f05e868da096d2c9fddb4793e4fdbcc63efc695'},
  {file:'com/google/code/gson/gson/2.14.0/gson-2.14.0.jar',base:'https://repo.maven.apache.org/maven2/',hash:'2cbd119bf1961c28788310963dc80ba65f58cdeec1dd139c8bdb1240faa2c36f'}]
