@@ -8,6 +8,8 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'KAMUCL window 中文 '))
 app.setPath('userData', root)
 const folder = path.join(root, 'games'); fs.mkdirSync(folder)
 fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({gameDir:folder,activeFolder:folder,folders:[{path:folder,name:'Window test'}],autoUpdate:false,theme:'blue-white'}))
+const reopenBounds={x:20,y:20,width:1100,height:700}
+if(process.env.KAMUCL_WINDOW_REOPEN)fs.writeFileSync(path.join(root,'window-state.json'),JSON.stringify({...reopenBounds,maximized:true}))
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const user = koffi.load('user32.dll'), dwm = koffi.load('dwmapi.dll')
 const send = user.func('intptr_t __stdcall SendMessageW(uintptr_t, uint32_t, uintptr_t, intptr_t)')
@@ -22,13 +24,15 @@ const report = {profile:root,checks:[],material:[]}, events=[]
 let started=false
 app.on('browser-window-created', (_event, win) => {
   if (win.getTitle() !== 'KAMUCL') return
+  win.setIgnoreMouseEvents(true)
   for(const name of ['maximize','unmaximize','minimize','restore'])win.on(name,()=>events.push(name))
   win.webContents.on('did-finish-load',async()=>{
     if(started)return;started=true
     try {
       for(let i=0;i<100&&!win.isVisible();i++)await wait(100)
       await wait(1000)
-      win.setAlwaysOnTop(true);win.setIgnoreMouseEvents(true)
+      if(process.env.KAMUCL_WINDOW_REOPEN){assert(win.isMaximized(),'reopen lost maximization');assert.deepEqual(win.getNormalBounds(),reopenBounds);win.unmaximize();await wait(300);assert.deepEqual(win.getBounds(),reopenBounds);report.reopen=true}
+      win.setAlwaysOnTop(true)
       const raw=win.getNativeWindowHandle(),hwnd=Number(raw.length===8?raw.readBigUInt64LE():raw.readUInt32LE())
       const button=()=>win.webContents.executeJavaScript(`document.querySelector('[data-ui="App:bd7bf1eb0182"]').click()`)
       for(const display of screen.getAllDisplays()) {
@@ -58,7 +62,7 @@ app.on('browser-window-created', (_event, win) => {
           report.checks.push({display:display.id,scale:display.scaleFactor,action:name,normal,visible})
         }
         await button();await wait(1000);assert(win.isMaximized())
-        const backdrop=new BrowserWindow({...area,title:"Backdrop fixture",alwaysOnTop:true,frame:false,focusable:false,skipTaskbar:true,show:false,backgroundColor:'#000000'})
+        const backdrop=new BrowserWindow({...area,title:"Backdrop fixture",alwaysOnTop:true,webPreferences:{backgroundThrottling:false},frame:false,focusable:false,skipTaskbar:true,show:false,backgroundColor:'#000000'})
         await backdrop.loadURL('data:text/html,<html><body style=\"margin:0;background:black\"></body></html>');backdrop.setIgnoreMouseEvents(true);backdrop.showInactive();const backRaw=backdrop.getNativeWindowHandle(),backHwnd=Number(backRaw.length===8?backRaw.readBigUInt64LE():backRaw.readUInt32LE());position(backHwnd,hwnd,0,0,0,0,0x413)
         const samples=[]
         for(const color of ['#000000','#ffffff']){
