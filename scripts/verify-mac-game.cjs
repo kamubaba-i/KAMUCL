@@ -11,7 +11,7 @@ const log = fs.openSync(path.join(proof, 'launcher.log'), 'w'), env = { ...proce
 delete env.ELECTRON_RUN_AS_NODE
 const child = spawn(path.join(app, 'Contents/MacOS/KAMUCL'), ['--remote-debugging-port=9230', '--inspect=9231'], { env, stdio: ['ignore', log, log] })
 const wait = ms => new Promise(r => setTimeout(r, ms))
-let ws, mainWs, evaluate, gamePid, events = []
+let ws, mainWs, evaluate, gamePid, gameFolder, events = []
 async function main() {
   let page
   for (let i = 0; i < 60; i++) {
@@ -37,6 +37,7 @@ async function main() {
     await window.kamucl.invoke('accounts:addOffline','NativeMacTest');
     return (await window.kamucl.invoke('folders:list')).active;
   })()`)
+  gameFolder = folder
   // Force the reported fresh-install scenario, even if the runner image has Java 25.
   console.log('Hidden runner runtimes', await evaluate(`(async()=>{const list=await window.kamucl.invoke('java:list');const hidden=list.filter(j=>j.major>=25).map(j=>j.path);await window.kamucl.invoke('settings:set',{javaHidden:hidden});return hidden;})()`))
   const version = process.env.MAC_GAME_VERSION || '26.2'
@@ -102,6 +103,22 @@ async function main() {
 main().catch(e => { console.error(e); process.exitCode = 1 }).finally(async () => {
   try { if (evaluate) events.push(...await evaluate('window.__gameTestEvents.splice(0)')) } catch {}
   fs.writeFileSync(path.join(proof, 'events.json'), JSON.stringify(events, null, 2))
+  // Preserve native crash evidence as well as Java stdout in the disposable runner.
+  for (const root of [gameFolder, path.join(process.env.HOME, 'Library/Logs/DiagnosticReports'), '/Library/Logs/DiagnosticReports']) {
+    if (!root || !fs.existsSync(root)) continue
+    const walk = (dir, depth) => {
+      if (depth > 4) return
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const file = path.join(dir, entry.name)
+        if (entry.isDirectory()) walk(file, depth + 1)
+        else if (entry.isFile() && /^(hs_err_pid.*\.log|java.*\.(ips|crash)|crash-.*\.txt)$/.test(entry.name)) {
+          fs.copyFileSync(file, path.join(proof, entry.name))
+          console.log('Native crash evidence', entry.name, fs.readFileSync(file, 'utf8').slice(0, 20000))
+        }
+      }
+    }
+    try { walk(root, 0) } catch (e) { console.log('Crash evidence read', e.message) }
+  }
   if (gamePid) try { process.kill(gamePid, 'SIGTERM') } catch {}
   mainWs?.close(); ws?.close(); child.kill('SIGTERM'); fs.closeSync(log)
 })
