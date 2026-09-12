@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [master]
-    paths: ['.github/workflows/mac-build.yml', 'scripts/verify-mac.cjs', 'package.json']
+    paths: ['.github/workflows/mac-build.yml', 'scripts/verify-mac.cjs', 'scripts/verify-mac-game.cjs', 'package.json']
 permissions:
   contents: read
 jobs:
@@ -46,6 +46,7 @@ jobs:
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict "$APP"
           node scripts/verify-mac.cjs "$APP" "$ARCH"
+          node scripts/verify-mac-game.cjs "$APP" "$ARCH"
           VERSION=$(node -p "require('./package.json').version")
           ditto -c -k --sequesterRsrc --keepParent "$APP" "release/KAMUCL-${VERSION}-mac-${ARCH}.zip"
           cd release
@@ -79,4 +80,5 @@ jobs:
             release/*-mac-*.dmg
             release/SHA256SUMS-mac-*.txt
             release/mac-proof-*
+            release/mac-game-proof-*
           if-no-files-found: error
