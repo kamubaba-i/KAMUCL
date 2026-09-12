@@ -38,7 +38,7 @@ async function main() {
     return (await window.kamucl.invoke('folders:list')).active;
   })()`)
   // Force the reported fresh-install scenario, even if the runner image has Java 25.
-  await evaluate(`(async()=>{const list=await window.kamucl.invoke('java:list');await window.kamucl.invoke('settings:set',{javaHidden:list.filter(j=>j.major>=25).map(j=>j.path)});})()`)
+  console.log('Hidden runner runtimes', await evaluate(`(async()=>{const list=await window.kamucl.invoke('java:list');const hidden=list.filter(j=>j.major>=25).map(j=>j.path);await window.kamucl.invoke('settings:set',{javaHidden:hidden});return hidden;})()`))
   const version = process.env.MAC_GAME_VERSION || '26.2'
   await evaluate(`window.kamucl.invoke('versions:install',${JSON.stringify(version)},{loader:'fabric',loaderVersion:'0.19.5'})`)
   let installed

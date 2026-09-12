@@ -41,6 +41,15 @@ complete license texts are retained in licenses/ and dependency packages.
 Electron/Chromium notices remain alongside the executable in LICENSE and
 LICENSES.chromium.html. Compile-only bridge dependencies are not embedded.
 
+## Optional Java runtimes
+
+Java is downloaded on demand from Eclipse Adoptium (Temurin) or Azul (Zulu),
+and is not embedded in the KAMUCL release. The complete vendor distribution,
+including its license and notice files, is retained unchanged during extraction.
+Metadata/API references: https://api.adoptium.net/ and
+https://api.azul.com/metadata/v1/docs/swagger . Runtime download, verification
+and fallback logic are independently implemented in KAMUCL.
+
 ## Referenced launcher projects
 
 PCL: https://github.com/Meloong-Git/PCL
