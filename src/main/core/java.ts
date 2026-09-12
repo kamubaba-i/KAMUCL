@@ -953,9 +953,13 @@ async function downloadAndExtractJava(need: number, emit: ProgressEmit, architec
       const target = path.join(root, `jre-${need}-${arch}-${path.basename(staging).slice(6)}`)
       const relativeExe = path.relative(source, exe)
       fs.renameSync(source, target)
-      scanCache = null
+      const installedPath = path.join(target, relativeExe)
+      const info = probeCache.put(installedPath, { ...verified, path: installedPath, source: 'auto', sourceDetail: `KAMUCL Runtime · ${pkg.provider}` })
+      const persisted = readPersistentCache()
+      scanCache = { time: Date.now(), list: sortJava([...(scanCache?.list ?? persisted?.list ?? []), info]), complete: scanCache?.complete ?? !!persisted }
+      if (persisted) writePersistentCache(sortJava([...persisted.list, info]))
       emit({ stage: 'java', progress: 1, text: `Java ${need} 就绪 · ${pkg.provider}（${arch}）` })
-      return path.join(target, relativeExe)
+      return installedPath
     } finally {
       // staging is a unique mkdtemp child of the managed runtime root.
       await fs.promises.rm(staging, { recursive: true, force: true })
