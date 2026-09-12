@@ -22,7 +22,8 @@ import AdmZip from 'adm-zip'
 import type { LaunchState, ProgressEvent } from '../../shared/types'
 import { getSettings } from './settings'
 import { getValidAccount, selectedAccount } from './accounts'
-import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable } from './java'
+import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable, selectJavaByMajor } from './java'
+import { macJavaArchitecture } from './javaArchitecture'
 import {
   assetsDir,
   allFolders,
@@ -534,7 +535,7 @@ async function launchOwned(
         emit({ stage: 'java', progress: 1, text: '使用手动指定的 Java' })
       } else {
         const need = requiredMajor(merged)
-        const found = (await scanJavaForLaunch()).find((j) => j.major === need && j.is64Bit)
+        const found = selectJavaByMajor(await scanJavaForLaunch(), need, macJavaArchitecture(merged))
         if (!found) {
           throw new Error(
             `该版本需要 Java ${need} (64位)，但未找到（Java 自动管理已关闭）。请在设置中选择 Java 或开启自动管理`
@@ -634,8 +635,9 @@ async function launchOwned(
     '-XX:+ParallelRefProcEnabled',
     '-XX:MaxGCPauseMillis=200',
     '-Dfile.encoding=UTF-8',
-    // macOS 上 LWJGL 必须在主线程启动 AWT
-    ...(process.platform === 'darwin' ? ['-XstartOnFirstThread'] : []),
+    // Modern LWJGL/GLFW must run on the Cocoa main thread; metadata normally
+    // already supplies this flag. LWJGL 2 uses AWT and must not receive it.
+    ...(process.platform === 'darwin' && !jsonJvmArgs.includes('-XstartOnFirstThread') && merged.libraries?.some(lib => /^org\.lwjgl:lwjgl:/.test(lib.name ?? '')) ? ['-XstartOnFirstThread'] : []),
     ...(jsonHas('-Djava.library.path=') ? [] : [`-Djava.library.path=${nativesPath}`]),
     ...(jsonHas('-Djna.tmpdir=') ? [] : [`-Djna.tmpdir=${nativesPath}`]),
     // 外置登录 javaagent 与预取元数据必须位于主类之前。

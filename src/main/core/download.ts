@@ -17,7 +17,7 @@ export type ProgressFn = (done: number, total: number, networkBytes?: number) =>
 export interface DownloadBatchProgress extends DownloadProgressSnapshot { activeFiles?: string[]; speedBps: number; etaSeconds: number | null; paused: boolean }
 export type AllProgressFn = (done: number, total: number, speedBps: number, detail: DownloadBatchProgress) => void
 export interface DownloadTask { label?: string; url: string; urls?: string[]; dest: string; sha1?: string; sha512?: string; sha256?: string; size?: number; reuseDirs?: string[] }
-interface Integrity { sha1?: string; sha512?: string; sha256?: string; size?: number }
+interface Integrity { sha1?: string; sha512?: string; sha256?: string; size?: number; systemProxy?: boolean }
 export const BMCL_MAVEN_ROOT = 'https://bmclapi2.bangbang93.com/maven/'
 export function mirrorUrl(input: string, mirror: MirrorPref): string {
   if (mirror === 'official') return input
@@ -140,7 +140,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
       }
     }, Math.max(10, Math.min(100, transferTimeouts.inactivityMs / 4)))
     waiting = true
-    response = await httpFetch(url, { signal: controller.signal, headers, bodyTimeoutMs: 120_000 })
+    response = await httpFetch(url, { signal: controller.signal, headers, bodyTimeoutMs: 120_000, systemProxy: expected.systemProxy })
     waiting = false; sinceData = 0
     if (!response.ok) throw new DownloadHttpError(response.status, url)
     if (!response.body) throw new InvalidContent('下载响应没有内容')
@@ -233,9 +233,10 @@ async function segmented(url: string, dest: string, expected: Integrity, signal:
   } finally { signal?.removeEventListener('abort',cancel);controller.abort() }
 }
 
-export async function downloadFile(url: string, dest: string, progress?: ProgressFn, sha1?: string, mirror: MirrorPref = 'official', signal?: AbortSignal, alternatives: string[] = [], integrity: { sha512?: string; sha256?: string; size?: number; reuseDirs?: string[] } = {}): Promise<void> {
+export async function downloadFile(url: string, dest: string, progress?: ProgressFn, sha1?: string, mirror: MirrorPref = 'official', signal?: AbortSignal, alternatives: string[] = [], integrity: { sha512?: string; sha256?: string; size?: number; reuseDirs?: string[]; systemProxy?: boolean; maxAttempts?: number } = {}): Promise<void> {
   return withFileJob(dest, signal, async () => {
-    const expected = { sha1, sha512: integrity.sha512, sha256: integrity.sha256, size: integrity.size }, temporary = dest + '.part'
+    const expected = { sha1, sha512: integrity.sha512, sha256: integrity.sha256, size: integrity.size, systemProxy: integrity.systemProxy }, temporary = dest + '.part'
+    const attempts = Math.max(1, Math.min(4, integrity.maxAttempts ?? 4))
     await fs.promises.mkdir(path.dirname(dest), { recursive: true })
     try {
       if (!await verifyFile(dest, expected, signal)) { const size = (await fs.promises.stat(dest)).size; progress?.(size, size); return }
@@ -249,7 +250,7 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
       let lastError: unknown = new Error('没有下载地址')
       for (let index = 0; index < candidates.length; index++) {
         const source = candidates[index], fallback = index + 1 < candidates.length
-        for (let attempt = 0; attempt < 4; attempt++) {
+        for (let attempt = 0; attempt < attempts; attempt++) {
           try {
             const bytes = (expected.size ?? 0) >= 1024 * 1024 && downloadLimiter.maxConcurrent >= 2 && (sha1 || integrity.sha512 || integrity.sha256)
               ? await segmented(source, dest, expected, signal, progress, fallback)
@@ -266,7 +267,7 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
             if (error instanceof DownloadHttpError && classifyHttpStatus(error.status) !== 'transient') break
             noteHostFailure(source)
             if (error instanceof NetworkIdle && fallback) break
-            if (attempt < 3) await abortableDelay(100 * 2 ** attempt, signal)
+            if (attempt + 1 < attempts) await abortableDelay(100 * 2 ** attempt, signal)
           }
         }
       }

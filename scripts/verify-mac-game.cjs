@@ -9,9 +9,9 @@ const proof = path.resolve(`release/mac-game-proof-${arch}`)
 fs.mkdirSync(proof, { recursive: true })
 const log = fs.openSync(path.join(proof, 'launcher.log'), 'w'), env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
-const child = spawn(path.join(app, 'Contents/MacOS/KAMUCL'), ['--remote-debugging-port=9230'], { env, stdio: ['ignore', log, log] })
+const child = spawn(path.join(app, 'Contents/MacOS/KAMUCL'), ['--remote-debugging-port=9230', '--inspect=9231'], { env, stdio: ['ignore', log, log] })
 const wait = ms => new Promise(r => setTimeout(r, ms))
-let ws, evaluate, gamePid, events = []
+let ws, mainWs, evaluate, gamePid, events = []
 async function main() {
   let page
   for (let i = 0; i < 60; i++) {
@@ -37,8 +37,10 @@ async function main() {
     await window.kamucl.invoke('accounts:addOffline','NativeMacTest');
     return (await window.kamucl.invoke('folders:list')).active;
   })()`)
-  const version = process.env.MAC_GAME_VERSION || '1.21.11'
-  await evaluate(`window.kamucl.invoke('versions:install',${JSON.stringify(version)})`)
+  // Force the reported fresh-install scenario, even if the runner image has Java 25.
+  await evaluate(`(async()=>{const list=await window.kamucl.invoke('java:list');await window.kamucl.invoke('settings:set',{javaHidden:list.filter(j=>j.major>=25).map(j=>j.path)});})()`)
+  const version = process.env.MAC_GAME_VERSION || '26.2'
+  await evaluate(`window.kamucl.invoke('versions:install',${JSON.stringify(version)},{loader:'fabric',loaderVersion:'0.19.5'})`)
   let installed
   for (let i = 0; i < 600; i++) {
     const batch = await evaluate('window.__gameTestEvents.splice(0)'); events.push(...batch)
@@ -48,9 +50,20 @@ async function main() {
     await wait(1000)
   }
   assert(installed?.ok, 'installation failed: ' + JSON.stringify(installed))
+  // Block only Temurin's binary host, reproducing a working metadata lookup but
+  // failed GitHub download. Instrument the disposable app via Node's inspector;
+  // no production test switches or network-validation bypass are introduced.
+  const mainTarget = (await (await fetch('http://127.0.0.1:9231/json')).json())[0]
+  mainWs = new WebSocket(mainTarget.webSocketDebuggerUrl)
+  await new Promise((r,j)=>{mainWs.addEventListener('open',r,{once:true});mainWs.addEventListener('error',j,{once:true})})
+  await new Promise((resolve,reject)=>{
+    mainWs.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.id===1)m.result?.exceptionDetails?reject(Error(JSON.stringify(m.result.exceptionDetails))):resolve()})
+    mainWs.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression:`require('electron').session.defaultSession.webRequest.onBeforeRequest({urls:['https://github.com/adoptium/*']},(details,callback)=>callback({cancel:true}))`}}))
+  })
   // Run the official demo, without requiring or exporting player credentials.
   const idPath = path.join(folder, 'versions', installed.installedId, `${installed.installedId}.json`)
   const metadata = JSON.parse(fs.readFileSync(idPath, 'utf8'))
+  metadata.arguments ??= {}; metadata.arguments.game ??= []
   metadata.arguments.game.push('--demo'); fs.writeFileSync(idPath, JSON.stringify(metadata))
   await evaluate(`window.kamucl.invoke('game:launch',${JSON.stringify(installed.installedId)},null,${JSON.stringify(folder)})`)
   let nativeWindow, lastState
@@ -70,10 +83,15 @@ async function main() {
     }
     assert(!['error', 'exited'].includes(lastState?.status), 'game failed: ' + JSON.stringify(lastState))
     if (gamePid) try { nativeWindow = JSON.parse(execFileSync(fixture, ['--window-id', String(gamePid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })) } catch {}
+    if (gamePid && i === 90) {
+      try { execFileSync('/usr/bin/sample', [String(gamePid), '3', '-file', path.join(proof, 'game-sample.txt')], { timeout: 15000, stdio: 'ignore' }) } catch {}
+      try { execFileSync(path.join(process.env.JAVA_HOME,'bin/jcmd'), [String(gamePid),'Thread.print'], { timeout: 15000, stdio: ['ignore', fs.openSync(path.join(proof,'game-threads.txt'),'w'), 'ignore'] }) } catch {}
+    }
     if (nativeWindow && events.some(e => e.name === 'launchLog' && /OpenAL initialized|Created: .*textures|Reloading ResourceManager/.test(e.value))) break
     await wait(1000)
   }
   assert(nativeWindow, 'Minecraft did not create a native window')
+  assert(events.some(e => e.name === 'progress' && /Java 25 就绪 · Azul Zulu/.test(e.value.text)), 'Java fallback was not exercised')
   await wait(10000)
   events.push(...await evaluate('window.__gameTestEvents.splice(0)'))
   assert(!events.some(e => e.name === 'launchState' && ['error', 'exited'].includes(e.value.status)), 'game exited during initialization')
@@ -85,5 +103,5 @@ main().catch(e => { console.error(e); process.exitCode = 1 }).finally(async () =
   try { if (evaluate) events.push(...await evaluate('window.__gameTestEvents.splice(0)')) } catch {}
   fs.writeFileSync(path.join(proof, 'events.json'), JSON.stringify(events, null, 2))
   if (gamePid) try { process.kill(gamePid, 'SIGTERM') } catch {}
-  ws?.close(); child.kill('SIGTERM'); fs.closeSync(log)
+  mainWs?.close(); ws?.close(); child.kill('SIGTERM'); fs.closeSync(log)
 })
