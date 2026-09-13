@@ -133,12 +133,23 @@ export function resolveContainedPath(base: string, relative: string): string {
 }
 
 type SafeDirPathResolver = (base: string, parts: string[], isVersionPath: boolean) => string
+type AsyncSafeDirPathResolver = (base: string, parts: string[], isVersionPath: boolean) => string | Promise<string>
 
 export function resolveSafeDirPath(
   relative: string,
   resolveBase: (parts: string[], isVersionPath: boolean) => string,
-  resolvePath: SafeDirPathResolver = (base, parts) => resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
-): string {
+  resolvePath?: SafeDirPathResolver
+): string
+export function resolveSafeDirPath(
+  relative: string,
+  resolveBase: (parts: string[], isVersionPath: boolean) => string,
+  resolvePath: AsyncSafeDirPathResolver
+): Promise<string>
+export function resolveSafeDirPath(
+  relative: string,
+  resolveBase: (parts: string[], isVersionPath: boolean) => string,
+  resolvePath: AsyncSafeDirPathResolver = (base, parts) => resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
+): string | Promise<string> {
   const parts = String(relative ?? '')
     .split(/[\\/]+/)
     .filter((s) => s && s !== '.')
