@@ -30,9 +30,50 @@ function redactCookieHeaderValue(value: string, setCookie: boolean): string {
   )
 }
 
+function findStructuredValueEnd(input: string, start: number): number {
+  const open = input[start]
+  const close = open === '{' ? '}' : open === '[' ? ']' : ''
+  if (!close) return -1
+  let depth = 0
+  let quote = ''
+  let escaped = false
+  for (let index = start; index < input.length; index++) {
+    const character = input[index]
+    if (quote) {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === quote) quote = ''
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === open) depth++
+    else if (character === close && --depth === 0) return index + 1
+  }
+  return -1
+}
+
+function redactStructuredJsonValues(input: string): string {
+  const keyPattern = /(["'](?:cookies?|session(?:[_-]?(?:id|token|key))?)["']\s*:\s*)([\[{])/gi
+  let cursor = 0
+  let result = ''
+  let match: RegExpExecArray | null
+  while ((match = keyPattern.exec(input))) {
+    const valueStart = match.index + match[0].length - 1
+    const valueEnd = findStructuredValueEnd(input, valueStart)
+    if (valueEnd < 0) continue
+    result += input.slice(cursor, match.index) + match[1] + JSON.stringify('<redacted>')
+    cursor = valueEnd
+    keyPattern.lastIndex = valueEnd
+  }
+  return result + input.slice(cursor)
+}
+
 /** 仅脱敏日志中明确可识别的凭据值，保留其他诊断上下文。 */
 export function redactSensitiveText(input: string): string {
-  let out = String(input ?? '')
+  let out = redactStructuredJsonValues(String(input ?? ''))
   out = out.replace(/(^|[^\w-])((?:Set-)?Cookie\s*:\s*)([^\r\n]*)/gim, (_match: string, boundary: string, header: string, value: string) =>
     `${boundary}${header}${redactCookieHeaderValue(value, /^Set-Cookie\s*:/i.test(header))}`
   )

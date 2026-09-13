@@ -80,6 +80,40 @@ test('JSON Cookie、Set-Cookie 和同类 token 字段只脱敏值', () => {
   assert.match(output, /Cookie: user=<redacted>; theme=<redacted>/)
 })
 
+test('结构化 JSON Cookie 对象和数组整体替换且输出仍可解析', () => {
+  const input = JSON.stringify({
+    cookie: {
+      value: 'object-cookie-secret',
+      path: '/',
+      metadata: { value: 'nested-cookie-secret' }
+    },
+    cookies: [
+      { value: 'array-cookie-secret', path: '/' },
+      { nested: { value: 'second-nested-cookie-secret' } }
+    ],
+    keep: { value: 'ordinary-context' }
+  })
+
+  const output = redactSensitiveText(input)
+  const parsed = JSON.parse(output) as {
+    cookie: unknown
+    cookies: unknown
+    keep: { value: string }
+  }
+
+  for (const secret of [
+    'object-cookie-secret',
+    'nested-cookie-secret',
+    'array-cookie-secret',
+    'second-nested-cookie-secret'
+  ]) {
+    assert.equal(output.includes(secret), false, `仍包含敏感信息：${secret}`)
+  }
+  assert.equal(parsed.cookie, '<redacted>')
+  assert.equal(parsed.cookies, '<redacted>')
+  assert.deepEqual(parsed.keep, { value: 'ordinary-context' })
+})
+
 test('IPC 日志包装器先于所有 handler 注册且使用 rawHandle', () => {
   const source = fs.readFileSync(new URL('../src/main/ipc.ts', import.meta.url), 'utf8')
   const wrapperIndex = source.indexOf('const rawHandle = ipcMain.handle.bind(ipcMain)')
