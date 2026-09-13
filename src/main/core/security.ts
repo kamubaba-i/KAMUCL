@@ -77,3 +77,11 @@ export function safeArchivePath(entryName: string): string {
   if (!normalized) throw new Error('非法归档路径')
   return normalized
 }
+
+export function resolveArchiveEntryPath(base: string, entryName: string): string {
+  return resolveContainedPath(base, safeArchivePath(entryName))
+}
+
+export function isArchiveSymlink(externalFileAttributes: number): boolean {
+  return ((externalFileAttributes >>> 16) & 0o170000) === 0o120000
+}

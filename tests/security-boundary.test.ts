@@ -2,10 +2,66 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import zlib from 'node:zlib'
 import test from 'node:test'
 import * as security from '../src/main/core/security'
 
-const { isPathContained, resolveContainedPath, safeArchivePath } = security
+const {
+  isArchiveSymlink,
+  isPathContained,
+  resolveArchiveEntryPath,
+  resolveContainedPath,
+  safeArchivePath
+} = security
+
+interface RawZipEntry {
+  name: string
+  data: Buffer
+  mode?: number
+}
+
+function rawZip(entries: RawZipEntry[]): Buffer {
+  const localParts: Buffer[] = []
+  const centralParts: Buffer[] = []
+  let offset = 0
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name)
+    const data = entry.data
+    const crc = zlib.crc32(data) >>> 0
+    const localHeader = Buffer.alloc(30)
+    localHeader.writeUInt32LE(0x04034b50, 0)
+    localHeader.writeUInt16LE(20, 4)
+    localHeader.writeUInt32LE(crc, 14)
+    localHeader.writeUInt32LE(data.length, 18)
+    localHeader.writeUInt32LE(data.length, 22)
+    localHeader.writeUInt16LE(name.length, 26)
+    const local = Buffer.concat([localHeader, name, data])
+    localParts.push(local)
+
+    const centralHeader = Buffer.alloc(46)
+    centralHeader.writeUInt32LE(0x02014b50, 0)
+    centralHeader.writeUInt16LE(0x0314, 4)
+    centralHeader.writeUInt16LE(20, 6)
+    centralHeader.writeUInt32LE(crc, 16)
+    centralHeader.writeUInt32LE(data.length, 20)
+    centralHeader.writeUInt32LE(data.length, 24)
+    centralHeader.writeUInt16LE(name.length, 28)
+    centralHeader.writeUInt32LE(((entry.mode ?? 0o100644) << 16) >>> 0, 38)
+    centralHeader.writeUInt32LE(offset, 42)
+    centralParts.push(Buffer.concat([centralHeader, name]))
+    offset += local.length
+  }
+
+  const centralOffset = localParts.reduce((sum, part) => sum + part.length, 0)
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(entries.length, 8)
+  end.writeUInt16LE(entries.length, 10)
+  end.writeUInt32LE(centralSize, 12)
+  end.writeUInt32LE(centralOffset, 16)
+  return Buffer.concat([...localParts, ...centralParts, end])
+}
 
 test('isPathContained rejects sibling prefixes and parent traversal', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-base-'))
@@ -110,5 +166,49 @@ test('safeArchivePath normalizes legal nested entries', () => {
 test('safeArchivePath rejects absolute, drive-qualified, traversal, and NUL entries', () => {
   for (const entry of ['/absolute/file.txt', '\\\\server\\share\\file.txt', 'C:\\file.txt', '../outside.txt', 'nested/../../outside.txt', 'bad\0name']) {
     assert.throws(() => safeArchivePath(entry), /非法|archive|path|NUL/i, entry)
+  }
+})
+
+test('real ZIP entries stay inside the extraction root', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-zip-'))
+  const archive = path.join(root, 'fixture.zip')
+  const destination = path.join(root, 'target')
+  const outside = path.join(root, 'outside')
+  try {
+    fs.mkdirSync(destination)
+    fs.mkdirSync(outside)
+    fs.writeFileSync(archive, rawZip([
+      { name: '../escape.txt', data: Buffer.from('escape') },
+      { name: 'C:/drive.txt', data: Buffer.from('drive') },
+      { name: '/absolute.txt', data: Buffer.from('absolute') },
+      { name: 'nested/ok.txt', data: Buffer.from('ok') },
+      { name: 'link.txt', data: Buffer.from('../outside/escape.txt'), mode: 0o120777 }
+    ]))
+
+    const rejected: string[] = []
+    const zip = new (require('adm-zip'))(archive) as {
+      getEntries: () => Array<{ entryName: string; attr: number; isDirectory: boolean; getData: () => Buffer }>
+    }
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue
+      if (isArchiveSymlink(entry.attr)) {
+        rejected.push(entry.entryName)
+        continue
+      }
+      try {
+        const output = resolveArchiveEntryPath(destination, entry.entryName)
+        fs.mkdirSync(path.dirname(output), { recursive: true })
+        fs.writeFileSync(output, entry.getData())
+      } catch {
+        rejected.push(entry.entryName)
+      }
+    }
+
+    assert.deepEqual(rejected.sort(), ['../escape.txt', 'C:/drive.txt', '/absolute.txt', 'link.txt'].sort())
+    assert.equal(fs.readFileSync(path.join(destination, 'nested', 'ok.txt'), 'utf-8'), 'ok')
+    assert.deepEqual(fs.readdirSync(outside), [])
+    assert.equal(fs.existsSync(path.join(root, 'escape.txt')), false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
   }
 })

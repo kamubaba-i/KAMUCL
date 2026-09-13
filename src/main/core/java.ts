@@ -19,6 +19,7 @@ import { mapLaunchFiles, SharedPreparation } from './launchPreparation'
 import { macJavaArchitecture } from './javaArchitecture'
 import { provisionJava, javaPackageSize } from './javaSources'
 import { httpFetch } from './httpClient'
+import { isArchiveSymlink, resolveArchiveEntryPath } from './security'
 const probeCache = new JavaProbeCache(() => path.join(app.getPath('userData'), 'java-probe-cache.json'))
 
 const javaLog = logScope('java')
@@ -938,8 +939,19 @@ async function downloadAndExtractJava(need: number, emit: ProgressEmit, architec
       await downloadFile(pkg.url, archive, (done, total) => emit({ stage: 'java', progress: total ? done / total * .85 : 0, bytesDone: done, text: `下载 Java ${need} · ${pkg.provider} ${(done / 1048576).toFixed(1)}${total ? '/' + (total / 1048576).toFixed(1) : ''} MB` }), undefined, 'official', undefined, [], { sha256: pkg.sha256, size, systemProxy: true, maxAttempts: 2 })
       emit({ stage: 'java', progress: .9, text: `校验通过，正在解压 Java ${need} · ${pkg.provider}` })
       fs.mkdirSync(extracted)
-      if (IS_WIN) new AdmZip(archive).extractAllTo(extracted, true)
-      else await new Promise<void>((resolve, reject) => execFile('/usr/bin/tar', ['-xzf', archive, '-C', extracted], { timeout: 120000 }, error => error ? reject(error) : resolve()))
+      if (IS_WIN) {
+        const zip = new AdmZip(archive)
+        for (const entry of zip.getEntries()) {
+          if (isArchiveSymlink(entry.attr)) throw new Error('Java 解压失败：不允许符号链接')
+          if (entry.isDirectory) {
+            fs.mkdirSync(resolveArchiveEntryPath(extracted, entry.entryName), { recursive: true })
+            continue
+          }
+          const output = resolveArchiveEntryPath(extracted, entry.entryName)
+          fs.mkdirSync(path.dirname(output), { recursive: true })
+          fs.writeFileSync(output, entry.getData())
+        }
+      } else await new Promise<void>((resolve, reject) => execFile('/usr/bin/tar', ['-xzf', archive, '-C', extracted], { timeout: 120000 }, error => error ? reject(error) : resolve()))
       const entries = fs.readdirSync(extracted)
       const source = entries.length === 1 && fs.statSync(path.join(extracted, entries[0])).isDirectory() ? path.join(extracted, entries[0]) : extracted
       const candidates = IS_MAC ? [path.join(source, 'Contents/Home/bin/java'), path.join(source, 'bin/java')] : [path.join(source, 'bin', JAVA_EXE)]
