@@ -70,8 +70,7 @@ git commit -m "fix(ipc): 加固文件目录边界校验"
 
 **Files:**
 - Modify: `src/main/core/worlds.ts`
-- Modify: `src/main/core/commandWorld.ts`
-- Modify: `src/main/core/defaultResourcePacks.ts`
+- Modify: `src/main/core/modpacks.ts`
 - Modify: `src/main/core/java.ts`
 - Modify: `src/main/core/launch.ts`
 - Modify: `src/main/core/security.ts`
@@ -89,7 +88,7 @@ Expected: FAIL，至少一个现有解压路径接受不安全条目。
 
 - [ ] **Step 3: 实现统一条目目标解析**
 
-所有实际写文件的 `extractEntryTo`/`extractAllTo` 调用先通过 `safeArchivePath` 和 `resolveContainedPath`；拒绝目录项之外的符号链接条目；保留现有大小和压缩比限制。
+所有实际写文件的归档路径先通过 `safeArchivePath` 和 `resolveContainedPath`；`modpacks.ts` 的手写 `safeJoin` 与 `worlds.ts` 的重复规范化统一复用共享函数；拒绝目录项之外的符号链接条目；保留现有大小和压缩比限制。只读归档元数据的 `commandWorld.ts` 和 `defaultResourcePacks.ts` 不做无关改动。
 
 - [ ] **Step 4: 运行相关测试**
 
