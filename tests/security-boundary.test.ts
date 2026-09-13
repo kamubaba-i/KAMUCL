@@ -159,6 +159,30 @@ test('safeDir boundary rejects drive-relative, sibling-prefix, and parent paths'
   }
 })
 
+test('resolveSafeDirPath awaits async resolver and enforces its Promise contract', async () => {
+  const base = path.join(os.tmpdir(), `kamucl-security-async-${process.pid}-${Date.now()}`)
+  const target = path.join(base, 'versions', 'demo', 'mods')
+  const resolved = security.resolveSafeDirPath(
+    'versions/demo/mods',
+    () => base,
+    async (resolvedBase, parts, isVersionPath) => {
+      assert.equal(resolvedBase, base)
+      assert.deepEqual(parts, ['versions', 'demo', 'mods'])
+      assert.equal(isVersionPath, true)
+      return target
+    }
+  )
+
+  assert.equal(resolved instanceof Promise, true)
+  assert.equal(await resolved, target)
+
+  if (false) {
+    const maybeSyncResolver: (base: string, parts: string[], isVersionPath: boolean) => string | Promise<string> = base => base
+    // @ts-expect-error The async resolver overload must reject a resolver that may return a synchronous string.
+    security.resolveSafeDirPath('versions/demo/mods', () => base, maybeSyncResolver)
+  }
+})
+
 test('safeArchivePath normalizes legal nested entries', () => {
   assert.equal(safeArchivePath('nested\\file.txt'), 'nested/file.txt')
   assert.equal(safeArchivePath('./nested/file.txt'), 'nested/file.txt')

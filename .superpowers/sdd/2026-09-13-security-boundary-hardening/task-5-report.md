@@ -80,3 +80,38 @@ run node scripts/build-bridge.cjs
 - 因缺失 `bridge/dist/kamucl-bridge-1.0.1.jar`，无法完成 Windows 便携 EXE、ZIP 和 SHA256 校验；应先按项目要求生成该 bridge artifact 后重新执行构建与打包验证。
 
 报告记录时间：本机本地时间 `2026-09-14 01:06`。
+
+## Fix Round 1
+
+### 评审 finding
+
+上一轮的 `AsyncSafeDirPathResolver` 参数允许 `string | Promise<string>`，但异步 overload 对外承诺 `Promise<string>`，普通目录分支因此存在类型契约与运行时返回值不一致的可能。
+
+### TDD RED
+
+先在 `tests/security-boundary.test.ts` 增加回归测试：异步 resolver 必须使 `resolveSafeDirPath` 返回 Promise，且 `await` 后得到目标路径；保留原有同步边界测试。同时加入编译期守卫，拒绝可能同步返回字符串的 resolver。
+
+- `npx tsc --noEmit`：退出码 `0`，原因是项目 `tsconfig.json` 的 `include` 只包含 `src` 和 `electron.vite.config.ts`，不包含 `tests`。
+- 为验证测试契约而执行的显式测试文件类型检查：
+  `npx tsc --noEmit --target ES2022 --module ESNext --moduleResolution bundler --strict --esModuleInterop --skipLibCheck --isolatedModules tests/security-boundary.test.ts`
+  退出码 `1`，命中新增守卫的 `TS2578: Unused '@ts-expect-error' directive`；同次检查还暴露了既有环境问题 `src/main/core/backupStore.ts(7,18): TS7016`（缺少 `yazl` 类型声明）。
+- `npx tsx --test tests/security-boundary.test.ts`：退出码 `0`，`13/13` 通过。旧实现运行时本来就会透传 async callback 的 Promise，因此该静态契约 finding 不能仅靠运行时失败捕获，编译期守卫负责 RED。
+
+### GREEN
+
+- `AsyncSafeDirPathResolver` 收紧为始终返回 `Promise<string>`。
+- `resolveSafeDirPath` 实现签名改为同步/异步 resolver 联合，默认同步路径仍保持 `string` 返回；同步 overload 未改变。
+- `ipc.ts` 的 `safeDir` resolver 改为 `async`，资源目录和普通 contained path 分支都通过 async callback 返回 Promise。
+
+验证结果：
+
+- `npx tsc --noEmit`：退出码 `0`。
+- `npx tsx --test tests/security-boundary.test.ts`：退出码 `0`，`13/13` 通过。
+- `npm test`：退出码 `0`，`436/436` 通过，`0` 失败，耗时约 `47724 ms`。
+- 构建未重复执行；上一轮已确认仍被缺失的 `bridge/dist/kamucl-bridge-1.0.1.jar` 阻断，不能伪造通过。
+
+### Round 1 范围与限制
+
+- 未修改版本、依赖、发布配置或其它 Task 的行为。
+- 保留已有计划文件改动，不纳入本轮提交。
+- Round 1 代码和本报告将作为独立 fix commit 提交；报告时间：本机本地时间 `2026-09-14 01:23`。

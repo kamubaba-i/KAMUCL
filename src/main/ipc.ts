@@ -1010,7 +1010,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     return resolveSafeDirPath(
       rel,
       (parts, isVersionPath) => folder || (isVersionPath && parts.length >= 2 ? folderOfVersion(parts[1]) : settings.getSettings().activeFolder || settings.getSettings().gameDir),
-      (base, parts, isVersionPath) => {
+      async (base, parts, isVersionPath) => {
         if (isVersionPath && parts.length === 3 && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[2])) {
           return resolveResourceDirectory(base, parts[1], parts[2])
         }
