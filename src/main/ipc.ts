@@ -77,7 +77,7 @@ import * as appearance from './core/appearanceAssets'
 import { applyNativeAppearance } from './nativeAppearance'
 import { carouselImages, MAX_CAROUSEL_IMAGES } from '../shared/appearancePolicy'
 import { pathIdentity } from './core/folderPaths'
-import { resolveSafeDirPath } from './core/security'
+import { resolveContainedPath, resolveSafeDirPath } from './core/security'
 import * as direct from './core/directConnect'
 import type { DirectHostRequest } from '../shared/directConnect'
 import { registerVoxlinkIpc } from './core/voxlink'
@@ -995,20 +995,17 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     return importResourceFiles(files, target, kind)
   })
   const safeDir = async (rel: string, folder?: string): Promise<string> => {
-    // 允许 gameDir 下单级子目录（mods 等）或 versions/<id>/<sub> 三级（版本实例目录），防目录穿越
-    const parts = String(rel ?? '')
-      .split(/[\\/]+/)
-      .filter((s) => s && s !== '.')
-    if (parts.some((s) => s === '..')) throw new Error('非法目录')
-    const isVersionPath = parts[0] === 'versions'
-    if (parts.length > (isVersionPath ? 3 : 2)) throw new Error('非法目录')
-    // versions/<id> 前缀按版本所属文件夹寻址（多文件夹体系）；其余按当前活动文件夹
     if (folder && !settings.getSettings().folders.some(f => pathIdentity(f.path) === pathIdentity(folder))) throw new Error('游戏文件夹未登记')
-    const base = folder || (isVersionPath && parts.length >= 2 ? folderOfVersion(parts[1]) : settings.getSettings().activeFolder || settings.getSettings().gameDir)
-    if (isVersionPath && parts.length === 3 && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[2])) {
-      return resolveResourceDirectory(base, parts[1], parts[2])
-    }
-    return resolveSafeDirPath(base, rel, isVersionPath ? 3 : 2)
+    return resolveSafeDirPath(
+      rel,
+      (parts, isVersionPath) => folder || (isVersionPath && parts.length >= 2 ? folderOfVersion(parts[1]) : settings.getSettings().activeFolder || settings.getSettings().gameDir),
+      (base, parts, isVersionPath) => {
+        if (isVersionPath && parts.length === 3 && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[2])) {
+          return resolveResourceDirectory(base, parts[1], parts[2])
+        }
+        return resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
+      }
+    )
   }
   const listDir = async (rel: string, folder?: string): Promise<FsEntry[]> => listResourceEntries(await safeDir(rel, folder))
   ipcMain.handle(IPC.appOpenDir, async (_e, rel?: string, folder?: string) => {

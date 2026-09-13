@@ -50,13 +50,20 @@ export function resolveContainedPath(base: string, relative: string): string {
   return resolved
 }
 
-export function resolveSafeDirPath(base: string, relative: string, maxParts = Number.MAX_SAFE_INTEGER): string {
+type SafeDirPathResolver = (base: string, parts: string[], isVersionPath: boolean) => string
+
+export function resolveSafeDirPath(
+  relative: string,
+  resolveBase: (parts: string[], isVersionPath: boolean) => string,
+  resolvePath: SafeDirPathResolver = (base, parts) => resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
+): string {
   const parts = String(relative ?? '')
     .split(/[\\/]+/)
     .filter((s) => s && s !== '.')
+  const isVersionPath = parts[0] === 'versions'
   if (parts.some((s) => s === '..')) throw new Error('非法目录')
-  if (parts.length > maxParts) throw new Error('非法目录')
-  return resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
+  if (parts.length > (isVersionPath ? 3 : 2)) throw new Error('非法目录')
+  return resolvePath(resolveBase(parts, isVersionPath), parts, isVersionPath)
 }
 
 export function safeArchivePath(entryName: string): string {

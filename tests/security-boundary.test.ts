@@ -93,15 +93,12 @@ test('resolveContainedPath rejects Windows drive-relative paths', () => {
 })
 
 test('safeDir boundary rejects drive-relative, sibling-prefix, and parent paths', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-safe-dir-'))
-  const base = path.join(root, 'base')
-  const sibling = path.join(root, 'base-other')
-  try {
-    for (const relative of ['C:foo', 'E:foo', sibling, path.join('..', 'outside')]) {
-      assert.throws(() => security.resolveSafeDirPath(base, relative, 2), /非法目录|outside|contained/i, relative)
-    }
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true })
+  const root = path.parse(os.tmpdir()).root
+  const base = path.join(root, `kamucl-security-base-${process.pid}-${Date.now()}`)
+  const sibling = path.join(root, `${path.basename(base)}-other`)
+
+  for (const relative of ['C:foo', 'E:foo', sibling, path.join('..', 'outside')]) {
+    assert.throws(() => security.resolveSafeDirPath(relative, () => base), /非法目录|outside|contained/i, relative)
   }
 })
 
