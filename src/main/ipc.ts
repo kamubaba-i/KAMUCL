@@ -77,7 +77,7 @@ import * as appearance from './core/appearanceAssets'
 import { applyNativeAppearance } from './nativeAppearance'
 import { carouselImages, MAX_CAROUSEL_IMAGES } from '../shared/appearancePolicy'
 import { pathIdentity } from './core/folderPaths'
-import { resolveContainedPath } from './core/security'
+import { resolveSafeDirPath } from './core/security'
 import * as direct from './core/directConnect'
 import type { DirectHostRequest } from '../shared/directConnect'
 import { registerVoxlinkIpc } from './core/voxlink'
@@ -1008,7 +1008,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     if (isVersionPath && parts.length === 3 && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[2])) {
       return resolveResourceDirectory(base, parts[1], parts[2])
     }
-    return resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
+    return resolveSafeDirPath(base, rel, isVersionPath ? 3 : 2)
   }
   const listDir = async (rel: string, folder?: string): Promise<FsEntry[]> => listResourceEntries(await safeDir(rel, folder))
   ipcMain.handle(IPC.appOpenDir, async (_e, rel?: string, folder?: string) => {

@@ -3,16 +3,22 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { isPathContained, resolveContainedPath, safeArchivePath } from '../src/main/core/security'
+import * as security from '../src/main/core/security'
+
+const { isPathContained, resolveContainedPath, safeArchivePath } = security
 
 test('isPathContained rejects sibling prefixes and parent traversal', () => {
-  const base = path.join(os.tmpdir(), 'kamucl-security-base')
-
-  assert.equal(isPathContained(base, path.join(os.tmpdir(), 'kamucl-security-base-other')), false)
-  assert.equal(isPathContained(base, path.join(base, '..', 'outside')), false)
-  assert.equal(isPathContained(base, path.join(base, 'nested', 'file')), true)
-  assert.equal(isPathContained(base, base), false)
-  assert.equal(isPathContained(base, base, true), true)
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-base-'))
+  const base = path.join(root, 'base')
+  try {
+    assert.equal(isPathContained(base, path.join(root, 'base-other')), false)
+    assert.equal(isPathContained(base, path.join(base, '..', 'outside')), false)
+    assert.equal(isPathContained(base, path.join(base, 'nested', 'file')), true)
+    assert.equal(isPathContained(base, base), false)
+    assert.equal(isPathContained(base, base, true), true)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('isPathContained rejects a symlink ancestor escaping the base', () => {
@@ -64,10 +70,39 @@ test('isPathContained rejects a broken symlink ancestor', () => {
 })
 
 test('resolveContainedPath returns a contained path and rejects escapes', () => {
-  const base = path.join(os.tmpdir(), 'kamucl-security-resolve')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-resolve-'))
+  const base = path.join(root, 'base')
+  try {
+    assert.equal(resolveContainedPath(base, 'nested/file'), path.resolve(base, 'nested/file'))
+    assert.throws(() => resolveContainedPath(base, '../outside'), /非法目录|outside|contained/i)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
 
-  assert.equal(resolveContainedPath(base, 'nested/file'), path.resolve(base, 'nested/file'))
-  assert.throws(() => resolveContainedPath(base, '../outside'), /非法目录|outside|contained/i)
+test('resolveContainedPath rejects Windows drive-relative paths', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-drive-'))
+  const base = path.join(root, 'base')
+  try {
+    for (const relative of ['C:foo', 'E:foo']) {
+      assert.throws(() => resolveContainedPath(base, relative), /非法目录|outside|contained/i, relative)
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('safeDir boundary rejects drive-relative, sibling-prefix, and parent paths', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-safe-dir-'))
+  const base = path.join(root, 'base')
+  const sibling = path.join(root, 'base-other')
+  try {
+    for (const relative of ['C:foo', 'E:foo', sibling, path.join('..', 'outside')]) {
+      assert.throws(() => security.resolveSafeDirPath(base, relative, 2), /非法目录|outside|contained/i, relative)
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('safeArchivePath normalizes legal nested entries', () => {

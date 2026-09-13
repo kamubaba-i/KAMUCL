@@ -42,10 +42,21 @@ export function isPathContained(base: string, candidate: string, allowEqual = fa
 }
 
 export function resolveContainedPath(base: string, relative: string): string {
+  if (/^[A-Za-z]:(?![\\/])/.test(relative)) throw new Error('非法目录')
   const resolved = path.resolve(base, relative)
-  const candidate = path.isAbsolute(relative) ? relative : `${base}${path.sep}${relative}`
-  if (!isPathContained(base, candidate, true)) throw new Error('非法目录')
+  if (!isPathContained(base, resolved, true)) throw new Error('非法目录')
+  const rawCandidate = path.isAbsolute(relative) ? relative : `${base}${path.sep}${relative}`
+  if (!isPathContained(base, rawCandidate, true)) throw new Error('非法目录')
   return resolved
+}
+
+export function resolveSafeDirPath(base: string, relative: string, maxParts = Number.MAX_SAFE_INTEGER): string {
+  const parts = String(relative ?? '')
+    .split(/[\\/]+/)
+    .filter((s) => s && s !== '.')
+  if (parts.some((s) => s === '..')) throw new Error('非法目录')
+  if (parts.length > maxParts) throw new Error('非法目录')
+  return resolveContainedPath(base, parts.length ? path.join(...parts) : '.')
 }
 
 export function safeArchivePath(entryName: string): string {
