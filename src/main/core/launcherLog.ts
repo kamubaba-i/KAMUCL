@@ -236,10 +236,12 @@ function record(level: LauncherLogLevel, scope: string, message: string, error?:
       error === undefined
         ? message
         : `${message} << ${formatErrorText(error)}`
-    appendToQueue(formatLauncherLogLine(new Date(), level, scope, text))
+    const safeText = redactLauncherLogText(text)
+    const safeScope = redactLauncherLogText(scope).trim()
+    appendToQueue(formatLauncherLogLine(new Date(), level, safeScope, safeText))
     // warn/error 同时镜像到控制台，开发期 DevTools 可见
-    if (level === 'error') console.error(`[${scope || 'launcher'}]`, text)
-    else if (level === 'warn') console.warn(`[${scope || 'launcher'}]`, text)
+    if (level === 'error') console.error(`[${safeScope || 'launcher'}]`, safeText)
+    else if (level === 'warn') console.warn(`[${safeScope || 'launcher'}]`, safeText)
   } catch {
     /* 日志自身不能影响启动器业务 */
   }

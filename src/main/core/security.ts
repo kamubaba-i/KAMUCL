@@ -2,22 +2,44 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const SENSITIVE_ASSIGNMENT =
-  /(["']?\b(?:password|access[_-]?token|refresh[_-]?token|token|api[_-]?key)\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}#]+)/gi
+  /((?:["']?\b(?:password|access[_-]?token|refresh[_-]?token|client[_-]?token|auth[_-]?token|session(?:[_-]?(?:id|token|key))?|token|api[_-]?key)\b["']?\s*[:=]\s*))("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}#]+)/gi
+const JSON_COOKIE_ASSIGNMENT =
+  /((?:["'])(?:cookies?|session(?:[_-]?(?:id|token|key))?)(?:["'])\s*:\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}#]+)/gi
+const COOKIE_ASSIGNMENT = /(\bCookie\s*=\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}#]+)/gi
+
+function redactValue(value: string): string {
+  const quote = value[0]
+  return (quote === '"' || quote === "'") && value.at(-1) === quote
+    ? `${quote}<redacted>${quote}`
+    : '<redacted>'
+}
+
+function redactCookieHeaderValue(value: string, setCookie: boolean): string {
+  if (!value.trim()) return value
+  if (setCookie) {
+    const firstPair = /^(\s*[^=;\s]+\s*=\s*)("[^"]*"|'[^']*'|[^;\s]*)/.exec(value)
+    return firstPair
+      ? value.replace(firstPair[0], `${firstPair[1]}${redactValue(firstPair[2])}`)
+      : '<redacted>'
+  }
+  if (!value.includes('=')) return '<redacted>'
+  return value.replace(
+    /(^|;\s*)([^=;\s]+)(\s*=\s*)("[^"]*"|'[^']*'|[^;\s]*)/g,
+    (_match: string, boundary: string, name: string, separator: string, cookieValue: string) =>
+      `${boundary}${name}${separator}${redactValue(cookieValue)}`
+  )
+}
 
 /** 仅脱敏日志中明确可识别的凭据值，保留其他诊断上下文。 */
 export function redactSensitiveText(input: string): string {
   let out = String(input ?? '')
-  out = out.replace(/(^|[^\w-])(Cookie\s*:\s*)([^\r\n]*)/gim, (_match: string, boundary: string, header: string, value: string) => {
-    if (!value.trim()) return `${boundary}${header}${value}`
-    if (!value.includes('=')) return `${boundary}${header}<redacted>`
-    const safeValue = value.replace(
-      /(^|;\s*)([^=;\s]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^;\s]*)/g,
-      '$1$2=<redacted>'
-    )
-    return `${boundary}${header}${safeValue}`
-  })
+  out = out.replace(/(^|[^\w-])((?:Set-)?Cookie\s*:\s*)([^\r\n]*)/gim, (_match: string, boundary: string, header: string, value: string) =>
+    `${boundary}${header}${redactCookieHeaderValue(value, /^Set-Cookie\s*:/i.test(header))}`
+  )
+  out = out.replace(JSON_COOKIE_ASSIGNMENT, (_match: string, prefix: string, value: string) => `${prefix}${redactValue(value)}`)
+  out = out.replace(COOKIE_ASSIGNMENT, (_match: string, prefix: string, value: string) => `${prefix}${redactValue(value)}`)
   out = out.replace(/\b(Bearer\s+)[^\s,;]+/gi, '$1<redacted>')
-  return out.replace(SENSITIVE_ASSIGNMENT, '$1<redacted>')
+  return out.replace(SENSITIVE_ASSIGNMENT, (_match: string, prefix: string, value: string) => `${prefix}${redactValue(value)}`)
 }
 
 function canonicalPath(input: string): string {
