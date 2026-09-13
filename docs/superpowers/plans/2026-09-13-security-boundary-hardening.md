@@ -178,6 +178,7 @@ git commit -m "fix(ipc): 脱敏主进程敏感错误日志"
 ### Task 5: 全量验证与 PR 材料
 
 **Files:**
+- Modify: `src/main/ipc.ts` to resolve the async resource-directory callback without weakening the synchronous test path
 - Modify: `docs/CONTRIBUTING.md` only if the final behavior changes require documentation
 - Modify: `docs/DEVELOPMENT.md` only if a new security helper contract needs documenting
 
@@ -188,6 +189,8 @@ Run: `git diff --check`
 - [ ] **Step 2: 类型检查**
 
 Run: `npx tsc --noEmit`
+
+若类型检查因 Task 1 的 `resolveSafeDirPath` 同步/异步回调签名失败，先记录 RED；为该 helper 增加保持同步调用兼容的异步重载或等价最小类型修复，再重新运行类型检查。
 
 - [ ] **Step 3: 运行完整测试**
 
