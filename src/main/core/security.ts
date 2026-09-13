@@ -1,6 +1,25 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+const SENSITIVE_ASSIGNMENT =
+  /(["']?\b(?:password|access[_-]?token|refresh[_-]?token|token|api[_-]?key)\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}#]+)/gi
+
+/** 仅脱敏日志中明确可识别的凭据值，保留其他诊断上下文。 */
+export function redactSensitiveText(input: string): string {
+  let out = String(input ?? '')
+  out = out.replace(/(^|[^\w-])(Cookie\s*:\s*)([^\r\n]*)/gim, (_match: string, boundary: string, header: string, value: string) => {
+    if (!value.trim()) return `${boundary}${header}${value}`
+    if (!value.includes('=')) return `${boundary}${header}<redacted>`
+    const safeValue = value.replace(
+      /(^|;\s*)([^=;\s]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^;\s]*)/g,
+      '$1$2=<redacted>'
+    )
+    return `${boundary}${header}${safeValue}`
+  })
+  out = out.replace(/\b(Bearer\s+)[^\s,;]+/gi, '$1<redacted>')
+  return out.replace(SENSITIVE_ASSIGNMENT, '$1<redacted>')
+}
+
 function canonicalPath(input: string): string {
   const raw = path.isAbsolute(input) ? input : `${process.cwd()}${path.sep}${input}`
   const root = path.parse(path.resolve(input)).root

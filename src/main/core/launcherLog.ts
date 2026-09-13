@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 import { redactDiagnosticText } from './diagnostics'
+import { redactSensitiveText } from './security'
 
 export type LauncherLogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -20,6 +21,10 @@ const FLUSH_INTERVAL_MS = 150
 const FLUSH_MAX_PENDING = 256
 
 const ARCHIVE_PATTERN = /^launcher-(\d{8}-\d{6})(?:-(\d+))?\.log$/
+
+function redactLauncherLogText(input: string): string {
+  return redactDiagnosticText(redactSensitiveText(input))
+}
 
 // ---------------- 可纯测核心 ----------------
 
@@ -69,13 +74,13 @@ export function pruneArchivedLogs(dir: string, keep: number = ARCHIVE_KEEP): num
   return removed
 }
 
-/** Error 序列化：name/message/stack 全保留，经 redactDiagnosticText 脱敏后压成单行。 */
+/** Error 序列化：name/message/stack 全保留，经日志脱敏后压成单行。 */
 export function formatErrorText(error: unknown): string {
   if (error instanceof Error) {
     const text = error.stack?.trim() || `${error.name}: ${error.message}`
-    return redactDiagnosticText(text).replace(/[\r\n]+/g, ' | ')
+    return redactLauncherLogText(text).replace(/[\r\n]+/g, ' | ')
   }
-  return redactDiagnosticText(String(error)).replace(/[\r\n]+/g, ' ')
+  return redactLauncherLogText(String(error)).replace(/[\r\n]+/g, ' ')
 }
 
 /** 统一行格式：[ISO] [LEVEL] [scope] message；scope 为空时省略。 */
@@ -85,8 +90,9 @@ export function formatLauncherLogLine(
   scope: string,
   message: string
 ): string {
-  const safe = redactDiagnosticText(message).replace(/[\r\n]+/g, ' ').trim()
-  const tag = scope.trim() ? ` [${scope.trim()}]` : ''
+  const safe = redactLauncherLogText(message).replace(/[\r\n]+/g, ' ').trim()
+  const safeScope = redactLauncherLogText(scope).trim()
+  const tag = safeScope ? ` [${safeScope}]` : ''
   return `[${timestamp.toISOString()}] [${level.toUpperCase()}]${tag} ${safe}`
 }
 
