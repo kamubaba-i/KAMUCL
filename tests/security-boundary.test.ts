@@ -5,6 +5,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 import test from 'node:test'
 import * as security from '../src/main/core/security'
+import { parseTarArchiveMembers, validateTarArchiveMembers } from '../src/main/core/java'
 
 const {
   isArchiveSymlink,
@@ -211,4 +212,47 @@ test('real ZIP entries stay inside the extraction root', () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('tar archive preflight accepts nested members and rejects traversal and links', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-security-tar-'))
+  const extracted = path.join(root, 'extracted')
+  try {
+    fs.mkdirSync(extracted)
+    assert.doesNotThrow(() => validateTarArchiveMembers(extracted, [
+      { name: 'jdk/bin/java', type: 'file' },
+      { name: 'jdk/lib', type: 'directory' }
+    ]))
+
+    for (const member of [
+      { name: '../escape', type: 'file' },
+      { name: '/absolute', type: 'file' },
+      { name: 'C:/drive', type: 'file' },
+      { name: 'jdk/link', type: 'symlink' },
+      { name: 'jdk/hard', type: 'hardlink' }
+    ] as const) {
+      assert.throws(
+        () => validateTarArchiveMembers(extracted, [member]),
+        /非法归档路径|符号链接|硬链接|symlink|hardlink/i,
+        member.name
+      )
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('tar verbose listing preserves link member types for preflight', () => {
+  assert.deepEqual(
+    parseTarArchiveMembers(
+      './\n./jdk/bin/java\n./jdk/link\n./jdk/hard\n',
+      'drwxr-xr-x 0 0 0 2026-09-13 ./\n-rw-r--r-- 0 0 1 2026-09-13 ./jdk/bin/java\nlrwxrwxrwx 0 0 0 2026-09-13 ./jdk/link -> target\nhrw-r--r-- 0 0 0 2026-09-13 ./jdk/hard link to ./jdk/bin/java\n'
+    ),
+    [
+      { name: './', type: 'directory' },
+      { name: './jdk/bin/java', type: 'file' },
+      { name: './jdk/link', type: 'symlink' },
+      { name: './jdk/hard', type: 'hardlink' }
+    ]
+  )
 })
