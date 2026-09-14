@@ -255,9 +255,13 @@ export async function repairNeoRuntime(json: VersionJson, clientJar: string, bas
   // Seed declared and generated libraries with copies, not directory junctions.
   reuseExternalRuntimeLibraries(json, [path.dirname(librariesDir()), ...getSettings().folders.map(f => f.path)], path.join(staging, 'libraries'), tasks.map(t => path.join(staging, 'libraries', path.relative(librariesDir(), t.dest))))
   try {
-    await downloadFile(`https://maven.neoforged.net/releases/net/neoforged/neoforge/${neo}/neoforge-${neo}-installer.jar`, jar)
+    const mirror=getSettings().mirror
+    const repairEmit:ProgressEmit=event=>emit({...event,stage:'repair',text:`修复 NeoForge：${event.text}`})
+    await downloadLoaderInstaller(`https://maven.neoforged.net/releases/net/neoforged/neoforge/${neo}/neoforge-${neo}-installer.jar`, jar, mirror,
+      (done,total)=>repairEmit({stage:'repair',progress:total?done/total:0,text:'下载安装器 '+(done/1024/1024).toFixed(1)+'MB',bytesDone:done,bytesTotal:total||undefined}))
     const java = await ensureJava(baseJson, emit)
-    await runInstaller(java, jar, emit, undefined, staging)
+    await prepareInstallerDependencies(jar, staging, mirror, repairEmit)
+    await runInstaller(java, jar, repairEmit, undefined, staging)
     reuseExternalRuntimeLibraries(json, [staging], librariesDir(), tasks.map(t => t.dest))
     const missing = missingNeoRuntime(json, librariesDir())
     if (missing.length) throw new Error(`安装器未生成必要本体库：${missing.join('、')}`)
