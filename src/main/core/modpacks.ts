@@ -14,13 +14,17 @@ import type {
   LoaderName,
   ModpackInfo,
   ModpackInstallRequest,
+  ManualModpackFile,
+  ManualModpackRequest,
   ProgressEvent
 } from '../../shared/types'
 import type { DownloadTask } from './download'
 import { prepareModpackFiles } from './modpackDownloads'
 import { runParallelTasks } from './parallelTasks'
 import { ParallelProgress } from './parallelProgress'
-import { resolveCurseForgeDownload } from './curseforgeDownload'
+import { resolveCurseForgeMetadata, exactModrinthDownload } from './curseforgeDownload'
+import { BundledModpackFiles } from './modpackBundledFiles'
+import { waitForModpackFiles } from './modpackManualFiles'
 import { getSettings } from './settings'
 import { registerVersionFolder, versionDir, versionJsonPath, versionsDir } from './paths'
 import { gameDir, withGameFolder } from './paths'
@@ -666,7 +670,7 @@ async function resolveCfFile(projectID: number, fileID: number, signal?: AbortSi
   const official = { base: channel.base, headers: channel.official ? { 'x-api-key': channel.key } : undefined }
   const mirror = { base: MCIM_CF }
   const sources = channel.official ? (getSettings().mirror === 'bmclapi' ? [mirror, official] : [official, mirror]) : [mirror]
-  return resolveCurseForgeDownload(projectID, fileID, sources, signal)
+  return resolveCurseForgeMetadata(projectID, fileID, sources, signal)
 }
 
 /** 简单并发池（保序写入结果数组） */
@@ -697,11 +701,11 @@ async function extractOverrides(
   signal?: AbortSignal
 ): Promise<string[]> {
   if (!prefix) return []
-  const pre = prefix.replace(/[\\/]+/g, '/').replace(/\/+$/, '') + '/'
+  const pre = normEntry(prefix).replace(/\/+$/, '') + '/'
   const extracted: string[] = []
   for (const entry of zip.getEntries()) {
     throwIfCancelled(signal)
-    const name = entry.entryName.replace(/\\/g, '/')
+    const name = normEntry(entry.entryName)
     if (entry.isDirectory || !name.startsWith(pre)) continue
     const rel = name.slice(pre.length)
     const dest = safeJoin(destDir, rel)
@@ -903,8 +907,9 @@ export async function installModpack(
 }
 
 async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts?: ModpackInstallOpts): Promise<string> {
+  let manualFiles: ManualModpackRequest | null = null
   const report: ProgressEmit = (event) =>
-    emit({ ...event, overall: event.overall ?? event.progress })
+    emit({ ...event, manualFiles, overall: event.overall ?? event.progress })
   const targetFolder = requestedGameFolder(opts?.targetFolder)
   setActiveGameFolder(targetFolder)
   // 1) 校验存在性与 zip 可读、探测格式
@@ -967,6 +972,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
       { id: 'pack', label: '整合包文件', weight: 0.47 }
     ], report, '同步准备游戏环境与整合包文件', [0.04, 0.95])
     let pending: PendingFile[] = []
+    const manual: ManualModpackFile[] = []
     const [installedId] = await runParallelTasks([
       async (signal) => {
         const installedId = await installVersion(
@@ -982,25 +988,34 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
         if (parsed.kind === 'mrpack') {
           pending = parsed.files
         } else {
-          // CurseForge：先经 MCIM 镜像解析真实文件名与下载地址
+          // Match immutable file identity before requiring a network URL: restricted files
+          // can already be included by the pack author in overrides/mods.
           const cfFiles = parsed.files
-          let resolved = 0
+          const bundled = new BundledModpackFiles(zip, meta.overridesPrefix)
+          let resolved = 0, reused = 0
           const infos = await mapPool(
             cfFiles,
             8,
             async (f, _index, signal) => {
               const info = await resolveCfFile(f.projectID, f.fileID, signal)
+              const local = await bundled.find(info, signal)
+              if (local) reused++
+              else if (!info.isAvailable || !info.url) {
+                info.url = await exactModrinthDownload(info, signal)
+                if (!info.url) manual.push({ ...f, fileName: info.fileName, size: info.size, sha1: info.sha1 })
+              }
               resolved++
               parallel.update('pack', {
                 stage: 'modpack',
                 progress: cfFiles.length ? (resolved / cfFiles.length) * 0.04 : 0,
-                text: `解析下载地址 ${resolved}/${cfFiles.length}`
+                text: `校验整合包文件 ${resolved}/${cfFiles.length} · 已复用包内 ${reused} 个`
               })
-              return info
+              return local ? null : { rel: `mods/${info.fileName}`, url: info.url ?? '', size: info.size, sha1: info.sha1 }
             },
             signal
           )
-          pending = infos.map((info) => ({ rel: `mods/${info.fileName}`, url: info.url, size: info.size, sha1: info.sha1 }))
+          pending = infos.filter((info): info is NonNullable<typeof info> => info !== null)
+          packLog.info(`CurseForge 清单 ${cfFiles.length} 个文件：校验复用包内 ${reused} 个，自动下载 ${pending.length - manual.length} 个，需手动补充 ${manual.length} 个`)
         }
 
         const tasks: DownloadTask[] = []
@@ -1019,28 +1034,44 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
         }
 
         try {
-          prepared = await prepareModpackFiles(
-            tasks,
-            (d, t, speed, detail) => {
-              const doneBytes = detail.bytesDone
-              const ratio = detail.fraction ?? 0
-              parallel.update('pack', {
-                stage: 'modpack',
-                progress: 0.04 + ratio * 0.96,
-                text:
-                  detail.bytesTotal != null
-                    ? `下载整合包文件 ${d}/${t}（${fmtMB(doneBytes)}/${fmtMB(detail.bytesTotal)}）${detail.activeFiles?.length && detail.activeFiles.length <= 2 ? ' · ' + detail.activeFiles.join('、') : ''}`
-                    : `下载整合包文件 ${d}/${t}`,
-                speed,
-                etaSeconds: detail.etaSeconds ?? undefined,
-                bytesDone: detail.bytesDone,
-                bytesTotal: detail.bytesTotal ?? undefined,
-                indeterminate: detail.indeterminate
-              })
-            },
-            getSettings().mirror,
-            signal
-          )
+          const automatic = tasks.filter(task => !!task.url), localTasks = tasks.filter(task => !task.url)
+          const downloadProgress: Parameters<typeof prepareModpackFiles>[1] = (d, t, speed, detail) => {
+            const doneBytes = detail.bytesDone
+            const ratio = detail.fraction ?? 0
+            parallel.update('pack', {
+              stage: 'modpack',
+              progress: 0.04 + ratio * 0.96,
+              text:
+                detail.bytesTotal != null
+                  ? `下载整合包文件 ${d}/${t}（${fmtMB(doneBytes)}/${fmtMB(detail.bytesTotal)}）${detail.activeFiles?.length && detail.activeFiles.length <= 2 ? ' · ' + detail.activeFiles.join('、') : ''}`
+                  : `下载整合包文件 ${d}/${t}`,
+              speed,
+              etaSeconds: detail.etaSeconds ?? undefined,
+              bytesDone: detail.bytesDone,
+              bytesTotal: detail.bytesTotal ?? undefined,
+              indeterminate: detail.indeterminate
+            })
+          }
+          const pieces: Array<Awaited<ReturnType<typeof prepareModpackFiles>>> = []
+          try {
+            await runParallelTasks([
+              async signal => {
+                pieces.push(await prepareModpackFiles(automatic, downloadProgress, getSettings().mirror, signal))
+              },
+              async signal => {
+                if (!manual.length) return
+                await waitForModpackFiles(manual, request => {
+                  manualFiles = request
+                  report({ stage: 'modpack', progress: 0.04, text: request ? `等待补充 ${request.files.length} 个文件；其他下载继续进行` : '补充文件已全部校验' })
+                }, signal)
+                pieces.push(await prepareModpackFiles(localTasks, () => {}, getSettings().mirror, signal))
+              }
+            ], signal)
+          } catch (error) { await Promise.all(pieces.map(piece => piece.dispose())); throw error }
+          prepared = {
+            install: async signal => { for (const piece of pieces) await piece.install(signal) },
+            dispose: async () => { await Promise.all(pieces.map(piece => piece.dispose())) }
+          }
         } catch (e) {
           throw new Error(`整合包文件下载失败：${errText(e)}`)
         }

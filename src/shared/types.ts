@@ -614,7 +614,16 @@ export interface ParallelStage {
   state: 'waiting' | 'running' | 'done'
   speed?: number
 }
+export interface ManualModpackFile {
+  projectID: number
+  fileID: number
+  fileName: string
+  size: number
+  sha1: string
+}
+export interface ManualModpackRequest { token: string; files: ManualModpackFile[] }
 export interface ProgressEvent {
+  manualFiles?: ManualModpackRequest | null
   /** Concurrent preparation lanes; absent once the task enters its final commit stage. */
   parallelStages?: ParallelStage[]
   /** 版本安装任务的原始 Minecraft 版本；列表按任务独立展示进度。 */
@@ -831,6 +840,8 @@ export const IPC = {
 
   // 整合包
   modpackProbe: 'modpack:probe', // (filePath: string) => ModpackInfo  只解析不安装（供导入确认弹窗）
+  modpackSupplyFiles: 'modpack:supplyFiles',
+  modpackOpenFile: 'modpack:openFile',
   modpackInstall: 'modpack:install', // (filePath: string, opts?: { nameSource?: 'file' | 'inner' }) => void  nameSource 默认 'file'（以压缩包文件名命名实例）；异步：进度走 event:progress，完成走 event:installDone（versionId = 实例 id）
 
   // 世界存档拖拽导入

@@ -2,6 +2,7 @@
 import { shouldReportGameCrash, signedExitCode } from '@shared/gameExit'
 const isMac = window.kamucl.platform === 'darwin'
 import LaunchNotice from './components/LaunchNotice.vue'
+import ModpackSupplement from './components/ModpackSupplement.vue'
 import { instanceCenter, openInstanceCenter } from './instanceCenter'
 import { loadExitNotices, clearNotices } from './store'
 import { useNavigationBubble } from './composables/useNavigationBubble'
@@ -1067,6 +1068,7 @@ onMounted(async () => {
   offs.push(
     window.kamucl.on('window:caption-pointerdown', closeTopDropdowns),
     onProgress((e) => {
+      if (e.manualFiles && !store.tasks.some(t => t.manualFiles?.token === e.manualFiles?.token)) dlOpen.value = true
       store.progress = e
       if (e.versionId) store.installProgress[e.versionId] = e
       upsertTaskProgress(e)
@@ -1464,6 +1466,7 @@ onUnmounted(() => {
                     失败于「{{ stageLabel(t.stage || 'error') }}」阶段：{{ t.error }}
                   </template>
                 </div>
+                <ModpackSupplement v-if="t.manualFiles && (t.status === 'running' || t.status === 'paused')" :request="t.manualFiles" :paused="t.status === 'paused'" />
                 <div data-ui="App:c299fc9739a0" v-if="t.status === 'running' || t.status === 'paused' || t.status === 'cancelling'" class="dl-bar" :class="{ 'is-indeterminate': t.indeterminate && t.status === 'running' }">
                   <div data-ui="App:21050ee2a501" class="dl-bar-fill" :style="{ width: t.indeterminate ? '35%' : taskProgressPercent(t) + '%' }"></div>
                 </div>

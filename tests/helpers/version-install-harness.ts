@@ -14,6 +14,7 @@ export async function versionInstallHarness(root: string, metadataFetch: typeof 
         export { listFabricApiVersions } from './src/main/core/loaders';
         export { communityDownload, communitySearchPage, communityFiles } from './src/main/core/community';
         export { installModpack } from './src/main/core/modpacks';
+        export { supplyModpackFiles } from './src/main/core/modpackManualFiles';
         export { closeHttpClient } from './src/main/core/httpClient';`,
       resolveDir: process.cwd(), loader: 'ts'
     },
@@ -46,6 +47,7 @@ export async function versionInstallHarness(root: string, metadataFetch: typeof 
     communitySearchPage: typeof import('../../src/main/core/community').communitySearchPage
     communityFiles: typeof import('../../src/main/core/community').communityFiles
     installModpack: typeof import('../../src/main/core/modpacks').installModpack
+    supplyModpackFiles: typeof import('../../src/main/core/modpackManualFiles').supplyModpackFiles
     closeHttpClient: () => Promise<void>
   }
 }

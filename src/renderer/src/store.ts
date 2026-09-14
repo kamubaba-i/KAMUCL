@@ -149,6 +149,7 @@ export function openSettings(section: 'java' | 'memory' | 'downloads'): void {
 
 // ---------------- 后台任务（下载中心） ----------------
 export interface TaskItem {
+  manualFiles?: ProgressEvent['manualFiles']
   parallelStages?: ProgressEvent['parallelStages']
   id: string
   title: string
@@ -212,6 +213,7 @@ export function upsertTaskProgress(e: ProgressEvent) {
   t.etaSeconds = e.etaSeconds
   t.indeterminate = e.indeterminate
   t.parallelStages = e.parallelStages
+  t.manualFiles = e.manualFiles
 }
 
 /** 任务终态（成功/失败/取消），失败保留阶段与原因 */

@@ -43,6 +43,14 @@ function validHash(task: DownloadTask): string {
     : task.sha1 && /^[a-f\d]{40}$/i.test(task.sha1) ? 'sha1:' + task.sha1.toLowerCase() : ''
 }
 
+export function modpackCachedFile(file: { sha1: string; fileName: string }, cacheRoot = path.join(defaultFolderPath(), '.kamucl', 'modpack-cache')): string {
+  const hash = validHash({ sha1: file.sha1, url: '', dest: '' })
+  if (!hash) throw new Error('整合包文件 SHA1 无效')
+  const ext = path.extname(file.fileName).toLowerCase()
+  const suffix = ['.jar', '.zip', '.mrpack'].includes(ext) ? ext : '.bin'
+  return path.join(cacheRoot, crypto.createHash('sha256').update(hash).digest('hex') + suffix)
+}
+
 export async function downloadModpackFiles(
   ...args: Parameters<typeof prepareModpackFiles>
 ): Promise<void> {
