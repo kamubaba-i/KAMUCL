@@ -76,8 +76,8 @@ import * as yggdrasil from './core/yggdrasil'
 import * as appearance from './core/appearanceAssets'
 import { applyNativeAppearance } from './nativeAppearance'
 import { carouselImages, MAX_CAROUSEL_IMAGES } from '../shared/appearancePolicy'
-import { pathIdentity } from './core/folderPaths'
-import { redactSensitiveText, resolveContainedPath, resolveSafeDirPath } from './core/security'
+import { pathIdentity, registeredGameFolder } from './core/folderPaths'
+import { isPathContained, isSafeChildName, redactSensitiveText, resolveContainedPath, resolveSafeDirPath } from './core/security'
 import * as direct from './core/directConnect'
 import type { DirectHostRequest } from '../shared/directConnect'
 import { registerVoxlinkIpc } from './core/voxlink'
@@ -167,7 +167,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.directStop, () => direct.stopDirectHost())
   ipcMain.handle(IPC.directState, () => direct.directState())
   ipcMain.handle(IPC.directResolve, (_e, invitation: string) => direct.resolveDirectInvitation(invitation))
-  ipcMain.handle(IPC.directPrepareJoin, (_e, invitation: string, versionId: string, folder: string) => direct.prepareDirectJoin(invitation, versionId, folder))
+  ipcMain.handle(IPC.directPrepareJoin, (_e, invitation: string, versionId: string, folder: string) => direct.prepareDirectJoin(invitation, versionId, registeredGameFolder(folder, settings.getSettings().folders)!))
   ipcMain.handle(IPC.foldersContextMenu, (_e, folder: string, versionId?: string) => {
     const registered = settings.getSettings().folders.find(item => pathIdentity(item.path) === pathIdentity(String(folder)))
     if (!registered) throw new Error('文件夹未登记')
@@ -433,7 +433,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     if (error) throw new Error(error)
   })
   ipcMain.handle(IPC.versionsSetJava, (_e, id: string, javaPath: string, automatic?: boolean, folder?: string) =>
-    withGameFolder(folder || folderOfVersion(String(id ?? '')), () => versions.setVersionJava(String(id ?? ''), String(javaPath ?? ''), automatic === true))
+    withGameFolder(
+      folder && String(folder).trim()
+        ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+        : folderOfVersion(String(id ?? '')),
+      () => versions.setVersionJava(String(id ?? ''), String(javaPath ?? ''), automatic === true)
+    )
   )
   ipcMain.handle(
     IPC.versionsSetResolution,
@@ -611,7 +616,16 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       try {
-        const r = await community.communityDownload(file, target, taskEmit, (done) => {
+        const source = file?.source
+        if (source !== 'modrinth' && source !== 'curseforge') throw new Error('社区文件来源无效')
+        const fileId = String(file?.fileId ?? '')
+        if (!fileId) throw new Error('缺少社区文件 ID')
+        const projectId = typeof file?.projectId === 'string' ? file.projectId : undefined
+        if (source === 'curseforge' && !projectId) throw new Error('缺少 CurseForge 项目 ID')
+        const trustedFile = community.validateTrustedCommunityFile(
+          await community.communityExactFile(source, projectId, fileId)
+        )
+        const r = await community.communityDownload(trustedFile, target, taskEmit, (done) => {
           const cancelled = done.error === '已取消'
           send(IPC_EVENT.taskDone, {
             taskId: task.id,
@@ -731,7 +745,9 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     // 多开支持：不再因已有游戏运行而拒绝新启动
     if (typeof versionId !== 'string' || !versionId.trim()) throw new Error('请选择有效的游戏实例')
     const config = settings.getSettings()
-    const folder = requestedFolder || config.activeFolder || config.gameDir
+    const folder = requestedFolder
+      ? registeredGameFolder(requestedFolder, config.folders)!
+      : config.activeFolder || config.gameDir
     if (!config.folders.some(f => pathIdentity(f.path) === pathIdentity(folder))) throw new Error('目标游戏文件夹未注册')
     if (!versions.scanInstalledFolder(folder).versions.some(v => v.id === versionId && !v.failed && !v.incomplete)) throw new Error('目标实例不存在或不完整，请刷新版本列表')
     launcherLogInfo('game', `收到启动请求：version=${String(versionId ?? '')}`)
@@ -766,12 +782,20 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       }))
   })
   ipcMain.handle(IPC.gameKill, (_e, forceToken?: string) => launch.killGame(forceToken))
-  ipcMain.handle(IPC.gameRestart, (_e, versionId: string, folder: string, forceToken?: string) => launch.restartGame(versionId, folder, forceToken))
+  ipcMain.handle(IPC.gameRestart, (_e, versionId: string, folder?: string, forceToken?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(versionId ?? ''))
+    return launch.restartGame(versionId, targetFolder, forceToken)
+  })
   ipcMain.handle(IPC.gameRestartCancel, () => launch.cancelRestart())
   // 导出启动失败日志包（保存对话框在 main 弹出）
-  ipcMain.handle(IPC.launchExportLogs, (_e, versionId: string, folder?: string) =>
-    withGameFolder(folder || folderOfVersion(versionId), () => exportLaunchLogs(getWin(), String(versionId ?? '')))
-  )
+  ipcMain.handle(IPC.launchExportLogs, (_e, versionId: string, folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(versionId ?? ''))
+    return withGameFolder(targetFolder, () => exportLaunchLogs(getWin(), String(versionId ?? '')))
+  })
 
   // ---------------- 游戏目录迁移 ----------------
   ipcMain.handle(IPC.gameDirMigrate, (_e, newDir: string, migrate: boolean) => {
@@ -793,23 +817,26 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.serversPing, (_e, address: string) =>
     servers.pingServer(String(address ?? ''))
   )
-  ipcMain.handle(IPC.serversBind, (_e, id: string, versionId: string, folder?: string) =>
-    servers.bindServer(String(id ?? ''), String(versionId ?? ''), folder ? String(folder) : undefined)
-  )
-  ipcMain.handle(IPC.serversSyncFromDat, (_e, versionId?: string, folder?: string) =>
-    servers.syncFromServersDat(
-      versionId ? String(versionId) : undefined,
-      folder ? String(folder) : undefined
-    )
-  )
+  ipcMain.handle(IPC.serversBind, (_e, id: string, versionId: string, folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : undefined
+    return servers.bindServer(String(id ?? ''), String(versionId ?? ''), targetFolder)
+  })
+  ipcMain.handle(IPC.serversSyncFromDat, (_e, versionId?: string, folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : undefined
+    return servers.syncFromServersDat(versionId ? String(versionId) : undefined, targetFolder)
+  })
   ipcMain.handle(
     IPC.serversPrepareLaunch,
-    (_e, id: string, versionId?: string, folder?: string) =>
-      servers.prepareServerLaunch(
-        String(id ?? ''),
-        versionId ? String(versionId) : undefined,
-        folder ? String(folder) : undefined
-      )
+    (_e, id: string, versionId?: string, folder?: string) => {
+      const targetFolder = folder && String(folder).trim()
+        ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+        : undefined
+      return servers.prepareServerLaunch(String(id ?? ''), versionId ? String(versionId) : undefined, targetFolder)
+    }
   )
 
   // ---------------- MOD 拖入即装 ----------------
@@ -834,14 +861,25 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     }
     return list
   })
-  ipcMain.handle(IPC.modsDuplicates, (_e, versionId: string, folder?: string) =>
-    withGameFolder(folder || folderOfVersion(versionId), () => modinfo.findDuplicates(String(versionId ?? '')))
-  )
-  ipcMain.handle(IPC.modsCrossDuplicates, (_e, versionIds: string[], folder?: string) =>
-    withGameFolder(folder || settings.getSettings().activeFolder || settings.getSettings().gameDir, () => modinfo.findCrossDuplicates(Array.isArray(versionIds) ? versionIds.map(String) : []))
-  )
+  ipcMain.handle(IPC.modsDuplicates, (_e, versionId: string, folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(versionId ?? ''))
+    return withGameFolder(targetFolder, () => modinfo.findDuplicates(String(versionId ?? '')))
+  })
+  ipcMain.handle(IPC.modsCrossDuplicates, (_e, versionIds: string[], folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : settings.getSettings().activeFolder || settings.getSettings().gameDir
+    return withGameFolder(targetFolder, () => modinfo.findCrossDuplicates(Array.isArray(versionIds) ? versionIds.map(String) : []))
+  })
   ipcMain.handle(IPC.modsIcons, (_e, versionId: string, names: string[], folder?: string, kind?: string) =>
-    getModIcons(String(versionId ?? ''), folder || folderOfVersion(String(versionId ?? '')), Array.isArray(names) ? names : [], kind || 'mods'))
+    getModIcons(
+      String(versionId ?? ''),
+      folder && String(folder).trim() ? registeredGameFolder(String(folder), settings.getSettings().folders)! : folderOfVersion(String(versionId ?? '')),
+      Array.isArray(names) ? names : [],
+      kind || 'mods'
+    ))
   ipcMain.handle(IPC.modsMigrationPlan, (_e, sourceId: string, folder: string, mc: string, loader: any) => planModMigration(sourceId, folder, mc, loader))
   ipcMain.handle(IPC.modsMigrationApply, (_e, planId: string, confirmed: boolean) => {
     const task=registerTask('版本迁移','version')
@@ -851,22 +889,24 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       .finally(()=>finishTask(task.id))
     return task.id
   })
-  ipcMain.handle(IPC.modsCheckUpdates, (_e, versionId: string, folder?: string) =>
-    withGameFolder(folder || folderOfVersion(String(versionId ?? '')), () =>
-      modUpdates.checkModUpdates(String(versionId ?? ''))
-    )
-  )
+  ipcMain.handle(IPC.modsCheckUpdates, (_e, versionId: string, folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(versionId ?? ''))
+    return withGameFolder(targetFolder, () => modUpdates.checkModUpdates(String(versionId ?? '')))
+  })
   ipcMain.handle('mods:catalog', (_e,id:string,folder:string)=>modManagement.modCatalog(id,folder))
   ipcMain.handle('mods:setEnabled', (_e,id:string,folder:string,names:string[],enabled:boolean)=>modManagement.setModsEnabled(id,folder,names,enabled===true))
   ipcMain.handle('mods:setLocked', (_e,id:string,folder:string,names:string[],locked:boolean)=>modManagement.lockMods(id,folder,names,locked===true))
   ipcMain.handle('mods:versionChoices', (_e,id:string,folder:string,name:string)=>modManagement.modVersionChoices(id,folder,name))
   ipcMain.handle('mods:versionPlan', (_e,id:string,fileId:string)=>modManagement.planModVersionChange(id,fileId))
   ipcMain.handle('mods:versionApply', (_e,id:string,confirmed:boolean)=>modManagement.applyModVersionChange(id,confirmed===true))
-  ipcMain.handle(IPC.modsApplyUpdates, (_e, versionId: string, items: unknown, folder?: string) =>
-    withGameFolder(folder || folderOfVersion(String(versionId ?? '')), () =>
-      modUpdates.applyModUpdates(String(versionId ?? ''), Array.isArray(items) ? items : [])
-    )
-  )
+  ipcMain.handle(IPC.modsApplyUpdates, (_e, versionId: string, items: unknown, folder?: string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(versionId ?? ''))
+    return withGameFolder(targetFolder, () => modUpdates.applyModUpdates(String(versionId ?? ''), Array.isArray(items) ? items : []))
+  })
 
   // ---------------- 插件系统 ----------------
   ipcMain.handle(IPC.pluginsList, () => plugins.listPlugins())
@@ -1027,7 +1067,10 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.fsList, (_e, rel: string, folder?: string) => listDir(String(rel ?? ''), folder))
   ipcMain.handle(IPC.fsRemove, async (_e, rel: string, name: string, folder?: string) => {
     const dir = await safeDir(String(rel ?? ''), folder)
-    const target = path.join(dir, path.basename(String(name ?? '')))
+    const childName = String(name ?? '')
+    if (!isSafeChildName(childName)) throw new Error('无效文件名')
+    const target = path.join(dir, childName)
+    if (!isPathContained(dir, target, false)) throw new Error('非法文件路径')
     await fs.promises.rm(target, { recursive: true, force: true })
     return listDir(String(rel ?? ''), folder)
   })

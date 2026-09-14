@@ -123,6 +123,11 @@ export function isPathContained(base: string, candidate: string, allowEqual = fa
   }
 }
 
+export function isSafeChildName(name: string): boolean {
+  return typeof name === 'string' && name.length > 0 && name !== '.' && name !== '..' &&
+    !/[\\/\0]/.test(name) && !/^[A-Za-z]:/.test(name)
+}
+
 export function resolveContainedPath(base: string, relative: string): string {
   if (/^[A-Za-z]:(?![\\/])/.test(relative)) throw new Error('非法目录')
   const resolved = path.resolve(base, relative)

@@ -94,6 +94,39 @@ test('HTTPS redirects to HTTP are rejected', async () => {
   assert.equal(calls.length, 1)
 })
 
+test('HTTPS redirects to explicit local, private, or metadata targets are rejected before the next request', async () => {
+  const locations = [
+    'https://localhost/file.zip',
+    'https://127.0.0.1/file.zip',
+    'https://10.0.0.1/file.zip',
+    'https://172.16.0.1/file.zip',
+    'https://192.168.0.1/file.zip',
+    'https://169.254.169.254/latest/meta-data',
+    'https://[::1]/file.zip',
+    'https://[fc00::1]/file.zip',
+    'https://[fe80::1]/file.zip',
+    'https://metadata.google.internal/file'
+  ]
+  for (const location of locations) {
+    const { calls, fetcher } = captureFetcher([redirect(location)])
+    await assert.rejects(
+      downloadFetch('https://download.example/file.zip', {}, undefined, fetcher),
+      /下载跳转地址不安全/,
+      location
+    )
+    assert.equal(calls.length, 1, location)
+  }
+})
+
+test('an explicitly local initial HTTPS target is rejected before any request', async () => {
+  const { calls, fetcher } = captureFetcher([new Response('unexpected')])
+  await assert.rejects(
+    downloadFetch('https://127.0.0.1/file.zip', {}, undefined, fetcher),
+    /下载跳转地址不安全/
+  )
+  assert.equal(calls.length, 0)
+})
+
 test('non-HTTP(S) redirects are rejected', async () => {
   const { calls, fetcher } = captureFetcher([
     redirect('file:///tmp/file.zip')

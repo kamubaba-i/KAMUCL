@@ -6,14 +6,116 @@ import zlib from 'node:zlib'
 import test from 'node:test'
 import * as security from '../src/main/core/security'
 import { parseTarArchiveMembers, validateTarArchiveMembers } from '../src/main/core/java'
+import { validateTrustedCommunityFile } from '../src/main/core/community'
+import { registeredGameFolder } from '../src/main/core/folderPaths'
+import { versionInstallHarness } from './helpers/version-install-harness'
 
 const {
   isArchiveSymlink,
+  isSafeChildName,
   isPathContained,
   resolveArchiveEntryPath,
   resolveContainedPath,
   safeArchivePath
 } = security
+
+test('resource child names reject empty, dot, traversal separators, and NUL', () => {
+  for (const name of ['', '.', '..', '../outside', 'nested/file', `nested${path.sep}file`, 'bad\0name']) {
+    assert.equal(isSafeChildName(name), false, name)
+  }
+  assert.equal(isSafeChildName('valid-child.jar'), true)
+})
+
+test('registeredGameFolder compares path identity and preserves the registered spelling', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-registered-folder-'))
+  const folder = path.join(root, 'Game')
+  try {
+    fs.mkdirSync(folder)
+    const folders = [{ path: folder }]
+    assert.equal(registeredGameFolder(path.join(folder, '.'), folders), folder)
+    assert.equal(registeredGameFolder(undefined, folders), undefined)
+    assert.throws(() => registeredGameFolder(path.join(root, 'outside'), folders), /文件夹未登记/)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('removeVersion refuses unsafe IDs and only removes an existing versions child directory', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kamucl-remove-version-'))
+  const runtime = await versionInstallHarness(root)
+  const folder = path.join(root, 'game')
+  const versions = path.join(folder, 'versions')
+  const outside = path.join(root, 'outside')
+  try {
+    fs.mkdirSync(versions, { recursive: true })
+    fs.mkdirSync(outside)
+    fs.writeFileSync(path.join(folder, 'keep.txt'), 'keep')
+    fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep')
+    Object.assign(runtime.getSettings(), {
+      gameDir: folder,
+      activeFolder: folder,
+      folders: [{ path: folder, name: 'test', isDefault: true }]
+    })
+
+    for (const id of ['', '.', '..', '../outside', 'nested/name', 'bad\0name']) {
+      assert.throws(() => runtime.removeVersion(id), /无效|非法|版本|ID/i, id)
+    }
+    assert.equal(fs.readFileSync(path.join(folder, 'keep.txt'), 'utf8'), 'keep')
+    assert.equal(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep')
+    assert.equal(fs.existsSync(versions), true)
+
+    fs.mkdirSync(path.join(versions, 'valid'))
+    runtime.removeVersion('valid')
+    assert.equal(fs.existsSync(path.join(versions, 'valid')), false)
+    assert.throws(() => runtime.removeVersion('missing'), /不存在|目录/i)
+  } finally {
+    await runtime.closeHttpClient()
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('trusted community files require exact identity, HTTPS URL, and a 40-character SHA1', () => {
+  const base = {
+    source: 'modrinth' as const,
+    projectId: 'project',
+    fileId: 'file',
+    fileName: 'file.jar',
+    version: '1',
+    url: 'https://cdn.example/file.jar',
+    sha1: 'a'.repeat(40),
+    size: 1,
+    releaseType: 'release' as const,
+    gameVersions: [],
+    loaders: [],
+    date: ''
+  }
+  assert.equal(validateTrustedCommunityFile(base), base)
+  for (const patch of [
+    { url: 'http://cdn.example/file.jar' },
+    { url: 'https://cdn.example/file.jar', sha1: '' },
+    { url: 'https://cdn.example/file.jar', sha1: 'not-a-sha1' }
+  ]) {
+    assert.throws(() => validateTrustedCommunityFile({ ...base, ...patch }), /HTTPS|SHA1|哈希/i)
+  }
+})
+
+test('IPC security handlers revalidate child names, registered folders, and community identities', () => {
+  const source = fs.readFileSync(new URL('../src/main/ipc.ts', import.meta.url), 'utf8')
+  const removeStart = source.indexOf('ipcMain.handle(IPC.fsRemove')
+  const toggleStart = source.indexOf('ipcMain.handle(IPC.fsToggleDisable')
+  const removeBlock = source.slice(removeStart, toggleStart)
+  assert.notEqual(removeStart, -1)
+  assert.match(removeBlock, /isSafeChildName/)
+  assert.match(removeBlock, /isPathContained\(dir, target, false\)/)
+  assert.doesNotMatch(removeBlock, /path\.basename\(/)
+  assert.match(source, /registeredGameFolder/)
+  for (const channel of ['versionsSetJava', 'gameRestart', 'launchExportLogs', 'serversBind', 'serversSyncFromDat', 'serversPrepareLaunch', 'modsDuplicates', 'modsCrossDuplicates', 'modsIcons', 'modsCheckUpdates', 'modsApplyUpdates']) {
+    assert.match(source, new RegExp(`registeredGameFolder[\\s\\S]{0,500}${channel}|${channel}[\\s\\S]{0,500}registeredGameFolder`), channel)
+  }
+  assert.match(source, /community\.communityExactFile/)
+  assert.match(source, /community\.validateTrustedCommunityFile/)
+  assert.match(source, /community\.communityDownload\(trustedFile/)
+})
 
 interface RawZipEntry {
   name: string
