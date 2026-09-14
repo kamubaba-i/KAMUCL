@@ -127,6 +127,47 @@ test('an explicitly local initial HTTPS target is rejected before any request', 
   assert.equal(calls.length, 0)
 })
 
+test('HTTPS redirects to private DNS aliases are rejected before the next request', async () => {
+  const locations = [
+    'https://127.0.0.1.nip.io/file.zip',
+    'https://10.0.0.1.sslip.io/file.zip',
+    'https://anything.localtest.me/file.zip',
+    'https://anything.lvh.me/file.zip'
+  ]
+  for (const location of locations) {
+    const { calls, fetcher } = captureFetcher([redirect(location)])
+    await assert.rejects(
+      downloadFetch('https://download.example/file.zip', {}, undefined, fetcher),
+      /下载跳转地址不安全/,
+      location
+    )
+    assert.equal(calls.length, 1, location)
+  }
+})
+
+test('public IPv4-mapped IPv6 HTTPS targets remain allowed', async () => {
+  const { calls, fetcher } = captureFetcher([new Response('ok')])
+  await downloadFetch('https://[::ffff:8.8.8.8]/file.zip', {}, undefined, fetcher)
+  assert.equal(calls.length, 1)
+})
+
+test('IPv4-mapped private HTTPS targets are rejected before the next request', async () => {
+  const locations = [
+    'https://[::ffff:127.0.0.1]/file.zip',
+    'https://[::ffff:10.0.0.1]/file.zip',
+    'https://[::ffff:192.168.0.1]/file.zip'
+  ]
+  for (const location of locations) {
+    const { calls, fetcher } = captureFetcher([redirect(location)])
+    await assert.rejects(
+      downloadFetch('https://download.example/file.zip', {}, undefined, fetcher),
+      /下载跳转地址不安全/,
+      location
+    )
+    assert.equal(calls.length, 1, location)
+  }
+})
+
 test('non-HTTP(S) redirects are rejected', async () => {
   const { calls, fetcher } = captureFetcher([
     redirect('file:///tmp/file.zip')

@@ -880,7 +880,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       Array.isArray(names) ? names : [],
       kind || 'mods'
     ))
-  ipcMain.handle(IPC.modsMigrationPlan, (_e, sourceId: string, folder: string, mc: string, loader: any) => planModMigration(sourceId, folder, mc, loader))
+  ipcMain.handle(IPC.modsMigrationPlan, (_e, sourceId: string, folder?: string, mc?: string, loader?: any) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(sourceId ?? ''))
+    return planModMigration(String(sourceId ?? ''), targetFolder, String(mc ?? ''), loader)
+  })
   ipcMain.handle(IPC.modsMigrationApply, (_e, planId: string, confirmed: boolean) => {
     const task=registerTask('版本迁移','version')
     void applyModMigration(planId,confirmed,e=>emit({...e,taskId:task.id,taskTitle:task.title}),task.controller.signal)
@@ -895,10 +900,30 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       : folderOfVersion(String(versionId ?? ''))
     return withGameFolder(targetFolder, () => modUpdates.checkModUpdates(String(versionId ?? '')))
   })
-  ipcMain.handle('mods:catalog', (_e,id:string,folder:string)=>modManagement.modCatalog(id,folder))
-  ipcMain.handle('mods:setEnabled', (_e,id:string,folder:string,names:string[],enabled:boolean)=>modManagement.setModsEnabled(id,folder,names,enabled===true))
-  ipcMain.handle('mods:setLocked', (_e,id:string,folder:string,names:string[],locked:boolean)=>modManagement.lockMods(id,folder,names,locked===true))
-  ipcMain.handle('mods:versionChoices', (_e,id:string,folder:string,name:string)=>modManagement.modVersionChoices(id,folder,name))
+  ipcMain.handle('mods:catalog', (_e,id:string,folder?:string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(id ?? ''))
+    return modManagement.modCatalog(String(id ?? ''), targetFolder)
+  })
+  ipcMain.handle('mods:setEnabled', (_e,id:string,folder:string|undefined,names:string[],enabled:boolean) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(id ?? ''))
+    return modManagement.setModsEnabled(String(id ?? ''), targetFolder, names, enabled === true)
+  })
+  ipcMain.handle('mods:setLocked', (_e,id:string,folder:string|undefined,names:string[],locked:boolean) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(id ?? ''))
+    return modManagement.lockMods(String(id ?? ''), targetFolder, names, locked === true)
+  })
+  ipcMain.handle('mods:versionChoices', (_e,id:string,folder:string|undefined,name:string) => {
+    const targetFolder = folder && String(folder).trim()
+      ? registeredGameFolder(String(folder), settings.getSettings().folders)!
+      : folderOfVersion(String(id ?? ''))
+    return modManagement.modVersionChoices(String(id ?? ''), targetFolder, String(name ?? ''))
+  })
   ipcMain.handle('mods:versionPlan', (_e,id:string,fileId:string)=>modManagement.planModVersionChange(id,fileId))
   ipcMain.handle('mods:versionApply', (_e,id:string,confirmed:boolean)=>modManagement.applyModVersionChange(id,confirmed===true))
   ipcMain.handle(IPC.modsApplyUpdates, (_e, versionId: string, items: unknown, folder?: string) => {

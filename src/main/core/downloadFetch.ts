@@ -4,6 +4,7 @@ import { isIP } from 'node:net'
 
 const REDIRECT_CREDENTIAL_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization', 'x-api-key'])
 const METADATA_HOSTS = new Set(['metadata', 'metadata.google.internal', 'metadata.google'])
+const PRIVATE_DNS_ALIASES = ['nip.io', 'sslip.io', 'localtest.me', 'lvh.me']
 
 function parseIpv4(host: string): number[] | undefined {
   if (isIP(host) !== 4) return undefined
@@ -40,25 +41,33 @@ function parseIpv6(host: string): number[] | undefined {
   return sections.length === 1 ? left : [...left, ...Array(missing).fill(0), ...right]
 }
 
+function isUnsafeIpv4([a, b]: number[]): boolean {
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+
 function isUnsafeHttpsUrl(raw: string): boolean {
   const url = new URL(raw)
   if (url.protocol !== 'https:') return false
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
   if (host === 'localhost' || host.endsWith('.localhost') || METADATA_HOSTS.has(host)) return true
+  if (PRIVATE_DNS_ALIASES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) return true
   const ipv4 = parseIpv4(host)
-  if (ipv4) {
-    const [a, b] = ipv4
-    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
-  }
+  if (ipv4) return isUnsafeIpv4(ipv4)
   const ipv6 = parseIpv6(host)
   if (!ipv6) return false
   const first = ipv6[0]
   const isUnspecified = ipv6.every((word) => word === 0)
   const isLoopback = ipv6.slice(0, 7).every((word) => word === 0) && ipv6[7] === 1
   const isMappedIpv4 = ipv6.slice(0, 5).every((word) => word === 0) && ipv6[5] === 0xffff
+  if (isMappedIpv4) return isUnsafeIpv4([
+    (ipv6[6] >> 8) & 255,
+    ipv6[6] & 255,
+    (ipv6[7] >> 8) & 255,
+    ipv6[7] & 255
+  ])
   return isUnspecified || isLoopback || (first & 0xfe00) === 0xfc00 ||
-    (first & 0xffc0) === 0xfe80 || (isMappedIpv4 && !!parseIpv4(`${ipv6[6] >> 8}.${ipv6[6] & 255}.${ipv6[7] >> 8}.${ipv6[7] & 255}`))
+    (first & 0xffc0) === 0xfe80
 }
 
 function assertSafeDownloadUrl(url: string): void {

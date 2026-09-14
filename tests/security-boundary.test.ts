@@ -112,6 +112,26 @@ test('IPC security handlers revalidate child names, registered folders, and comm
   for (const channel of ['versionsSetJava', 'gameRestart', 'launchExportLogs', 'serversBind', 'serversSyncFromDat', 'serversPrepareLaunch', 'modsDuplicates', 'modsCrossDuplicates', 'modsIcons', 'modsCheckUpdates', 'modsApplyUpdates']) {
     assert.match(source, new RegExp(`registeredGameFolder[\\s\\S]{0,500}${channel}|${channel}[\\s\\S]{0,500}registeredGameFolder`), channel)
   }
+  for (const channel of ['mods:catalog', 'mods:setEnabled', 'mods:setLocked', 'mods:versionChoices']) {
+    const start = source.indexOf(`ipcMain.handle('${channel}'`)
+    const next = source.indexOf('\n  ipcMain.handle', start + 1)
+    const block = source.slice(start, next === -1 ? source.length : next)
+    assert.notEqual(start, -1, channel)
+    assert.match(block, /registeredGameFolder\(String\(folder\), settings\.getSettings\(\)\.folders\)/, channel)
+    assert.match(block, /folder && String\(folder\)\.trim\(\)/, channel)
+  }
+  const migrationStart = source.indexOf('ipcMain.handle(IPC.modsMigrationPlan')
+  const migrationNext = source.indexOf('\n  ipcMain.handle', migrationStart + 1)
+  const migrationBlock = source.slice(migrationStart, migrationNext === -1 ? source.length : migrationNext)
+  assert.notEqual(migrationStart, -1, 'modsMigrationPlan')
+  assert.match(migrationBlock, /registeredGameFolder\(String\(folder\), settings\.getSettings\(\)\.folders\)/, 'modsMigrationPlan')
+  assert.match(migrationBlock, /folder && String\(folder\)\.trim\(\)/, 'modsMigrationPlan')
+  const versionPlanStart = source.indexOf("ipcMain.handle('mods:versionPlan'")
+  const versionPlanNext = source.indexOf('\n  ipcMain.handle', versionPlanStart + 1)
+  const versionPlanBlock = source.slice(versionPlanStart, versionPlanNext === -1 ? source.length : versionPlanNext)
+  assert.notEqual(versionPlanStart, -1, 'mods:versionPlan')
+  assert.match(versionPlanBlock, /modManagement\.planModVersionChange\(id,fileId\)/, 'mods:versionPlan')
+  assert.doesNotMatch(versionPlanBlock, /folder/, 'mods:versionPlan does not trust a renderer folder')
   assert.match(source, /community\.communityExactFile/)
   assert.match(source, /community\.validateTrustedCommunityFile/)
   assert.match(source, /community\.communityDownload\(trustedFile/)
