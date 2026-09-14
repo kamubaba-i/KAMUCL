@@ -329,7 +329,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     let lastStage = ''
     const taskEmit = (e: ProgressEvent): void => {
       const normalized = progressGuard.normalize(e)
-      lastStage = normalized.stage
+      if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
       emit({ ...normalized, versionId: vid, taskId: task.id, taskTitle: task.title })
     }
     const taskDone = (ok: boolean, error?: string, cancelled = false): void =>
@@ -515,7 +515,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       let lastStage = ''
       const taskEmit = (e: ProgressEvent): void => {
         const normalized = progressGuard.normalize(e)
-        lastStage = normalized.stage
+        if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       void modpacks
@@ -555,7 +555,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       let lastStage = ''
       const taskEmit = (event: ProgressEvent): void => {
         const normalized = progressGuard.normalize(event)
-        lastStage = normalized.stage
+        if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       try {
@@ -595,7 +595,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       let lastStage = ''
       const taskEmit = (e: ProgressEvent): void => {
         const normalized = progressGuard.normalize(e)
-        lastStage = normalized.stage
+        if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       try {

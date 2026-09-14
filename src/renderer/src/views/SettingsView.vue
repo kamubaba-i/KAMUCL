@@ -138,7 +138,7 @@ function releaseDate(value: string): string {
 // 还原到更新前的版本
 const updateState = ref<UpdateStateInfo | null>(null)
 const restoringBackup = ref(false)
-// 已就绪待安装的更新（关闭启动器时自动安装，也可立即安装）
+// 已就绪待安装的更新（下次启动时应用，也可立即安装）
 const pendingUpdate = ref<{ release: ReleaseInfo; file: string } | null>(null)
 async function refreshUpdateState() {
   try {
@@ -157,6 +157,9 @@ async function onRestoreBackup() {
   restoringBackup.value = true
   try {
     await restoreUpdateBackup()
+    restoringBackup.value = false
+    await refreshUpdateState()
+    toast('备份已准备，下次手动启动时恢复', 'success')
   } catch (e) {
     restoringBackup.value = false
     toast('还原失败：' + errText(e), 'error')
@@ -165,6 +168,7 @@ async function onRestoreBackup() {
 async function onApplyPending() {
   try {
     await applyPendingUpdate()
+    toast('更新已就绪，下次手动启动时应用', 'success')
   } catch (e) {
     toast('安装失败：' + errText(e), 'error')
   }
@@ -187,6 +191,8 @@ async function confirmLocalUpdate() {
   localUpdate.value = null
   try {
     await applyLocalUpdate(lu.check)
+    await refreshUpdateState()
+    toast('本地更新已准备，下次手动启动时应用', 'success')
   } catch (e) {
     toast('安装更新失败：' + errText(e), 'error')
   }
@@ -1039,11 +1045,11 @@ async function onRemovePlugin(p: PluginInfo) {
               />
               <span class="switch-ui"></span>
             </label>
-            <span class="muted upd-auto-hint">发现新版本静默下载，关闭启动器时自动安装；关闭则弹窗询问</span>
+            <span class="muted upd-auto-hint">发现新版本静默下载，下次启动时应用；关闭则弹窗询问</span>
           </div>
           <div v-if="pendingUpdate" class="upd-row upd-pending-row">
-            <span class="upd-pending-text">v{{ pendingUpdate.release.version }} 已就绪，关闭启动器时自动安装</span>
-            <button class="btn btn-gold btn-sm" @click="onApplyPending">立即重启安装</button>
+            <span class="upd-pending-text">v{{ pendingUpdate.release.version }} 已就绪，下次启动时应用</span>
+            <button class="btn btn-gold btn-sm" @click="onApplyPending">下次启动应用</button>
           </div>
           <div class="upd-row">
             <span class="upd-label">更新下载源</span>

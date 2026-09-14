@@ -281,7 +281,8 @@ async function onUpdateInstallNow() {
   if (!release) return
   try {
     await applyUpdate(release)
-    // 主进程将退出：无需后续处理
+    updateModal.open = false
+    toast('更新已就绪，下次手动启动时应用', 'success')
   } catch (e) {
     toast('安装更新失败：' + errText(e), 'error')
     updateModal.open = false
@@ -1087,7 +1088,7 @@ onMounted(async () => {
     onUpdatePrompt((payload) => {
       // 回滚通知（更新失败自动还原后备份）
       if ((payload as { rollbackNotice?: boolean }).rollbackNotice) {
-        toast('更新失败，已自动回滚到当前版本', 'error')
+        toast('上次更新未完成，已停止自动重试。可在设置中重新下载或选择备份恢复。', 'error')
         return
       }
       store.updatePrompt = { release: payload, rollback: false }
@@ -1096,7 +1097,7 @@ onMounted(async () => {
       if (updateModal.open && r.taskId === updateModal.taskId) updateModal.slowHint = true
     }),
     onUpdateReady((r) => {
-      toast(`新版本 v${r.version} 已下载完成，关闭启动器时将自动安装`, 'success')
+      toast(`新版本 v${r.version} 已下载完成，下次启动时应用`, 'success')
     }),
     onInstallDone((r) => {
       store.installing.delete(r.versionId)

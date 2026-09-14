@@ -173,6 +173,8 @@ const STAGE_LABEL: Record<string, string> = {
   client: '下载游戏本体',
   assets: '下载资源文件',
   loader: '安装加载器',
+  'loader-dependencies': '下载加载器依赖',
+  'loader-process': '生成加载器运行文件',
   'fabric-api': '安装 Fabric API',
   repair: '修复文件',
   modpack: '安装整合包',

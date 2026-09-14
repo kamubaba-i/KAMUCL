@@ -13,13 +13,14 @@ import type { FabricApiVersion, LoaderName, ProgressEvent } from '../../shared/t
 import { BMCL_MAVEN_ROOT, downloadAll, downloadFile, fetchSignal } from './download'
 import { isCancelError } from './tasks'
 import { downloadLoaderInstaller } from './installerDownload'
+import { prepareInstallerDependencies } from './installerDependencies'
 import { SmoothedSpeedEstimator } from './downloadProgress'
 import { logScope } from './launcherLog'
 
 const loaderLog = logScope('loader')
 import { getSettings } from './settings'
 import { gameDir, librariesDir, registerVersionFolder, versionDir, versionJsonPath, versionsDir } from './paths'
-import { ensureJava, scanJava } from './java'
+import { ensureJava } from './java'
 import {
   installVanilla,
   libraryTasks,
@@ -140,10 +141,6 @@ export async function listLoaderVersions(
 
 /** 选一个可用 java 运行安装器：优先本机扫描，实在不行用 ensureJava 下载 */
 async function pickJavaForInstaller(mcVersion: string, emit: ProgressEmit): Promise<string> {
-  const found = scanJava()
-  const any = found.find((j) => j.is64Bit) ?? found[0]
-  if (any) return any.path
-  // 本机完全没有 Java，按原版需求下载一个
   const vj = readVersionJson(mcVersion)
   return await ensureJava(vj, emit)
 }
@@ -192,7 +189,7 @@ function runInstallerUnlocked(javaPath: string, jar: string, emit: ProgressEmit,
         tail = lines.pop() ?? ''
         for (const l of lines) if (l.trim()) allLines.push(l)
         const shortTail = lines.slice(-2).join(' ').slice(-160)
-        emit({ stage: 'loader', progress: 0.75, text: `安装器: ${shortTail || '运行中…'}` })
+        emit({ stage: 'loader-process', progress: 0, indeterminate: true, text: `生成加载器运行文件: ${shortTail || '处理中…'}` })
       }
       proc.stdout.on('data', onData)
       proc.stderr.on('data', onData)
@@ -424,8 +421,11 @@ async function installLoaderInternal(
     if (!fs.existsSync(lp)) {
       fs.writeFileSync(lp, JSON.stringify({ profiles: {}, settings: {}, version: 3 }, null, 2), 'utf-8')
     }
-    emit({ stage: 'loader', progress: 0.7, text: '运行安装器（可能需要几分钟）…' })
+    await prepareInstallerDependencies(jarPath, gameDir(), getSettings().mirror, emit, signal)
+    signal?.throwIfAborted()
+    emit({ stage: 'loader-process', progress: 0, indeterminate: true, text: '生成加载器运行文件…' })
     await runInstaller(javaPath, jarPath, emit, signal)
+    emit({ stage: 'loader-process', progress: 1, text: '加载器运行文件已生成' })
 
     const id0 = findInstalledDir(loader, mcVersion, loaderVersion)
     if (!id0) throw new Error('安装器运行结束，但未找到生成的版本目录')

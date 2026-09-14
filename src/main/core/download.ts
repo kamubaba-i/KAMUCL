@@ -196,6 +196,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     return done
   } catch (error) {
     signal?.throwIfAborted()
+    if (error instanceof Error) Object.assign(error, { downloadUrl: url })
     throw controller.signal.aborted ? controller.signal.reason : error
   } finally {
     clearInterval(timer)
@@ -369,7 +370,10 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
           }
         }
       }
-      throw new Error(`下载失败：${lastError instanceof Error ? lastError.message : String(lastError)}`)
+      const failure = lastError as Error & { downloadUrl?: string; cause?: { code?: string; message?: string } }
+      let address = failure.downloadUrl || url
+      try { const u = new URL(address); address = u.origin + u.pathname } catch { /* retain invalid input */ }
+      throw new Error(`下载失败：${failure.message || String(lastError)}${failure.cause?.code ? ` (${failure.cause.code})` : ''}\n文件：${path.basename(dest)}\n地址：${address}`, { cause: lastError })
     } finally {
       // No detached stream may keep writing after this promise settles.
       await fs.promises.rm(temporary, { force: true })

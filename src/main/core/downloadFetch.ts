@@ -13,7 +13,15 @@ export async function downloadFetch(url: string, init: Parameters<typeof httpFet
   for (let hop = 0; hop < 10; hop++) {
     const headers = { ...init?.headers }
     if (needsCurseForgeKey(url)) headers['x-api-key'] = await getKey()
-    const response = await fetcher(url, { ...init, headers, redirect: 'manual' })
+    let response: Response
+    try { response = await fetcher(url, { ...init, headers, redirect: 'manual' }) }
+    catch (error) {
+      init?.signal?.throwIfAborted()
+      // Node does not use the desktop's PAC/proxy/certificate store. Retry a failed
+      // connection through Electron's system transport, retaining Range + validation.
+      if (fetcher !== httpFetch || !process.versions.electron || init?.systemProxy || !(error instanceof TypeError)) throw error
+      response = await httpFetch(url, { ...init, headers, redirect: 'manual', systemProxy: true })
+    }
     if (![301,302,303,307,308].includes(response.status)) return response
     const location = response.headers.get('location'); await response.body?.cancel()
     if (!location) throw new Error('下载跳转缺少地址')
