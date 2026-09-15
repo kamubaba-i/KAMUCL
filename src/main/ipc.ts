@@ -78,6 +78,7 @@ import * as appearance from './core/appearanceAssets'
 import { applyNativeAppearance } from './nativeAppearance'
 import { carouselImages, MAX_CAROUSEL_IMAGES } from '../shared/appearancePolicy'
 import { pathIdentity } from './core/folderPaths'
+import { openExternalLink } from './core/externalLinks'
 import * as direct from './core/directConnect'
 import type { DirectHostRequest } from '../shared/directConnect'
 import { registerVoxlinkIpc } from './core/voxlink'
@@ -1031,6 +1032,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     fs.mkdirSync(dir, { recursive: true })
     void shell.openPath(dir)
   })
+  ipcMain.handle(IPC.appOpenExternal, (_e, url: string) => openExternalLink(String(url ?? '')))
   ipcMain.handle(IPC.fsList, (_e, rel: string, folder?: string) => listDir(String(rel ?? ''), folder))
   ipcMain.handle(IPC.fsRemove, async (_e, rel: string, name: string, folder?: string) => {
     const dir = await safeDir(String(rel ?? ''), folder)
