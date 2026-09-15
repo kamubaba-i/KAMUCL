@@ -10,7 +10,7 @@
  *   push   'voxlink:event'   {type, data}  → state/log/phase/code/room
  */
 import { ipcMain, BrowserWindow, type IpcMain } from 'electron'
-import { VoxlinkApp, type CreateRoomParams, type LobbyRoom } from './engine'
+import { publicRoomInfo, VoxlinkApp, type CreateRoomParams, type LobbyRoom } from './engine'
 import type { VoxlinkSettings } from './settings'
 import { DEFAULT_VOXLINK_ROOM_NAME, normalizeVoxlinkRoomName } from '../../../shared/voxlinkRoom'
 
@@ -25,7 +25,10 @@ function vapp(): VoxlinkApp {
 
 /** 引擎事件转发：session:state（状态/人数变化）额外携带一份完整快照，驱动面板实时刷新。 */
 function forwardEvent(ev: string, data: unknown): void {
-  push(ev, data)
+  const safeData = ev === 'session:state' && data && typeof data === 'object'
+    ? { ...(data as Record<string, unknown>), room: publicRoomInfo((data as { room?: unknown }).room as ReturnType<typeof vapp>['room']) }
+    : data
+  push(ev, safeData)
   if (ev === 'session:state') push('state', snapshot())
 }
 
@@ -40,7 +43,7 @@ function snapshot(): unknown {
   const a = vapp()
   return {
     state: a.state,
-    room: a.room,
+    room: publicRoomInfo(a.room),
     session: a.getSessionStateJSON(),
     settings: a.settings,
     pending: requestPending, joinedAt:a.engine.joinedAt, connection:a.engine.lastConnection, stages:a.engine.stages
@@ -58,7 +61,7 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
     if (payload.mode === 'join') {
       const r = await a.joinRoom({ code: String(payload.code ?? '').trim() })
       push('state', snapshot())
-      return { ok: true, ...r }
+      return { ok: true }
     }
     const name = normalizeVoxlinkRoomName(payload.roomName ?? DEFAULT_VOXLINK_ROOM_NAME)
     // hostPort 必填：未传则自动探测本机 MC 局域网端口
@@ -78,7 +81,7 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
     }
     const r = await a.createRoom(req)
     push('state', snapshot())
-    return { ok: true, ...r }
+    return { ok: true }
     } finally {if(generation===requestGeneration)requestPending=false}
   })
 
