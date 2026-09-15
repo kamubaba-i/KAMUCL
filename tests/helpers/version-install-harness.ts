@@ -9,7 +9,7 @@ let bundle: Promise<string> | undefined
 export async function versionInstallHarness(root: string, metadataFetch: typeof fetch = fetch, downloadUrl = (url: string) => url) {
   bundle ??= build({
     stdin: {
-      contents: `export { installVersion, readVersionJson, listInstalled, libraryTasks, resolvedLibraries, resolveVersionChain, launchLibraryFiles } from './src/main/core/versions';
+      contents: `export { installVersion, readVersionJson, listInstalled, libraryTasks, resolvedLibraries, resolveVersionChain, launchLibraryFiles, removeVersion } from './src/main/core/versions';
         export { getSettings } from './src/main/core/settings';
         export { listFabricApiVersions } from './src/main/core/loaders';
         export { communityDownload, communitySearchPage, communityFiles } from './src/main/core/community';
@@ -35,6 +35,7 @@ export async function versionInstallHarness(root: string, metadataFetch: typeof 
   )
   return exported.exports as {
     installVersion: typeof import('../../src/main/core/versions').installVersion
+    removeVersion: typeof import('../../src/main/core/versions').removeVersion
     readVersionJson: typeof import('../../src/main/core/versions').readVersionJson
     listInstalled: typeof import('../../src/main/core/versions').listInstalled
     getSettings: typeof import('../../src/main/core/settings').getSettings

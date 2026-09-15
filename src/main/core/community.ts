@@ -450,6 +450,14 @@ export async function communityExactFile(source: CommunitySource, projectId: str
   return files[0]
 }
 
+export function validateTrustedCommunityFile(file: CommunityFile): CommunityFile {
+  let url: URL
+  try { url = new URL(file.url) } catch { throw new Error('社区文件下载地址必须使用 HTTPS') }
+  if (url.protocol !== 'https:') throw new Error('社区文件下载地址必须使用 HTTPS')
+  if (!/^[a-f0-9]{40}$/i.test(file.sha1 ?? '')) throw new Error('社区文件必须提供 40 位 SHA1 哈希')
+  return file
+}
+
 // ---------------- 对外：下载 ----------------
 
 /** kind → 游戏目录下的子目录 */

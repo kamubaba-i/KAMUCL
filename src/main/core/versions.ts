@@ -53,6 +53,7 @@ import {
   withGameFolder
 } from './paths'
 import { ensureInstanceThumbnail, removeInstanceThumbnail } from './appearanceAssets'
+import { isPathContained, isSafeChildName } from './security'
 
 export type ProgressEmit = (e: ProgressEvent) => void
 
@@ -956,6 +957,22 @@ export function renameVersion(id: string, newName: string): void {
   }
 }
 export function removeVersion(id: string): void {
+  if (!isSafeChildName(id)) throw new Error('无效的版本 ID')
+  const dir = versionDir(id)
+  const parent = path.dirname(dir)
+  let parentStat: fs.Stats
+  let targetStat: fs.Stats
+  try {
+    parentStat = fs.lstatSync(parent)
+    targetStat = fs.lstatSync(dir)
+  } catch {
+    throw new Error('版本目录不存在')
+  }
+  if (!parentStat.isDirectory() || parentStat.isSymbolicLink() ||
+      !targetStat.isDirectory() || targetStat.isSymbolicLink() ||
+      !isPathContained(parent, dir, false)) {
+    throw new Error('版本目录不存在')
+  }
   // 自定义图标与启动卡缩略图随实例删除（内置资源无文件落地）。
   try {
     const j = readVersionJson(id)
@@ -966,7 +983,7 @@ export function removeVersion(id: string): void {
   } catch {
     /* 清理图标失败不阻断删除 */
   }
-  fs.rmSync(versionDir(id), { recursive: true, force: true })
+  fs.rmSync(dir, { recursive: true, force: true })
 }
 
 /** 设置实例图标：'mob:<内置id>' / 'file:<文件名>' / '' 恢复默认；更换时清理旧的自定义图标文件 */

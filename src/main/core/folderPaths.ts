@@ -23,6 +23,17 @@ export function samePath(a: string, b: string): boolean {
   return pathIdentity(a) === pathIdentity(b)
 }
 
+export function registeredGameFolder(
+  input: string | undefined,
+  folders: ReadonlyArray<{ path: string }>
+): string | undefined {
+  if (input == null || !String(input).trim()) return undefined
+  const identity = pathIdentity(String(input))
+  const registered = folders.find((folder) => pathIdentity(folder.path) === identity)
+  if (!registered) throw new Error('文件夹未登记')
+  return registered.path
+}
+
 /**
  * 把用户选择定位到 Minecraft 根目录：支持直接选根目录、选 versions 目录，
  * 或选择一个包含 .minecraft 子目录的上级文件夹。
