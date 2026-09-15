@@ -1,4 +1,5 @@
 import './download-cancellation.test'
+import './preload-channel-policy.test'
 import './download-policy.test'
 import './download-progress.test'
 import './download-limits.test'
