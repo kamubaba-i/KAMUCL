@@ -72,9 +72,10 @@ for (const outcome of ['included', 'mismatch', 'missing', 'supplied'] as const) 
   const requests: string[] = []
   const controller = new AbortController()
   let base = '', runtime: Awaited<ReturnType<typeof versionInstallHarness>> | undefined
+  const versionBody = () => Buffer.from(JSON.stringify({ id: '1.20.1', mainClass: 'fixture.Main', libraries: [], downloads: { client: { url: base + '/client', sha1: sha1(client), size: client.length } } }))
   const server = http.createServer((req, res) => {
     const url = req.url!; requests.push(url)
-    if (url === '/version') return void res.end(JSON.stringify({ id: '1.20.1', mainClass: 'fixture.Main', libraries: [], downloads: { client: { url: base + '/client', sha1: sha1(client), size: client.length } } }))
+    if (url === '/version') return void res.end(versionBody())
     if (url === '/client') return void res.end(client)
     if (url === '/network') return void res.end(network)
     const match = url.match(/\/mods\/(\d+)\/files\/(\d+)/)
@@ -89,7 +90,7 @@ for (const outcome of ['included', 'mismatch', 'missing', 'supplied'] as const) 
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r)); base = `http://127.0.0.1:${(server.address() as any).port}`
   try {
     runtime = await versionInstallHarness(root,
-      async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01' }] }),
+      async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01', sha1: sha1(versionBody()) }] }),
       url => /\/mods\/\d+\/files\/\d+|\/version_file\//.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
     Object.assign(runtime.getSettings(), { gameDir: game, activeFolder: game, folders: [{ path: game, name: 'fixture', isDefault: true }], defaultIsolation: true, mirror: 'bmclapi' })
     const zip = new AdmZip()
