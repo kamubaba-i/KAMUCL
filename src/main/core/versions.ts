@@ -167,6 +167,19 @@ export function rulesAllow(rules?: VersionRule[]): boolean {
 const MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest.json'
 const CACHE_TTL = 60 * 60 * 1000 // 缓存 1 小时
 
+export function parseRemoteVersion(value: unknown): RemoteVersion | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Record<string, unknown>
+  const id = typeof item.id === 'string' ? item.id : ''
+  const type = item.type
+  const url = typeof item.url === 'string' ? item.url : ''
+  const releaseTime = typeof item.releaseTime === 'string' ? item.releaseTime : ''
+  const sha1 = typeof item.sha1 === 'string' ? item.sha1.toLowerCase() : ''
+  if (!id || !['release', 'snapshot', 'old_beta', 'old_alpha'].includes(String(type)) ||
+      !url || !releaseTime || !/^[a-f0-9]{40}$/.test(sha1)) return null
+  return { id, type: type as RemoteVersion['type'], url, releaseTime, sha1 }
+}
+
 function manifestCacheFile(): string {
   return path.join(app.getPath('userData'), 'version_manifest.json')
 }
@@ -174,7 +187,9 @@ function manifestCacheFile(): string {
 function readManifestCache(): RemoteVersion[] | null {
   try {
     const c = JSON.parse(fs.readFileSync(manifestCacheFile(), 'utf-8'))
-    return Array.isArray(c.versions) ? (c.versions as RemoteVersion[]) : null
+    if (!Array.isArray(c.versions)) return null
+    const versions: Array<RemoteVersion | null> = c.versions.map((value: unknown) => parseRemoteVersion(value))
+    return versions.every((version): version is RemoteVersion => !!version) ? versions : null
   } catch {
     return null
   }
@@ -220,15 +235,9 @@ export async function fetchVersionManifest(
       }
     }
     if (!data) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
-    const versions: RemoteVersion[] = (data.versions ?? []).map((v) => {
-      const it = v as Record<string, string>
-      return {
-        id: it.id,
-        type: it.type as RemoteVersion['type'],
-        url: it.url,
-        releaseTime: it.releaseTime
-      }
-    })
+    const versions = (data.versions ?? [])
+      .map(parseRemoteVersion)
+      .filter((version): version is RemoteVersion => !!version)
     fs.mkdirSync(path.dirname(manifestCacheFile()), { recursive: true })
     fs.writeFileSync(
       manifestCacheFile(),
@@ -274,7 +283,7 @@ export async function getVersionJson(
     }
     if (!entry) throw new Error(`版本清单中找不到 ${versionId}`)
     fs.mkdirSync(path.dirname(jsonPath), { recursive: true })
-    await downloadFile(entry.url, jsonPath, undefined, undefined, mirror, signal)
+    await downloadFile(entry.url, jsonPath, undefined, entry.sha1, mirror, signal)
   }
   return JSON.parse(fs.readFileSync(jsonPath, 'utf-8').replace(/^﻿/, '')) as VersionJson
 }
