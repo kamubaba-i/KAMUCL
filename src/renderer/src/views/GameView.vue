@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatReleaseTime } from '@shared/releaseTime'
 import { openInstanceCenter } from '../instanceCenter'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
@@ -6,7 +7,7 @@ import {
   cleanupPartialInstall,
   errText,
   formatSpeed,
-  getManifest,
+  getVersionCatalog,
   getIsolationPlan,
   getSettings,
   installVersion,
@@ -55,6 +56,11 @@ import type {
 const manifest = ref<RemoteVersion[]>([])
 const loading = ref(false)
 const loadError = ref('')
+const staleCatalog = ref(false)
+const checkedAt = ref(0)
+let disposed = false
+let lastAttempt = 0
+let catalogTimer: ReturnType<typeof setInterval> | undefined
 
 /** 顶部 Tab：版本下载 / 已安装（消灭内层嵌套滚动，localStorage 记忆） */
 const TAB_KEY = 'kamucl.gameTab'
@@ -99,16 +105,29 @@ const tabBlobStyle = computed(() => ({
 }))
 
 async function load(refresh = false) {
+  if (loading.value || disposed) return
+  lastAttempt = Date.now()
   loading.value = true
   loadError.value = ''
   try {
-    manifest.value = await getManifest(refresh)
+    const result = await getVersionCatalog(refresh)
+    if (disposed) return
+    manifest.value = result.versions
+    staleCatalog.value = result.stale
+    checkedAt.value = result.checkedAt
   } catch (e) {
-    loadError.value = errText(e)
-  } finally {
-    loading.value = false
-  }
+    if (!disposed) loadError.value = errText(e)
+  } finally { if (!disposed) loading.value = false }
 }
+function checkCatalogOnReturn() {
+  if (document.visibilityState === 'visible' && Date.now() - lastAttempt >= 60_000) void load(true)
+}
+onUnmounted(() => {
+  disposed = true
+  clearInterval(catalogTimer)
+  window.removeEventListener('focus', checkCatalogOnReturn)
+  document.removeEventListener('visibilitychange', checkCatalogOnReturn)
+})
 
 // ---------------- 游戏文件夹（统一管理入口） ----------------
 const folders = ref<GameFolder[]>([])
@@ -283,7 +302,10 @@ async function revealCurrentFolder() {
 }
 
 onMounted(() => {
-  void load()
+  void load(true)
+  window.addEventListener('focus', checkCatalogOnReturn)
+  document.addEventListener('visibilitychange', checkCatalogOnReturn)
+  catalogTimer = setInterval(() => { if (document.visibilityState === 'visible') void load(true) }, 5 * 60_000)
   void loadFolderState()
 })
 
@@ -331,10 +353,8 @@ const filtered = computed(() =>
   })
 )
 
-const formatDate = (iso: string) => {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('zh-CN')
-}
+const formatDate = formatReleaseTime
+const latestRelease = computed(() => manifest.value.find(v => v.type === 'release'))
 
 const isInstalled = (v: RemoteVersion) => store.installed.some((i) => i.mcVersion === v.id)
 
@@ -990,13 +1010,24 @@ async function confirmIsolation() {
       </div>
     </div>
 
+    <div v-if="tab === 'download'" class="catalog-status muted" role="status" data-ui="game.catalog-status">
+      <span v-if="staleCatalog || loadError">{{ loadError || '官方清单暂不可用，显示镜像或缓存；将自动重试' }}</span>
+      <span v-else>{{ loading ? '正在核对最新版本…' : '自动检查已开启' }}</span>
+      <span>发布时间为本地时间<span v-if="checkedAt"> · 最近检查 {{ formatDate(new Date(checkedAt).toISOString()) }}</span></span>
+    </div>
+    <div v-if="tab === 'download' && latestRelease && !keyword" class="card latest-release" data-ui="game.latest-release">
+      <div><span class="tag tag-gold">最新正式版</span><strong>{{ latestRelease.id }}</strong>
+        <time :datetime="latestRelease.releaseTime">发布于 {{ formatDate(latestRelease.releaseTime) }}</time>
+      </div>
+      <button class="btn btn-gold" :disabled="store.installing.has(latestRelease.id)" @click="openInstall(latestRelease)">{{ store.installing.has(latestRelease.id) ? '下载中' : isInstalled(latestRelease) ? '再安装' : '安装' }}</button>
+    </div>
     <!-- 版本列表 -->
     <div v-if="tab === 'download'" class="card list-card">
       <div v-if="loading && !manifest.length" class="empty">
         <span class="spin"></span>
         <span>正在获取版本列表…</span>
       </div>
-      <div v-else-if="loadError" class="empty">
+      <div v-else-if="loadError && !manifest.length" class="empty">
         <span>加载失败：{{ loadError }}</span>
         <button class="btn btn-ghost btn-sm" @click="load(true)">重试</button>
       </div>
@@ -1008,7 +1039,7 @@ async function confirmIsolation() {
           <div class="version-info">
             <span class="version-id">{{ v.id }}</span>
             <span class="tag" :class="typeTagClass(v.type)">{{ typeText[v.type] }}</span>
-            <span class="muted version-date">{{ formatDate(v.releaseTime) }}</span>
+            <time class="muted version-date" :datetime="v.releaseTime" title="本地发布时间">{{ formatDate(v.releaseTime) }}</time>
           </div>
           <div class="version-actions">
             <div v-if="store.installing.has(v.id) && versionProgress(v.id)" class="row-progress">
@@ -1499,6 +1530,13 @@ async function confirmIsolation() {
 </template>
 
 <style scoped>
+.catalog-status{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;margin-bottom:12px}
+.latest-release{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px;margin-bottom:16px}
+.latest-release>div{display:flex;align-items:center;gap:14px;flex-wrap:wrap;min-width:0}
+.latest-release strong{font-size:24px}
+.latest-release time{color:var(--text-dim);font-size:13px}
+.latest-release>button{flex-shrink:0}
+
 .page {
   display: flex;
   flex-direction: column;

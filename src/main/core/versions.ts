@@ -1,6 +1,7 @@
 /**
  * 版本管理：版本清单缓存、rules 评估、原版安装、已装列表、删除
  */
+import { fetchVersionCatalog } from './versionCatalog'
 import { resolveInstanceMetadata } from './instanceMetadata'
 import { mavenIdentity } from './mavenIdentity'
 import { withFileJob } from './fileJobs'
@@ -17,16 +18,13 @@ import type {
   RemoteVersion
 } from '../../shared/types'
 import {
-  classifyHttpStatus,
   downloadAll,
-  downloadCandidates,
   downloadFile,
-  fetchSignal,
   type DownloadTask,
   type MirrorPref
 } from './download'
 import { getSettings } from './settings'
-import { abortableDelay, throwIfCancelled } from './tasks'
+import { throwIfCancelled } from './tasks'
 import { createWeightedProgressEmit, VERSION_INSTALL_STAGE_RANGES } from './progress'
 import { runParallelTasks } from './parallelTasks'
 import { ParallelProgress } from './parallelProgress'
@@ -164,84 +162,12 @@ export function rulesAllow(rules?: VersionRule[]): boolean {
 
 // ---------------- 版本清单 ----------------
 
-const MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest.json'
-const CACHE_TTL = 60 * 60 * 1000 // 缓存 1 小时
-
-function manifestCacheFile(): string {
-  return path.join(app.getPath('userData'), 'version_manifest.json')
+export async function getVersionCatalog(refresh = false, signal?: AbortSignal) {
+  return fetchVersionCatalog(path.join(app.getPath('userData'), 'version_manifest.json'), refresh, signal)
 }
 
-function readManifestCache(): RemoteVersion[] | null {
-  try {
-    const c = JSON.parse(fs.readFileSync(manifestCacheFile(), 'utf-8'))
-    return Array.isArray(c.versions) ? (c.versions as RemoteVersion[]) : null
-  } catch {
-    return null
-  }
-}
-
-/** 拉取远程版本清单，带 1 小时本地缓存；refresh=true 强制刷新；signal 用于任务取消 */
-export async function fetchVersionManifest(
-  mirror: MirrorPref,
-  refresh = false,
-  signal?: AbortSignal
-): Promise<RemoteVersion[]> {
-  if (!refresh) {
-    try {
-      const c = JSON.parse(fs.readFileSync(manifestCacheFile(), 'utf-8'))
-      if (Date.now() - c.fetchedAt < CACHE_TTL && Array.isArray(c.versions)) {
-        return c.versions as RemoteVersion[]
-      }
-    } catch {
-      /* 无缓存或损坏则联网拉取 */
-    }
-  }
-  try {
-    // 元数据官方地址优先，BMCL 仅作受支持的备用源；404/410 不重试同址。
-    let data: { versions?: unknown[] } | null = null
-    let lastErr: unknown = null
-    sourceLoop: for (const source of downloadCandidates([MANIFEST_URL], mirror)) {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (signal?.aborted) throw new Error('已取消')
-        try {
-          const res = await fetch(source, { signal: fetchSignal(signal) })
-          if (!res.ok) {
-            lastErr = new Error(`HTTP ${res.status}: ${source}`)
-            if (classifyHttpStatus(res.status) !== 'transient') break
-            throw lastErr
-          }
-          data = (await res.json()) as { versions?: unknown[] }
-          break sourceLoop
-        } catch (e) {
-          if (signal?.aborted) throw new Error('已取消')
-          lastErr = e
-          if (attempt < 2) await abortableDelay(800 * (attempt + 1), signal)
-        }
-      }
-    }
-    if (!data) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
-    const versions: RemoteVersion[] = (data.versions ?? []).map((v) => {
-      const it = v as Record<string, string>
-      return {
-        id: it.id,
-        type: it.type as RemoteVersion['type'],
-        url: it.url,
-        releaseTime: it.releaseTime
-      }
-    })
-    fs.mkdirSync(path.dirname(manifestCacheFile()), { recursive: true })
-    fs.writeFileSync(
-      manifestCacheFile(),
-      JSON.stringify({ fetchedAt: Date.now(), versions }),
-      'utf-8'
-    )
-    return versions
-  } catch (e) {
-    // 网络失败时回退到过期缓存
-    const stale = readManifestCache()
-    if (stale) return stale
-    throw e
-  }
+export async function fetchVersionManifest(_mirror: MirrorPref, refresh = false, signal?: AbortSignal): Promise<RemoteVersion[]> {
+  return (await getVersionCatalog(refresh, signal)).versions
 }
 
 // ---------------- 版本 json ----------------

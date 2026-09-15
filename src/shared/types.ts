@@ -714,6 +714,7 @@ export const IPC = {
   accountsRefresh: 'accounts:refresh', // (id) => Account
 
   // 版本
+  versionsCatalog: 'versions:catalog',
   versionsManifest: 'versions:manifest', // (refresh?: boolean) => RemoteVersion[]
   versionsInstalled: 'versions:installed', // () => InstalledVersion[]
   versionsInstall: 'versions:install', // (versionId: string, opts?: InstallOptions) => void

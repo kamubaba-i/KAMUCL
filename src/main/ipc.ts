@@ -318,6 +318,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   )
 
   // ---------------- 版本 ----------------
+  ipcMain.handle(IPC.versionsCatalog, (_e, refresh?: boolean) => versions.getVersionCatalog(refresh === true))
   ipcMain.handle(IPC.versionsManifest, (_e, refresh?: boolean) =>
     versions.fetchVersionManifest(settings.getSettings().mirror, refresh === true)
   )

@@ -128,6 +128,7 @@ export const prepareYggdrasilRuntime = () =>
 export const refreshAccount = (id: string) => invoke<Account>(IPC.accountsRefresh, id)
 
 // ---------------- 版本 ----------------
+export const getVersionCatalog = (refresh = false) => invoke<{ versions: RemoteVersion[]; checkedAt: number; stale: boolean }>(IPC.versionsCatalog, refresh)
 export const getManifest = (refresh = false) => invoke<RemoteVersion[]>(IPC.versionsManifest, refresh)
 export const getInstalled = () => invoke<InstalledVersion[]>(IPC.versionsInstalled)
 export const installVersion = (id: string, opts?: InstallOptions) =>
