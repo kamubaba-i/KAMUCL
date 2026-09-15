@@ -21,7 +21,7 @@ import { stopDirectHost } from './core/directConnect'
 import { stopVoxlinkOnQuit } from './core/voxlink'
 import { stopTerracottaOnQuit } from './core/terracotta'
 import { frpManager } from './core/frpService'
-import { applyPendingIfAny, getPendingUpdate } from './core/applyUpdate'
+import { applyUpdateOnStartup, acknowledgeUpdateStartup, blockedUpdateVersion, getPendingUpdate } from './core/applyUpdate'
 import { startMemoryTrim } from './core/memTrim'
 import type { MemoryTrimController } from './core/memTrim'
 import { getRunningGamePids } from './core/launch'
@@ -116,6 +116,7 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
   if (process.platform === 'win32' && windowState) restoreWindowBounds(win, windowState)
   if (windowState?.maximized) applyMaximized(win)
   trackWindowState(win)
+  win.once('show', () => { void acknowledgeUpdateStartup().catch(error => launcherLogWarn('update', '更新确认失败', error)) })
   const mainWindow = win
   // 静默瘦身钩子：最小化/隐藏触发工作集整理 + 渲染层瘦身广播；恢复不做处理（自然回涨）
   mainWindow.on('minimize', () => memTrim?.noteHidden())
@@ -156,6 +157,7 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
 app.whenReady().then(async () => {
   initializeLauncherLog()
   launcherLogInfo('main', `Electron 就绪（版本 ${app.getVersion()}）`)
+  if (await applyUpdateOnStartup()) return
   const startup = await createStartupSplash()
   launcherLogInfo('main', '启动闪屏已创建')
   // 内存压榨控制器：指标日志 + 静默期工作集整理（trim 进程清单来自 getAppMetrics，绝不触碰游戏进程）
@@ -216,7 +218,7 @@ app.whenReady().then(async () => {
         if (applyMod.consumeUpdateFailedFlag()) {
           win?.webContents.send('event:updatePrompt', { rollbackNotice: true })
         }
-        // 已有就绪待装的更新（上次下载完成后未关闭安装）：提醒一次
+        // 已有就绪待装的更新（下载完成后等待下次启动）：提醒一次
         const pending = applyMod.getPendingUpdate()
         if (pending) win?.webContents.send('event:updateReady', { version: pending.release.version })
         const result = await checkLatest(false)
@@ -229,7 +231,7 @@ app.whenReady().then(async () => {
           autoUpdate: s.autoUpdate !== false,
           supported: applyMod.updateSupported(),
           downloading: applyMod.isUpdateDownloading(),
-          pendingVersion: pending?.release.version
+          pendingVersion: pending?.release.version ?? blockedUpdateVersion()
         })
         if (action === 'auto-download') {
           launcherLogInfo('main', `自动安装模式：静默下载更新 v${result.release.version}`)
@@ -262,35 +264,6 @@ app.on('window-all-closed', () => {
   void frpManager.shutdown().catch(error => launcherLogWarn('frp', '关闭隧道失败', error))
   launcherLogInfo('main', '所有窗口已关闭，开始清理联机相关资源')
   if (process.platform !== 'darwin') app.quit()
-})
-
-// ---------------- 关闭时自动安装更新（小白零操作） ----------------
-// 已有就绪更新包时：拦截退出 → 校验/备份/替换/重启由旁路脚本完成；游戏进程不受影响（detached）。
-let applyingPendingUpdate = false
-app.on('before-quit', (e) => {
-  if (applyingPendingUpdate) return
-  // 同步检查（preventDefault 必须同步调用才生效）
-  let hasPending = false
-  try {
-    hasPending = !!getPendingUpdate()
-  } catch { /* 读失败按无待装处理 */ }
-  if (!hasPending) return
-  e.preventDefault()
-  applyingPendingUpdate = true
-  launcherLogInfo('main', '检测到已就绪更新，退出时自动安装')
-  applyPendingIfAny()
-    .then((willApply) => {
-      if (!willApply) {
-        applyingPendingUpdate = false
-        app.quit()
-      }
-      // willApply=true：applyDownloadedUpdate 已安排 app.quit()，再次进入本钩子时直接放行
-    })
-    .catch((error) => {
-      applyingPendingUpdate = false
-      launcherLogInfo('main', `退出时自动安装失败（继续正常退出）：${error instanceof Error ? error.message : String(error)}`)
-      app.quit()
-    })
 })
 
 // ---------------- 崩溃取证（win11 25h2 概率闪退排查） ----------------

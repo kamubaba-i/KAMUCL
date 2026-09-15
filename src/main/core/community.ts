@@ -402,6 +402,28 @@ export async function communitySearchPage(input: CommunityQuery): Promise<Commun
   return { items: withZhTitle(items), total: totals.modrinth + totals.curseforge, offset: q.offset, limit: q.limit, warnings }
 }
 
+export async function curseForgeFilePage(projectID: number, fileID: number): Promise<string> {
+  if (![projectID, fileID].every(n => Number.isSafeInteger(n) && n > 0)) throw new Error('CurseForge 文件标识无效')
+  const { httpFetch } = await import('./httpClient')
+  const channel = cfChannel()
+  const sources = [{ base: CF_MIRROR, headers: undefined as Record<string, string> | undefined },
+    { base: channel.base, headers: channel.official ? { 'x-api-key': channel.key } : undefined }]
+  for (const source of sources) {
+    try {
+      const res = await httpFetch(`${source.base}/mods/${projectID}`, { headers: source.headers, signal: AbortSignal.timeout(6000) })
+      if (!res.ok) { await res.body?.cancel(); continue }
+      const data = await res.json() as { data?: { id?: number; links?: { websiteUrl?: string } } }
+      if (data.data?.id !== projectID || !data.data.links?.websiteUrl) continue
+      const url = new URL(data.data.links.websiteUrl)
+      if (url.protocol !== 'https:' || !['curseforge.com', 'www.curseforge.com'].includes(url.hostname)) continue
+      url.pathname = url.pathname.replace(/\/+$/, '') + '/download/' + fileID
+      url.search = ''; url.hash = ''
+      return url.href
+    } catch { /* Try the other public metadata source. */ }
+  }
+  throw new Error('无法读取 CurseForge 文件页面，请稍后重试')
+}
+
 /** 依赖查找保留数组接口；界面使用含总数的分页接口。 */
 export async function communitySearch(q: CommunityQuery): Promise<CommunityResult[]> {
   return (await communitySearchPage(q)).items

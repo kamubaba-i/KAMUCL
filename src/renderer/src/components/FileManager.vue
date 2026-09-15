@@ -52,6 +52,7 @@ const effectiveRel = computed(() => {
 
 /** 目录不存在时视为空列表（隔离版本刚开启、尚未产生该子目录） */
 let loadGeneration = 0
+let updateOperation = 0
 async function load() {
   const generation = ++loadGeneration
   const v = currentVersion.value
@@ -90,8 +91,8 @@ onMounted(async () => {
   void load()
 })
 
-watch([effectiveRel, activeFolder], () => { dupOpen.value = false; delModal.open = false; updatePanel.open = false; updatePanel.checking=false; updatePanel.applying=false; updatePanel.report=null; migrationOpen.value=false; void load() })
-onUnmounted(() => { loadGeneration++ })
+watch([effectiveRel, activeFolder], () => { updateOperation++; dupOpen.value = false; delModal.open = false; updatePanel.open = false; updatePanel.checking=false; updatePanel.applying=false; updatePanel.report=null; migrationOpen.value=false; void load() })
+onUnmounted(() => { loadGeneration++; updateOperation++ })
 watch(() => store.fsRefreshTick, () => void load())
 
 // ---------------- 路径显示（超长中间省略 + 点击复制） ----------------
@@ -245,7 +246,7 @@ const latestCount = computed(() => updatePanel.report?.entries.filter((e) => e.a
 
 async function onCheckUpdates() {
   const v = currentVersion.value
-  if (!v || updatePanel.checking) return
+  if (!v || updatePanel.checking || updatePanel.applying) return
   updatePanel.checking = true
   updatePanel.error = ''
   updatePanel.report = null
@@ -278,10 +279,11 @@ async function applyUpdates(fileNames: string[]) {
     .map((e) => ({ fileName: e.fileName, oldSha1:e.sha1, url: e.update!.url, targetName: e.update!.fileName, sha1: e.update!.sha1, size: e.update!.size }))
   if (!targets.length) return
   updatePanel.applying = true
-  const generation=loadGeneration
+  const operation=++updateOperation
+  for(const target of targets){updatePanel.itemState[target.fileName]='start';delete updatePanel.itemError[target.fileName]}
   try {
     const results = await applyModUpdates(v.id, targets, v.folder)
-    if(generation!==loadGeneration){toast('原实例的模组更新已结束','info');return}
+    if(operation!==updateOperation){toast('原实例的模组更新已结束','info');return}
     let okCount = 0
     for (const r of results) {
       updatePanel.itemState[r.fileName] = r.ok ? 'ok' : 'error'
@@ -301,9 +303,10 @@ async function applyUpdates(fileNames: string[]) {
     if (failed.length) toast(`${failed.length} 个更新失败：${failed[0].error ?? ''}`, 'error')
     if (updatePanel.report.entries.length === 0) updatePanel.open = false
   } catch (e) {
+    if(operation===updateOperation)for(const target of targets){updatePanel.itemState[target.fileName]='error';updatePanel.itemError[target.fileName]=errText(e)}
     toast('更新失败：' + errText(e), 'error')
   } finally {
-    if(generation===loadGeneration)updatePanel.applying = false
+    if(operation===updateOperation)updatePanel.applying = false
   }
 }
 
@@ -394,7 +397,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       </div>
       <template v-else-if="updatePanel.report">
         <div v-if="updatableEntries.length" class="upd-list">
-          <div v-for="e in updatableEntries" :key="e.fileName" class="upd-row" :class="{ 'is-ok': updatePanel.itemState[e.fileName] === 'ok' }">
+          <div v-for="e in updatableEntries" :key="e.fileName" class="upd-entry">
+          <div class="upd-row" :class="{ 'is-ok': updatePanel.itemState[e.fileName] === 'ok' }">
             <input
               type="checkbox"
               class="upd-check"
@@ -407,7 +411,9 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
             <span class="muted upd-ver">{{ e.currentVersion || '未知' }} → <b>{{ e.update!.versionNumber }}</b></span>
             <span v-if="updatePanel.itemState[e.fileName] === 'start'" class="spin upd-spin"></span>
             <span v-else-if="updatePanel.itemState[e.fileName] === 'error'" class="upd-err" :title="updatePanel.itemError[e.fileName]">失败</span>
-            <button class="btn btn-ghost btn-sm" :disabled="updatePanel.applying" @click="catalog[e.fileName]?.locked ? switchFile=e.fileName : applyUpdates([e.fileName])">{{catalog[e.fileName]?.locked?'已锁定 · 选版本':'更新'}}</button>
+            <button class="btn btn-ghost btn-sm" :disabled="updatePanel.applying" @click="catalog[e.fileName]?.locked ? switchFile=e.fileName : applyUpdates([e.fileName])">{{catalog[e.fileName]?.locked?'已锁定 · 选版本':updatePanel.itemState[e.fileName]==='error'?'重试':'更新'}}</button>
+          </div>
+          <p v-if="updatePanel.itemState[e.fileName]==='error'" class="upd-error-detail" role="alert">{{updatePanel.itemError[e.fileName] || '更新失败，请重试'}}</p>
           </div>
         </div>
         <div v-else class="empty upd-empty"><span>所有已匹配来源的 MOD 均为最新</span></div>
@@ -662,6 +668,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
   max-height: 300px;
   overflow-y: auto;
 }
+.upd-error-detail { margin: 0 12px 12px 40px; color: var(--danger); font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .upd-row {
   display: flex;
   align-items: center;

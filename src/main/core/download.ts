@@ -118,7 +118,7 @@ async function reuse(dest: string, expected: Integrity, roots: string[], signal?
   return false
 }
 /** One request owns one limiter slot, private file handle and cancellation controller. */
-async function receive(url: string, temporary: string, expected: Integrity, signal: AbortSignal | undefined, progress: ProgressFn | undefined, hasAlternative: boolean, range?: { start: number; end: number }): Promise<number> {
+async function receive(url: string, temporary: string, expected: Integrity, signal: AbortSignal | undefined, progress: ProgressFn | undefined, hasAlternative: boolean, range?: { start: number; end: number }, connected?: (url: string) => void): Promise<number> {
   await waitIfTaskPaused(signal)
   const release = await downloadLimiter.acquire(signal)
   const controller = new AbortController()
@@ -155,6 +155,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     waiting = false; sinceData = 0
     if (!response.ok) throw new DownloadHttpError(response.status, url)
     if (!response.body) throw new InvalidContent('下载响应没有内容')
+    connected?.(response.url || url)
     let total = range ? range.end - range.start + 1 : expected.size ?? 0
     if (response.status === 206) {
       const parsed = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') ?? '')
@@ -195,6 +196,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     return done
   } catch (error) {
     signal?.throwIfAborted()
+    if (error instanceof Error) Object.assign(error, { downloadUrl: url })
     throw controller.signal.aborted ? controller.signal.reason : error
   } finally {
     clearInterval(timer)
@@ -207,59 +209,126 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
   }
 }
 
-/** Adaptive independent bounded ranges; cancellation keeps private resumable fragments. */
-async function segmented(url: string, dest: string, expected: Integrity, signal: AbortSignal | undefined, progress: ProgressFn | undefined, fallback: boolean, maxSegments = 8): Promise<number> {
-  const cache = path.resolve(dest + '.segments-cache'), size = expected.size!, count = Math.min(8, downloadLimiter.maxConcurrent, Math.max(2, Math.ceil(size / (2*1024*1024)))), step = Math.ceil(size / count)
+/** Small resumable ranges share a live connection budget and retry independently. */
+async function segmented(url: string, dest: string, expected: Integrity, signal: AbortSignal | undefined, progress: ProgressFn | undefined, fallback: boolean, maxSegments: number | (() => number) = 8, alternatives: string[] = []): Promise<number> {
+  const cache = path.resolve(dest + '.segments-cache'), size = expected.size!
   const clear = async () => { if (path.dirname(cache) !== path.dirname(path.resolve(dest))) throw new Error('缓存路径越界'); await fs.promises.rm(cache, { recursive: true, force: true }) }
-  const identity = JSON.stringify({ version: 1, size, sha1: expected.sha1, sha512: expected.sha512, sha256: expected.sha256, step })
   try { const stat = await fs.promises.lstat(cache); if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('下载缓存不是普通目录') } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-  let previous = ''; try { previous = await fs.promises.readFile(path.join(cache, 'identity.json'), 'utf8') } catch {}
-  if (previous !== identity) { await clear(); await fs.promises.mkdir(cache, { recursive: true }); await fs.promises.writeFile(path.join(cache, 'identity.json'), identity) }
+  let previous: { version?: number; size?: number; sha1?: string; sha512?: string; sha256?: string; step?: number } = {}
+  try { previous = JSON.parse(await fs.promises.readFile(path.join(cache, 'identity.json'), 'utf8')) } catch {}
+  const compatible = previous.version === 1 && previous.size === size && previous.sha1 === expected.sha1 && previous.sha512 === expected.sha512 && previous.sha256 === expected.sha256 && Number.isSafeInteger(previous.step) && previous.step! > 0 && previous.step! <= size
+  // Keep old valid fragments, including those created with a different thread setting.
+  const step = compatible ? previous.step! : Math.min(1024 * 1024, Math.ceil(size / 2))
+  const count = Math.ceil(size / step)
+  if (!compatible) {
+    await clear(); await fs.promises.mkdir(cache, { recursive: true })
+    await fs.promises.writeFile(path.join(cache, 'identity.json'), JSON.stringify({ version: 1, size, sha1: expected.sha1, sha512: expected.sha512, sha256: expected.sha256, step }))
+  }
   const controller = new AbortController(), cancel = () => controller.abort(signal?.reason)
   inheritTaskControl(signal, controller.signal)
   signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel()
-  const received = Array<number>(count).fill(0); let failure: unknown
-  try {
-    let cursor = 0
-    await Promise.all(Array.from({length:Math.min(count, maxSegments)}, async () => {
-      while (!controller.signal.aborted && cursor < count) {
-      const index = cursor++
-      const start = index * step, end = Math.min(size, start + step) - 1, file = path.join(cache, index + '.part')
-      try {
-        let saved = 0; try { const st = await fs.promises.lstat(file); if (!st.isFile() || st.isSymbolicLink()) throw new Error('下载分片不是普通文件'); saved = st.size } catch(error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-        if (saved > end-start+1) { await fs.promises.rm(file); saved=0 }
-        received[index]=saved
-        if (saved < end-start+1) {
-          for (let attempt = 0; ; attempt++) {
-            try {
-              await receive(url,file,expected,controller.signal,(done,_total,wire)=>{received[index]=done;progress?.(received.reduce((a,b)=>a+b,0),size,wire)},fallback,{start,end})
-              break
-            } catch (error) {
-              controller.signal.throwIfAborted()
-              if (attempt || error instanceof InvalidContent || error instanceof NetworkIdle || (error instanceof DownloadHttpError && classifyHttpStatus(error.status) !== 'transient')) throw error
-              await abortableDelay(200, controller.signal)
-            }
-          }
-        }
-      } catch(error) { if (!failure) failure=error; controller.abort(error) }
+  const received = Array<number>(count).fill(0)
+  const sources = [...new Set([url, ...alternatives])].map(url => ({ url, active: 0, used: false, disabled: false, failures: 0, rate: 0 }))
+  // edge and mediafilez address the same immutable object. Try the direct range endpoint;
+  // retain edge in downloadFile's ordinary-GET fallback for CDN Range rejection.
+  for (const source of sources) {
+    try {
+      const u = new URL(source.url)
+      if (u.hostname === 'edge.forgecdn.net' && u.protocol === 'https:') {
+        u.hostname = 'mediafilez.forgecdn.net'
+        if (sources.some(other => other.url === u.href)) source.disabled = true
       }
-    }))
+    } catch {}
+  }
+  const emit = (wire = 0) => progress?.(received.reduce((a, b) => a + b, 0), size, wire)
+  const runRange = async (index: number) => {
+    const start = index * step, end = Math.min(size, start + step) - 1, file = path.join(cache, index + '.part')
+    if (received[index] === end - start + 1) return
+    const tried = new Map<typeof sources[number], number>()
+    let lastError: unknown = new Error('没有可用的分片下载地址')
+    for (let attempt = 0; attempt < sources.length * 2 + 1; attempt++) {
+      controller.signal.throwIfAborted()
+      const available = sources.filter(source => !source.disabled && (tried.get(source) ?? 0) < 2)
+      if (!available.length) throw lastError
+      // Explore each supplied source once, then feed work to the measured faster source.
+      // A failed shard changes source without cancelling other healthy requests.
+      available.sort((a, b) => (tried.get(a) ?? 0) - (tried.get(b) ?? 0) || a.failures - b.failures || Number(a.used) - Number(b.used) || b.rate - a.rate || a.active - b.active)
+      const source = available[0], retry = tried.get(source) ?? 0
+      source.used = true; source.active++; tried.set(source, retry + 1)
+      const before = received[index]; let connectedAt = performance.now()
+      try {
+        await receive(source.url, file, expected, controller.signal, (done, _total, wire) => { received[index] = done; emit(wire) }, retry === 0, { start, end }, finalUrl => {
+          source.url = finalUrl; connectedAt = performance.now()
+        })
+        source.rate = (received[index] - before) * 1000 / Math.max(1, performance.now() - connectedAt)
+        source.failures = 0
+        return
+      } catch (error) {
+        controller.signal.throwIfAborted(); lastError = error
+        if (error instanceof InvalidContent || (error instanceof DownloadHttpError && classifyHttpStatus(error.status) !== 'transient')) source.disabled = true
+        else if (error instanceof NetworkIdle || error instanceof TypeError || (error instanceof DownloadHttpError && classifyHttpStatus(error.status) === 'transient')) source.failures++
+        else throw error // Disk/permission failures are not network retries.
+      } finally { source.active-- }
+    }
+    throw lastError
+  }
+  let poll: ReturnType<typeof setInterval> | undefined
+  try {
+    // Load all saved bytes before reporting; source changes must not reset completed ranges.
+    for (let index = 0; index < count; index++) {
+      const file = path.join(cache, index + '.part'), length = Math.min(step, size - index * step)
+      try {
+        const st = await fs.promises.lstat(file)
+        if (!st.isFile() || st.isSymbolicLink()) throw new Error('下载分片不是普通文件')
+        if (st.size <= length) received[index] = st.size
+        else await fs.promises.rm(file)
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    }
+    emit()
+    await new Promise<void>((resolve, reject) => {
+      let cursor = 0, active = 0, failure: unknown
+      const pump = () => {
+        if (controller.signal.aborted) failure ??= controller.signal.reason
+        if (failure) { if (!active) reject(failure); return }
+        const budget = Math.max(1, Math.min(8, downloadLimiter.maxConcurrent, Math.floor(typeof maxSegments === 'function' ? maxSegments() : maxSegments) || 1))
+        while (active < budget && cursor < count && !isTaskPaused(signal)) {
+          const index = cursor++
+          if (received[index] === Math.min(step, size - index * step)) continue
+          active++
+          void runRange(index).catch(error => { failure ??= error; controller.abort(error) }).finally(() => { active--; pump() })
+        }
+        if (cursor >= count && !active) resolve()
+      }
+      poll = setInterval(pump, 100)
+      pump()
+    })
+    const output = await fs.promises.open(dest + '.part', 'w')
+    try {
+      for (let index = 0; index < count; index++) {
+        for await (const chunk of fs.createReadStream(path.join(cache, index + '.part'), { signal })) {
+          const data = Buffer.from(chunk); let offset = 0
+          while (offset < data.length) { const result = await output.write(data, offset, data.length - offset); if (!result.bytesWritten) throw new Error('分片合并写入失败'); offset += result.bytesWritten }
+        }
+      }
+      await output.sync()
+    } finally { await output.close() }
+    const invalid = await verifyFile(dest + '.part', expected, signal)
+    if (invalid) { await clear(); throw new InvalidContent(invalid) }
+    await clear(); return size
+  } catch (error) {
     signal?.throwIfAborted()
-    if (failure) throw failure
-    const output=await fs.promises.open(dest+'.part','w')
-    try { for(let index=0;index<count;index++) for await(const chunk of fs.createReadStream(path.join(cache,index+'.part'),{signal})) { const data=Buffer.from(chunk); let offset=0;while(offset<data.length){const result=await output.write(data,offset,data.length-offset);if(!result.bytesWritten)throw new Error('分片合并写入失败');offset+=result.bytesWritten} } await output.sync() } finally { await output.close() }
-    const invalid=await verifyFile(dest+'.part',expected,signal)
-    if(invalid) { await clear(); throw new InvalidContent(invalid) }
-    await clear();return size
-  } catch(error) {
-    signal?.throwIfAborted()
-    // Some CDN redirect nodes reject Range with 403/404 even when a plain GET exists.
-    if(error instanceof InvalidContent || (error instanceof DownloadHttpError && [403,404,416].includes(error.status))) {
-      await clear(); await fs.promises.rm(dest+'.part',{force:true})
-      return receive(url,dest+'.part',expected,signal,progress,fallback)
+    if (error instanceof InvalidContent || (error instanceof DownloadHttpError && [403,404,416].includes(error.status))) {
+      // Never throw away good fragments just because one CDN rejects Range. A plain
+      // response is a final compatibility path, and is still verified before commit.
+      await fs.promises.rm(dest + '.part', { force: true })
+      const bytes = await receive(url, dest + '.part', expected, signal, progress, fallback)
+      const invalid = await verifyFile(dest + '.part', expected, signal)
+      if (invalid) throw new InvalidContent(invalid)
+      await clear()
+      return bytes
     }
     throw error
-  } finally { signal?.removeEventListener('abort',cancel);controller.abort() }
+  } finally { clearInterval(poll); signal?.removeEventListener('abort', cancel); controller.abort() }
 }
 
 export async function downloadFile(url: string, dest: string, progress?: ProgressFn, sha1?: string, mirror: MirrorPref = 'official', signal?: AbortSignal, alternatives: string[] = [], integrity: { sha512?: string; sha256?: string; size?: number; reuseDirs?: string[]; systemProxy?: boolean; maxAttempts?: number; maxSegments?: number | (() => number) } = {}): Promise<void> {
@@ -282,7 +351,7 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
         for (let attempt = 0; attempt < attempts; attempt++) {
           try {
             const bytes = (expected.size ?? 0) >= 1024 * 1024 && downloadLimiter.maxConcurrent >= 2 && (sha1 || integrity.sha512 || integrity.sha256)
-              ? await segmented(source, dest, expected, signal, progress, fallback, typeof integrity.maxSegments === 'function' ? integrity.maxSegments() : integrity.maxSegments)
+              ? await segmented(source, dest, expected, signal, progress, fallback, integrity.maxSegments, candidates.slice(index + 1))
               : await receive(source, temporary, expected, signal, progress, fallback)
             const invalid = await verifyFile(temporary, expected, signal)
             if (invalid) throw new InvalidContent(invalid)
@@ -301,7 +370,10 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
           }
         }
       }
-      throw new Error(`下载失败：${lastError instanceof Error ? lastError.message : String(lastError)}`)
+      const failure = lastError as Error & { downloadUrl?: string; cause?: { code?: string; message?: string } }
+      let address = failure.downloadUrl || url
+      try { const u = new URL(address); address = u.origin + u.pathname } catch { /* retain invalid input */ }
+      throw new Error(`下载失败：${failure.message || String(lastError)}${failure.cause?.code ? ` (${failure.cause.code})` : ''}\n文件：${path.basename(dest)}\n地址：${address}`, { cause: lastError })
     } finally {
       // No detached stream may keep writing after this promise settles.
       await fs.promises.rm(temporary, { force: true })
@@ -328,7 +400,7 @@ export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressF
       while (!controller.signal.aborted && cursor < tasks.length) {
         const index = cursor++, task = tasks[index]; active.set(index, task.label ?? path.basename(task.dest))
         try {
-          await downloadFile(task.url, task.dest, (done,total,wire = 0) => { networkBytes += wire; tracker.record(index,done,total) }, task.sha1, mirror, controller.signal, task.urls, { sha512: task.sha512, sha256: task.sha256, size: task.size, reuseDirs: task.reuseDirs, maxSegments: () => Math.max(2, Math.floor(downloadLimiter.maxConcurrent / Math.max(1, active.size))) })
+          await downloadFile(task.url, task.dest, (done,total,wire = 0) => { networkBytes += wire; tracker.record(index,done,total) }, task.sha1, mirror, controller.signal, task.urls, { sha512: task.sha512, sha256: task.sha256, size: task.size, reuseDirs: task.reuseDirs, maxSegments: () => Math.max(1, Math.floor(downloadLimiter.maxConcurrent / Math.max(1, active.size))) })
           tracker.recordComplete(index, (await fs.promises.stat(task.dest)).size); active.delete(index)
         } catch (error) { firstError ??= error; controller.abort(error); return }
       }

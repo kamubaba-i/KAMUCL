@@ -1,9 +1,15 @@
 import { Worker } from 'node:worker_threads'
 import path from 'node:path'
+import fs from 'node:fs'
 import type { ModInfo } from '../../shared/types'
 import { logScope } from './launcherLog'
 
 const scans = new Map<string, Promise<Array<ModInfo & { sha1: string }>>>()
+/** Management includes disabled files; duplicate/runtime analysis keeps the enabled-only default. */
+export async function scanManagedModDirectory(dir:string){
+  const entries=await fs.promises.readdir(dir,{withFileTypes:true}).catch(error=>{if(error.code==='ENOENT')return [];throw error})
+  return scanModDirectory(dir,true,entries.filter(e=>e.isFile()&&/\.jar(?:\.disabled)?$/i.test(e.name)).map(e=>e.name))
+}
 export function scanModDirectory(dir: string, hash = false, names?: string[]): Promise<Array<ModInfo & { sha1: string; fingerprint?: number }>> {
   const key = dir + ':' + hash + ':' + JSON.stringify(names)
   if (scans.has(key)) return scans.get(key)!

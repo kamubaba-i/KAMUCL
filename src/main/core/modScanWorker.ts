@@ -9,12 +9,13 @@ import { curseFingerprint } from './modIconIdentity'
 // CPU-heavy ZIP parsing stays off Electron's main thread. Only regular files in this directory.
 async function scan() {
   const { dir, hash, names } = workerData as { dir: string; hash: boolean; names?: string[] }
+  const requested = names ? new Set(names) : undefined
   let entries: fs.Dirent[]
   try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e }
   const result: unknown[] = []
   for (const entry of entries) {
-    if (!entry.isFile() || !(names ? names.includes(entry.name) && /\.(?:jar(?:\.disabled)?|zip)$/i.test(entry.name) : /\.jar$/i.test(entry.name))) continue
+    if (!entry.isFile() || !(requested ? requested.has(entry.name) && /\.(?:jar(?:\.disabled)?|zip)$/i.test(entry.name) : /\.jar$/i.test(entry.name))) continue
     const file = path.join(dir, entry.name)
     try {
       const data = await fs.promises.readFile(file)

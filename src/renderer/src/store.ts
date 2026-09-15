@@ -149,6 +149,8 @@ export function openSettings(section: 'java' | 'memory' | 'downloads'): void {
 
 // ---------------- 后台任务（下载中心） ----------------
 export interface TaskItem {
+  manualFiles?: ProgressEvent['manualFiles']
+  parallelStages?: ProgressEvent['parallelStages']
   id: string
   title: string
   stage: string
@@ -166,11 +168,14 @@ export interface TaskItem {
 
 /** 阶段名 → 中文阶段标签 */
 const STAGE_LABEL: Record<string, string> = {
+  parallel: '同步准备',
   'version-json': '解析版本信息',
   libraries: '下载依赖库',
   client: '下载游戏本体',
   assets: '下载资源文件',
   loader: '安装加载器',
+  'loader-dependencies': '下载加载器依赖',
+  'loader-process': '生成加载器运行文件',
   'fabric-api': '安装 Fabric API',
   repair: '修复文件',
   modpack: '安装整合包',
@@ -207,6 +212,8 @@ export function upsertTaskProgress(e: ProgressEvent) {
   t.speed = e.speed
   t.etaSeconds = e.etaSeconds
   t.indeterminate = e.indeterminate
+  t.parallelStages = e.parallelStages
+  t.manualFiles = e.manualFiles
 }
 
 /** 任务终态（成功/失败/取消），失败保留阶段与原因 */

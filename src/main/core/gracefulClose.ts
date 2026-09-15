@@ -157,7 +157,7 @@ function loadKernel32(): Promise<Kernel32Api | null> {
       const buildSi = (stdOut: number, stdErr: number): Record<string, unknown> => ({
         cb: koffi.sizeof(SI), lpReserved: null, lpDesktop: null, lpTitle: null,
         dwX: 0, dwY: 0, dwXSize: 0, dwYSize: 0, dwXCountChars: 0, dwYCountChars: 0,
-        dwFillAttribute: 0, dwFlags: STARTF_USESTDHANDLES, wShowWindow: 0, wCbReserved2: 0,
+        dwFillAttribute: 0, dwFlags: stdOut || stdErr ? STARTF_USESTDHANDLES : 0, wShowWindow: 0, wCbReserved2: 0,
         lpReserved2: null, hStdInput: 0, hStdOutput: stdOut, hStdError: stdErr
       })
       return {
@@ -166,10 +166,11 @@ function loadKernel32(): Promise<Kernel32Api | null> {
         createProcess: (cmdline, stdOut, stdErr, cwd) => {
           const cmdBuf = Buffer.from(cmdline + '\0', 'utf16le')
           const pi = { hProcess: 0, hThread: 0, dwProcessId: 0, dwThreadId: 0 }
-          // bInheritHandles=true：管道写端随创建传入子进程（与 libuv 一致；实测该创建路径不连带死亡）
+          // Game log pipes must be inherited; detached helpers must inherit NO
+          // handles (including Chromium sockets/file locks owned by the old app).
           // lpCurrentDirectory 显式传游戏目录：缺省会继承启动器 runtime 目录（游戏相对路径读取全错）
           const cwdBuf = cwd ? Buffer.from(cwd + '\0', 'utf16le') : null
-          if (!createProcessW(null, cmdBuf, null, null, true, CREATE_NO_WINDOW | CREATE_SUSPENDED, null, cwdBuf, buildSi(stdOut, stdErr), pi)) return null
+          if (!createProcessW(null, cmdBuf, null, null, !!(stdOut || stdErr), CREATE_NO_WINDOW | CREATE_SUSPENDED, null, cwdBuf, buildSi(stdOut, stdErr), pi)) return null
           return { pid: pi.dwProcessId, hProcess: pi.hProcess, hThread: pi.hThread }
         },
         resumeThread: (handle) => { resumeThread(handle) },

@@ -24,11 +24,11 @@ test('curseforge: official API with x-api-key when configured, mirror fallback o
   assert.match(sv, /console\.curseforge\.com/)
 })
 
-test('updater script: move-with-retry handles portable wrapper file lock + step logging (只下载不安装根因修复)', () => {
-  const au = read('src/main/core/applyUpdate.ts')
-  assert.match(au, /Move-WithRetry/)
+test('updater script: atomic replacement waits for portable wrapper and logs each outcome', () => {
+  const au = read('src/main/core/updateTransaction.ts')
+  assert.match(au, /\[IO.File\]::Replace/)
   assert.match(au, /updater-last\.log/)
-  assert.match(au, /重试 120 次仍失败/)
+  assert.match(au, /\$n -lt 60/)
   // 外层引导进程（文件锁持有者）一并等待
   assert.match(au, /wrapperPid/)
 })

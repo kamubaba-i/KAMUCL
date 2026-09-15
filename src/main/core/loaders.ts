@@ -13,13 +13,14 @@ import type { FabricApiVersion, LoaderName, ProgressEvent } from '../../shared/t
 import { BMCL_MAVEN_ROOT, downloadAll, downloadFile, fetchSignal } from './download'
 import { isCancelError } from './tasks'
 import { downloadLoaderInstaller } from './installerDownload'
+import { prepareInstallerDependencies } from './installerDependencies'
 import { SmoothedSpeedEstimator } from './downloadProgress'
 import { logScope } from './launcherLog'
 
 const loaderLog = logScope('loader')
 import { getSettings } from './settings'
 import { gameDir, librariesDir, registerVersionFolder, versionDir, versionJsonPath, versionsDir } from './paths'
-import { ensureJava, scanJava } from './java'
+import { ensureJava } from './java'
 import {
   installVanilla,
   libraryTasks,
@@ -140,10 +141,6 @@ export async function listLoaderVersions(
 
 /** 选一个可用 java 运行安装器：优先本机扫描，实在不行用 ensureJava 下载 */
 async function pickJavaForInstaller(mcVersion: string, emit: ProgressEmit): Promise<string> {
-  const found = scanJava()
-  const any = found.find((j) => j.is64Bit) ?? found[0]
-  if (any) return any.path
-  // 本机完全没有 Java，按原版需求下载一个
   const vj = readVersionJson(mcVersion)
   return await ensureJava(vj, emit)
 }
@@ -192,7 +189,7 @@ function runInstallerUnlocked(javaPath: string, jar: string, emit: ProgressEmit,
         tail = lines.pop() ?? ''
         for (const l of lines) if (l.trim()) allLines.push(l)
         const shortTail = lines.slice(-2).join(' ').slice(-160)
-        emit({ stage: 'loader', progress: 0.75, text: `安装器: ${shortTail || '运行中…'}` })
+        emit({ stage: 'loader-process', progress: 0, indeterminate: true, text: `生成加载器运行文件: ${shortTail || '处理中…'}` })
       }
       proc.stdout.on('data', onData)
       proc.stderr.on('data', onData)
@@ -258,9 +255,13 @@ export async function repairNeoRuntime(json: VersionJson, clientJar: string, bas
   // Seed declared and generated libraries with copies, not directory junctions.
   reuseExternalRuntimeLibraries(json, [path.dirname(librariesDir()), ...getSettings().folders.map(f => f.path)], path.join(staging, 'libraries'), tasks.map(t => path.join(staging, 'libraries', path.relative(librariesDir(), t.dest))))
   try {
-    await downloadFile(`https://maven.neoforged.net/releases/net/neoforged/neoforge/${neo}/neoforge-${neo}-installer.jar`, jar)
+    const mirror=getSettings().mirror
+    const repairEmit:ProgressEmit=event=>emit({...event,stage:'repair',text:`修复 NeoForge：${event.text}`})
+    await downloadLoaderInstaller(`https://maven.neoforged.net/releases/net/neoforged/neoforge/${neo}/neoforge-${neo}-installer.jar`, jar, mirror,
+      (done,total)=>repairEmit({stage:'repair',progress:total?done/total:0,text:'下载安装器 '+(done/1024/1024).toFixed(1)+'MB',bytesDone:done,bytesTotal:total||undefined}))
     const java = await ensureJava(baseJson, emit)
-    await runInstaller(java, jar, emit, undefined, staging)
+    await prepareInstallerDependencies(jar, staging, mirror, repairEmit)
+    await runInstaller(java, jar, repairEmit, undefined, staging)
     reuseExternalRuntimeLibraries(json, [staging], librariesDir(), tasks.map(t => t.dest))
     const missing = missingNeoRuntime(json, librariesDir())
     if (missing.length) throw new Error(`安装器未生成必要本体库：${missing.join('、')}`)
@@ -424,8 +425,11 @@ async function installLoaderInternal(
     if (!fs.existsSync(lp)) {
       fs.writeFileSync(lp, JSON.stringify({ profiles: {}, settings: {}, version: 3 }, null, 2), 'utf-8')
     }
-    emit({ stage: 'loader', progress: 0.7, text: '运行安装器（可能需要几分钟）…' })
+    await prepareInstallerDependencies(jarPath, gameDir(), getSettings().mirror, emit, signal)
+    signal?.throwIfAborted()
+    emit({ stage: 'loader-process', progress: 0, indeterminate: true, text: '生成加载器运行文件…' })
     await runInstaller(javaPath, jarPath, emit, signal)
+    emit({ stage: 'loader-process', progress: 1, text: '加载器运行文件已生成' })
 
     const id0 = findInstalledDir(loader, mcVersion, loaderVersion)
     if (!id0) throw new Error('安装器运行结束，但未找到生成的版本目录')

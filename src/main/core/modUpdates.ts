@@ -1,4 +1,4 @@
-import { scanModDirectory } from './modScan'
+import { scanManagedModDirectory } from './modScan'
 import { resolveResourceDirectory } from './resourceDirectory'
 import { folderOfVersion } from './paths'
 /**
@@ -10,14 +10,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { readVersionJson } from './versions'
 import { resolveInstanceMetadata } from './instanceMetadata'
-import { downloadFile } from './download'
+import { getSettings } from './settings'
+import { httpFetch } from './httpClient'
+import { logScope } from './launcherLog'
 import { withFileJob } from './fileJobs'
 import { modHash, replaceModFiles, validateModFile } from './modTransaction'
 import { isModLocked, rememberModIdentity, transferModLock } from './modState'
 
 const MR_BASES = ['https://api.modrinth.com/v2', 'https://mod.mcimirror.top/modrinth/v2']
-const UA = { 'User-Agent': 'KAMUCL-Launcher (github.com/kamicl)' }
+const UA = { 'User-Agent': 'KAMUCL-Launcher (github.com/kamubaba-i/KAMUCL)' }
 const TIMEOUT = 15_000
+const updateLog=logScope('mod-updates')
 
 export interface ModUpdateTarget {
   oldSha1?: string
@@ -74,14 +77,20 @@ interface MrVersion {
 /** Modrinth POST（主备双域名互备，与 community.ts 的 GET 互备同源策略） */
 async function mrPost(pathname: string, body: unknown): Promise<unknown> {
   let lastErr: unknown = null
-  for (const base of MR_BASES) {
+  const bases=getSettings().mirror==='bmclapi'?[...MR_BASES].reverse():MR_BASES
+  for (const base of bases) {
     try {
-      const res = await fetch(base + pathname, {
+      const init = {
         method: 'POST',
         signal: AbortSignal.timeout(TIMEOUT),
         headers: { ...UA, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-      })
+      }
+      let res:Response
+      try{res=await httpFetch(base+pathname,init)}catch(error){
+        if(!process.versions.electron||!(error instanceof TypeError))throw error
+        res=await httpFetch(base+pathname,{...init,signal:AbortSignal.timeout(TIMEOUT),systemProxy:true})
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return await res.json()
     } catch (error) {
@@ -130,7 +139,7 @@ export function mapUpdateEntries(
 /** 检测实例 mods 目录内全部 jar 的可用更新（只读网络查询，不改动任何本地文件） */
 export async function checkModUpdates(versionId: string): Promise<ModUpdateReport> {
   const dir = await modsDirOf(versionId)
-  const scanned = await scanModDirectory(dir, true)
+  const scanned = await scanManagedModDirectory(dir)
   const meta = resolveInstanceMetadata(readVersionJson(versionId), (id) => {
     try { return readVersionJson(id) } catch { return undefined }
   })
@@ -157,7 +166,7 @@ export async function checkModUpdates(versionId: string): Promise<ModUpdateRepor
   return report
 }
 
-/** 应用更新：下载到临时文件并校验 sha1，成功后删除旧文件再落位；单项失败不影响其他项。 */
+/** 应用更新：按所选下载源校验临时文件，保存备份后替换；单项失败不影响其他项。 */
 export async function applyModUpdates(
   versionId: string,
   items: ModUpdateTarget[],
@@ -169,6 +178,7 @@ export async function applyModUpdates(
   return withFileJob(dir,undefined,async()=>{
   const results: Array<{ fileName: string; ok: boolean; error?: string }> = []
   for (const item of items) {
+    updateLog.info(`开始更新 ${item.fileName} → ${item.targetName}（实例 ${versionId}，目录 ${dir}）`)
     onItem?.(item.fileName,'start')
     try {
       await assertModsIdle(dir)
@@ -178,8 +188,9 @@ export async function applyModUpdates(
       const name=item.targetName.replace(/\.disabled$/i,'')+(/\.disabled$/i.test(item.fileName)?'.disabled':'')
       await replaceModFiles(dir,[{oldName:item.fileName,oldSha1:oldHash,name,sha1:item.sha1||'',url:item.url,size:item.size}],async()=>{await assertModsIdle(dir);if(isModLocked(dir,oldHash))throw new Error('此模组已锁定')})
       transferModLock(dir,oldHash,item.sha1!)
+      updateLog.info(`模组更新完成：${item.fileName} → ${name}`)
       onItem?.(item.fileName,'ok');results.push({fileName:item.fileName,ok:true})
-    }catch(error){const message=error instanceof Error?error.message:String(error);onItem?.(item.fileName,'error',message);results.push({fileName:item.fileName,ok:false,error:message})}
+    }catch(error){const message=error instanceof Error?error.message:String(error);updateLog.error(`模组更新失败：${item.fileName}（实例 ${versionId}）`,error);onItem?.(item.fileName,'error',message);results.push({fileName:item.fileName,ok:false,error:message})}
   }
   return results
   })

@@ -28,6 +28,8 @@ import {
 import { getSettings } from './settings'
 import { abortableDelay, throwIfCancelled } from './tasks'
 import { createWeightedProgressEmit, VERSION_INSTALL_STAGE_RANGES } from './progress'
+import { runParallelTasks } from './parallelTasks'
+import { ParallelProgress } from './parallelProgress'
 import { applyIsolation, instanceDirectoryState, setNewInstanceIsolation } from './instances'
 import { assertValidResolution, normalizeStoredResolution } from './gameWindow'
 import {
@@ -414,116 +416,137 @@ async function installVanillaUnlocked(
       fs.writeFileSync(jsonPath, JSON.stringify(vj, null, 2), 'utf-8')
     }
 
-    // 1. 依赖库（含 natives classifiers）
-    const libTasks = libraryTasks(vj)
-    await downloadAll(
-      libTasks,
-      (d, t, speed, detail) =>
-        emit({
-          stage: 'libraries',
-          progress: detail.fraction ?? 0,
-          text: `下载依赖库 ${d}/${t}`,
-          speed,
-          etaSeconds: detail.etaSeconds ?? undefined,
-          bytesDone: detail.bytesDone,
-          bytesTotal: detail.bytesTotal ?? undefined,
-          indeterminate: detail.indeterminate,
-          source: sourceText
-        }),
-      downloadLimiter.maxConcurrent,
-      mirror,
-      signal
-    )
+    const parallel = new ParallelProgress([
+      { id: 'libraries', label: '依赖库', weight: 0.34 },
+      { id: 'client', label: '游戏本体', weight: 0.17 },
+      { id: 'assets', label: '资源文件', weight: 0.27 }
+    ], emit, '同步下载游戏本体、依赖库与资源', [0.04, 0.82])
+    await runParallelTasks([
+      async (signal) => {
+        const emit: ProgressEmit = event => parallel.update('libraries', event)
+        // 1. 依赖库（含 natives classifiers）
+        const libTasks = libraryTasks(vj)
+        await downloadAll(
+          libTasks,
+          (d, t, speed, detail) =>
+            emit({
+              stage: 'libraries',
+              progress: detail.fraction ?? 0,
+              text: `下载依赖库 ${d}/${t}`,
+              speed,
+              etaSeconds: detail.etaSeconds ?? undefined,
+              bytesDone: detail.bytesDone,
+              bytesTotal: detail.bytesTotal ?? undefined,
+              indeterminate: detail.indeterminate,
+              source: sourceText
+            }),
+          downloadLimiter.maxConcurrent,
+          mirror,
+          signal
+        )
 
-    // 2. 客户端 jar
-    const client = vj.downloads?.client
-    if (client?.url) {
-      // PCL2 本地复用优化：客户端 jar 优先从其他游戏文件夹的 versions 与 .kamucl/base
-      // 里按 大小+sha1 查找相同文件直接复制（多文件夹/加载器依赖原版间不再重复下载）
-      const versionDirs = allVersionsDirs()
-      const reuseDirs = versionDirs
-        .map((v) => v.dir)
-        .concat(versionDirs.map((v) => path.join(v.folder, '.kamucl', 'base')))
-        .filter((dir) => path.resolve(dir) !== path.resolve(path.dirname(jarPath)))
-      await downloadAll(
-        [{ url: client.url, dest: jarPath, sha1: client.sha1, size: client.size, reuseDirs }],
-        (_done, _total, speed, detail) => emit({stage:'client', progress:detail.fraction ?? 0,
-          bytesDone:detail.bytesDone, bytesTotal:detail.bytesTotal ?? undefined, indeterminate:detail.indeterminate,
-          speed, etaSeconds:detail.etaSeconds ?? undefined, text:'下载游戏本体 '+fmtMB(detail.bytesDone), source:sourceText}),
-        getSettings().downloadThreads, mirror, signal
-      )
-    }
-
-    // 3. 资源索引与资源文件
-    if (vj.assetIndex?.url) {
-      const idxPath = assetIndexPath(vj.assetIndex.id)
-      await downloadFile(
-        vj.assetIndex.url,
-        idxPath,
-        undefined,
-        vj.assetIndex.sha1,
-        mirror,
-        signal,
-        [],
-        { size: vj.assetIndex.size }
-      )
-
-      const idx = JSON.parse(fs.readFileSync(idxPath, 'utf-8')) as {
-        virtual?: boolean
-        map_to_resources?: boolean
-        objects?: Record<string, { hash: string; size?: number }>
+        parallel.done('libraries')
+      },
+      async (signal) => {
+        const emit: ProgressEmit = event => parallel.update('client', event)
+        // 2. 客户端 jar
+        const client = vj.downloads?.client
+        if (client?.url) {
+          // PCL2 本地复用优化：客户端 jar 优先从其他游戏文件夹的 versions 与 .kamucl/base
+          // 里按 大小+sha1 查找相同文件直接复制（多文件夹/加载器依赖原版间不再重复下载）
+          const versionDirs = allVersionsDirs()
+          const reuseDirs = versionDirs
+            .map((v) => v.dir)
+            .concat(versionDirs.map((v) => path.join(v.folder, '.kamucl', 'base')))
+            .filter((dir) => path.resolve(dir) !== path.resolve(path.dirname(jarPath)))
+          await downloadAll(
+            [{ url: client.url, dest: jarPath, sha1: client.sha1, size: client.size, reuseDirs }],
+            (_done, _total, speed, detail) => emit({stage:'client', progress:detail.fraction ?? 0,
+              bytesDone:detail.bytesDone, bytesTotal:detail.bytesTotal ?? undefined, indeterminate:detail.indeterminate,
+              speed, etaSeconds:detail.etaSeconds ?? undefined, text:'下载游戏本体 '+fmtMB(detail.bytesDone), source:sourceText}),
+            getSettings().downloadThreads, mirror, signal
+          )
       }
-      const objects = idx.objects ?? {}
 
-      // 按 hash 去重生成下载任务
-      const seen = new Set<string>()
-      const tasks: DownloadTask[] = []
-      for (const o of Object.values(objects)) {
-        if (!o?.hash || seen.has(o.hash)) continue
-        seen.add(o.hash)
-        tasks.push({
-          url: `https://resources.download.minecraft.net/${o.hash.slice(0, 2)}/${o.hash}`,
-          dest: assetObjectPath(o.hash),
-          sha1: o.hash,
-          size: o.size
-        })
-      }
-      await downloadAll(
-        tasks,
-        (d, t, speed, detail) =>
-          emit({
-            stage: 'assets',
-            progress: detail.fraction ?? 0,
-            text: `下载资源文件 ${d}/${t}`,
-            speed,
-            etaSeconds: detail.etaSeconds ?? undefined,
-            bytesDone: detail.bytesDone,
-            bytesTotal: detail.bytesTotal ?? undefined,
-            indeterminate: detail.indeterminate,
-            source: sourceText
-          }),
-        downloadLimiter.maxConcurrent,
-        mirror,
-        signal
-      )
+        parallel.done('client')
+      },
+      async (signal) => {
+        const emit: ProgressEmit = event => parallel.update('assets', event)
+        emit({ stage: 'assets', progress: 0, text: '获取资源索引' })
+        // 3. 资源索引与资源文件
+        if (vj.assetIndex?.url) {
+          const idxPath = assetIndexPath(vj.assetIndex.id)
+          await downloadFile(
+            vj.assetIndex.url,
+            idxPath,
+            undefined,
+            vj.assetIndex.sha1,
+            mirror,
+            signal,
+            [],
+            { size: vj.assetIndex.size }
+          )
 
-      // legacy 版本需要把资源复制到 assets/virtual/legacy 下
-      if (idx.virtual === true || idx.map_to_resources === true) {
-        emit({ stage: 'assets', progress: 1, text: '复制 legacy 资源' })
-        let copied = 0
-        for (const [name, o] of Object.entries(objects)) {
-          throwIfCancelled(signal)
-          if (!o?.hash) continue
-          const from = assetObjectPath(o.hash)
-          const to = path.join(virtualLegacyDir(), ...name.split('/'))
-          if (fs.existsSync(from) && !fs.existsSync(to)) {
-            fs.mkdirSync(path.dirname(to), { recursive: true })
-            fs.copyFileSync(from, to)
+          const idx = JSON.parse(fs.readFileSync(idxPath, 'utf-8')) as {
+            virtual?: boolean
+            map_to_resources?: boolean
+            objects?: Record<string, { hash: string; size?: number }>
           }
-          if (++copied % 64 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
-        }
+          const objects = idx.objects ?? {}
+
+          // 按 hash 去重生成下载任务
+          const seen = new Set<string>()
+          const tasks: DownloadTask[] = []
+          for (const o of Object.values(objects)) {
+            if (!o?.hash || seen.has(o.hash)) continue
+            seen.add(o.hash)
+            tasks.push({
+              url: `https://resources.download.minecraft.net/${o.hash.slice(0, 2)}/${o.hash}`,
+              dest: assetObjectPath(o.hash),
+              sha1: o.hash,
+              size: o.size
+            })
+          }
+          await downloadAll(
+            tasks,
+            (d, t, speed, detail) =>
+              emit({
+                stage: 'assets',
+                progress: detail.fraction ?? 0,
+                text: `下载资源文件 ${d}/${t}`,
+                speed,
+                etaSeconds: detail.etaSeconds ?? undefined,
+                bytesDone: detail.bytesDone,
+                bytesTotal: detail.bytesTotal ?? undefined,
+                indeterminate: detail.indeterminate,
+                source: sourceText
+              }),
+            downloadLimiter.maxConcurrent,
+            mirror,
+            signal
+          )
+
+          // legacy 版本需要把资源复制到 assets/virtual/legacy 下
+          if (idx.virtual === true || idx.map_to_resources === true) {
+            emit({ stage: 'assets', progress: 1, text: '复制 legacy 资源' })
+            let copied = 0
+            for (const [name, o] of Object.entries(objects)) {
+              throwIfCancelled(signal)
+              if (!o?.hash) continue
+              const from = assetObjectPath(o.hash)
+              const to = path.join(virtualLegacyDir(), ...name.split('/'))
+              if (fs.existsSync(from) && !fs.existsSync(to)) {
+                fs.mkdirSync(path.dirname(to), { recursive: true })
+                fs.copyFileSync(from, to)
+              }
+              if (++copied % 64 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
+            }
+          }
       }
-    }
+
+        parallel.done('assets')
+      }
+    ], signal)
 
     emit(
       finalEvent

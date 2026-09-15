@@ -1,4 +1,5 @@
 import { planModMigration, applyModMigration } from './core/modMigration'
+import { pendingModpackFiles, supplyModpackFiles } from './core/modpackManualFiles'
 import { registerInstanceCenterIpc } from './core/instanceCenterIpc'
 import { resolveResourceDirectory, listResourceEntries, requireResourceVersion } from './core/resourceDirectory'
 import { importResourceFiles } from './core/resourceFiles'
@@ -341,7 +342,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     let lastStage = ''
     const taskEmit = (e: ProgressEvent): void => {
       const normalized = progressGuard.normalize(e)
-      lastStage = normalized.stage
+      if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
       emit({ ...normalized, versionId: vid, taskId: task.id, taskTitle: task.title })
     }
     const taskDone = (ok: boolean, error?: string, cancelled = false): void =>
@@ -509,6 +510,19 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   )
 
   // ---------------- 整合包 ----------------
+  ipcMain.handle(IPC.modpackSupplyFiles, async (_e, token: string) => {
+    const files = pendingModpackFiles(String(token))
+    const opts: Electron.OpenDialogOptions = { title: `补充整合包文件（剩余 ${files.length} 个）`, buttonLabel: '校验并补充', properties: ['openFile', 'multiSelections'], filters: [{ name: '模组文件', extensions: ['jar', 'disabled'] }] }
+    const win = getWin()
+    const selection = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    if (selection.canceled) return { accepted: 0, remaining: files.length, rejected: [] }
+    return supplyModpackFiles(String(token), selection.filePaths)
+  })
+  ipcMain.handle(IPC.modpackOpenFile, async (_e, token: string, fileID: number) => {
+    const file = pendingModpackFiles(String(token)).find(f => f.fileID === fileID)
+    if (!file) throw new Error('该文件已补充或任务已结束')
+    await shell.openExternal(await community.curseForgeFilePage(file.projectID, file.fileID))
+  })
   // 只解析不安装：导入确认弹窗展示包信息用
   ipcMain.handle(IPC.modpackProbe, (_e, filePath: string) =>
     modpacks.probeModpack(String(filePath ?? ''))
@@ -532,7 +546,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       let lastStage = ''
       const taskEmit = (e: ProgressEvent): void => {
         const normalized = progressGuard.normalize(e)
-        lastStage = normalized.stage
+        if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       void modpacks
@@ -572,7 +586,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       let lastStage = ''
       const taskEmit = (event: ProgressEvent): void => {
         const normalized = progressGuard.normalize(event)
-        lastStage = normalized.stage
+        if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       try {
@@ -612,7 +626,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       let lastStage = ''
       const taskEmit = (e: ProgressEvent): void => {
         const normalized = progressGuard.normalize(e)
-        lastStage = normalized.stage
+        if (!['error', 'done'].includes(normalized.stage)) lastStage = normalized.stage
         emit({ ...normalized, taskId: task.id, taskTitle: task.title })
       }
       try {

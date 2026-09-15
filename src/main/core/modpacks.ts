@@ -1,7 +1,7 @@
 import { backupInstance } from './instanceCenter'
 /**
  * 整合包安装：Modrinth .mrpack、CurseForge .zip 与「解压即玩」全量包（含 .minecraft/versions）
- * 流程：探测格式 → 解析清单 → 安装游戏本体与加载器 → 创建隔离实例 → 下载文件 → 解压 overrides
+ * 流程：探测格式 → 解析清单 → 同步准备运行环境与整合包文件 → 创建隔离实例 → 提交文件 → 解压 overrides
  * 全量包：注册包内游戏版本（versions/<vid>）→ 游戏文件解压到实例目录（过滤启动器/垃圾文件）
  * 入口 installModpack(filePath, emit, opts?) 返回实例版本 id；probeModpack(filePath) 只解析不安装；
  * 失败抛出友好中文错误
@@ -14,11 +14,17 @@ import type {
   LoaderName,
   ModpackInfo,
   ModpackInstallRequest,
+  ManualModpackFile,
+  ManualModpackRequest,
   ProgressEvent
 } from '../../shared/types'
 import type { DownloadTask } from './download'
-import { downloadModpackFiles } from './modpackDownloads'
-import { resolveCurseForgeDownload } from './curseforgeDownload'
+import { prepareModpackFiles } from './modpackDownloads'
+import { runParallelTasks } from './parallelTasks'
+import { ParallelProgress } from './parallelProgress'
+import { resolveCurseForgeMetadata, exactModrinthDownload } from './curseforgeDownload'
+import { BundledModpackFiles } from './modpackBundledFiles'
+import { waitForModpackFiles } from './modpackManualFiles'
 import { getSettings } from './settings'
 import { registerVersionFolder, versionDir, versionJsonPath, versionsDir } from './paths'
 import { gameDir, withGameFolder } from './paths'
@@ -663,26 +669,26 @@ async function resolveCfFile(projectID: number, fileID: number, signal?: AbortSi
   const official = { base: channel.base, headers: channel.official ? { 'x-api-key': channel.key } : undefined }
   const mirror = { base: MCIM_CF }
   const sources = channel.official ? (getSettings().mirror === 'bmclapi' ? [mirror, official] : [official, mirror]) : [mirror]
-  return resolveCurseForgeDownload(projectID, fileID, sources, signal)
+  return resolveCurseForgeMetadata(projectID, fileID, sources, signal)
 }
 
 /** 简单并发池（保序写入结果数组） */
 async function mapPool<T, R>(
   items: T[],
   limit: number,
-  fn: (item: T, index: number) => Promise<R>,
+  fn: (item: T, index: number, signal: AbortSignal) => Promise<R>,
   signal?: AbortSignal
 ): Promise<R[]> {
   const out = new Array<R>(items.length)
   let idx = 0
-  const worker = async (): Promise<void> => {
+  const worker = async (signal: AbortSignal): Promise<void> => {
     while (idx < items.length) {
       throwIfCancelled(signal)
       const i = idx++
-      out[i] = await fn(items[i], i)
+      out[i] = await fn(items[i], i, signal)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  await runParallelTasks(Array.from({ length: Math.min(limit, items.length) }, () => worker), signal)
   return out
 }
 
@@ -694,11 +700,11 @@ async function extractOverrides(
   signal?: AbortSignal
 ): Promise<string[]> {
   if (!prefix) return []
-  const pre = prefix.replace(/[\\/]+/g, '/').replace(/\/+$/, '') + '/'
+  const pre = normEntry(prefix).replace(/\/+$/, '') + '/'
   const extracted: string[] = []
   for (const entry of zip.getEntries()) {
     throwIfCancelled(signal)
-    const name = entry.entryName.replace(/\\/g, '/')
+    const name = normEntry(entry.entryName)
     if (entry.isDirectory || !name.startsWith(pre)) continue
     const rel = name.slice(pre.length)
     const dest = safeJoin(destDir, rel)
@@ -900,8 +906,9 @@ export async function installModpack(
 }
 
 async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts?: ModpackInstallOpts): Promise<string> {
+  let manualFiles: ManualModpackRequest | null = null
   const report: ProgressEmit = (event) =>
-    emit({ ...event, overall: event.overall ?? event.progress })
+    emit({ ...event, manualFiles, overall: event.overall ?? event.progress })
   const targetFolder = requestedGameFolder(opts?.targetFolder)
   setActiveGameFolder(targetFolder)
   // 1) 校验存在性与 zip 可读、探测格式
@@ -955,24 +962,122 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
   }
   registerVersionFolder(id, targetFolder)
   const instDir = versionDir(id)
+  let prepared: Awaited<ReturnType<typeof prepareModpackFiles>> | undefined
 
   try {
-    // 4) 安装游戏本体与加载器（已有的文件自动跳过）
-    report({ stage: 'modpack', progress: 0.04, text: '安装游戏本体与加载器…' })
-    const installedId = await installVersion(
-      meta.mcVersion,
-      { instanceName: id, ...(meta.loader ? { loader: meta.loader, loaderVersion: meta.loaderVersion } : {}) },
-      (event) =>
-        report({
-          ...event,
-          // 游戏本体就绪后还要下载整合包文件、解压和写入清单。
-          stage: event.stage === 'done' ? 'modpack' : event.stage,
-          text: event.stage === 'done' ? '游戏本体与加载器准备完成，继续安装整合包…' : event.text,
-          overall: 0.04 + (event.overall ?? event.progress) * 0.44
-        }),
-      opts?.signal
-    )
+    // Download immutable pack files while preparing the runtime; commit only after both succeed.
+    const parallel = new ParallelProgress([
+      { id: 'runtime', label: '游戏环境与加载器', weight: 0.44 },
+      { id: 'pack', label: '整合包文件', weight: 0.47 }
+    ], report, '同步准备游戏环境与整合包文件', [0.04, 0.95])
+    let pending: PendingFile[] = []
+    const manual: ManualModpackFile[] = []
+    const [installedId] = await runParallelTasks([
+      async (signal) => {
+        const installedId = await installVersion(
+          meta.mcVersion,
+          { instanceName: id, ...(meta.loader ? { loader: meta.loader, loaderVersion: meta.loaderVersion } : {}) },
+          event => parallel.update('runtime', event), signal
+        )
+        parallel.done('runtime')
+        return installedId
+      },
+      async (signal) => {
+        parallel.update('pack', { stage: 'modpack', progress: 0, text: '准备整合包文件清单' })
+        if (parsed.kind === 'mrpack') {
+          pending = parsed.files
+        } else {
+          // Match immutable file identity before requiring a network URL: restricted files
+          // can already be included by the pack author in overrides/mods.
+          const cfFiles = parsed.files
+          const bundled = new BundledModpackFiles(zip, meta.overridesPrefix)
+          let resolved = 0, reused = 0
+          const infos = await mapPool(
+            cfFiles,
+            8,
+            async (f, _index, signal) => {
+              const info = await resolveCfFile(f.projectID, f.fileID, signal)
+              const local = await bundled.find(info, signal)
+              if (local) reused++
+              else if (!info.isAvailable || !info.url) {
+                info.url = await exactModrinthDownload(info, signal)
+                if (!info.url) manual.push({ ...f, fileName: info.fileName, size: info.size, sha1: info.sha1 })
+              }
+              resolved++
+              parallel.update('pack', {
+                stage: 'modpack',
+                progress: cfFiles.length ? (resolved / cfFiles.length) * 0.04 : 0,
+                text: `校验整合包文件 ${resolved}/${cfFiles.length} · 已复用包内 ${reused} 个`
+              })
+              return local ? null : { rel: `mods/${info.fileName}`, url: info.url ?? '', size: info.size, sha1: info.sha1 }
+            },
+            signal
+          )
+          pending = infos.filter((info): info is NonNullable<typeof info> => info !== null)
+          packLog.info(`CurseForge 清单 ${cfFiles.length} 个文件：校验复用包内 ${reused} 个，自动下载 ${pending.length - manual.length} 个，需手动补充 ${manual.length} 个`)
+        }
 
+        const tasks: DownloadTask[] = []
+        for (const f of pending) {
+          const dest = safeJoin(instDir, f.rel)
+          if (!dest) throw new Error(`整合包文件路径不安全：${f.rel}`)
+          tasks.push({
+            label: f.rel,
+            url: f.url,
+            urls: f.urls,
+            dest,
+            sha1: f.sha1,
+            sha512: f.sha512,
+            size: f.size || undefined
+          })
+        }
+
+        try {
+          const automatic = tasks.filter(task => !!task.url), localTasks = tasks.filter(task => !task.url)
+          const downloadProgress: Parameters<typeof prepareModpackFiles>[1] = (d, t, speed, detail) => {
+            const doneBytes = detail.bytesDone
+            const ratio = detail.fraction ?? 0
+            parallel.update('pack', {
+              stage: 'modpack',
+              progress: 0.04 + ratio * 0.96,
+              text:
+                detail.bytesTotal != null
+                  ? `下载整合包文件 ${d}/${t}（${fmtMB(doneBytes)}/${fmtMB(detail.bytesTotal)}）${detail.activeFiles?.length && detail.activeFiles.length <= 2 ? ' · ' + detail.activeFiles.join('、') : ''}`
+                  : `下载整合包文件 ${d}/${t}`,
+              speed,
+              etaSeconds: detail.etaSeconds ?? undefined,
+              bytesDone: detail.bytesDone,
+              bytesTotal: detail.bytesTotal ?? undefined,
+              indeterminate: detail.indeterminate
+            })
+          }
+          const pieces: Array<Awaited<ReturnType<typeof prepareModpackFiles>>> = []
+          try {
+            await runParallelTasks([
+              async signal => {
+                pieces.push(await prepareModpackFiles(automatic, downloadProgress, getSettings().mirror, signal))
+              },
+              async signal => {
+                if (!manual.length) return
+                await waitForModpackFiles(manual, request => {
+                  manualFiles = request
+                  report({ stage: 'modpack', progress: 0.04, text: request ? `等待补充 ${request.files.length} 个文件；其他下载继续进行` : '补充文件已全部校验' })
+                }, signal)
+                pieces.push(await prepareModpackFiles(localTasks, () => {}, getSettings().mirror, signal))
+              }
+            ], signal)
+          } catch (error) { await Promise.all(pieces.map(piece => piece.dispose())); throw error }
+          prepared = {
+            install: async signal => { for (const piece of pieces) await piece.install(signal) },
+            dispose: async () => { await Promise.all(pieces.map(piece => piece.dispose())) }
+          }
+        } catch (e) {
+          throw new Error(`整合包文件下载失败：${errText(e)}`)
+        }
+        parallel.done('pack')
+      }
+    ], opts?.signal)
+    throwIfCancelled(opts?.signal)
     // 5) 创建实例版本
     fs.mkdirSync(instDir, { recursive: true })
     if (installedId !== id) throw new Error('整合包运行配置未安装到目标实例')
@@ -986,75 +1091,8 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
       /* flatten 失败保留旧式继承，不影响启动 */
     }
 
-    // 6) 下载整合包文件
-    let pending: PendingFile[]
-    if (parsed.kind === 'mrpack') {
-      pending = parsed.files
-    } else {
-      // CurseForge：先经 MCIM 镜像解析真实文件名与下载地址
-      const cfFiles = parsed.files
-      let resolved = 0
-      const infos = await mapPool(
-        cfFiles,
-        8,
-        async (f) => {
-          const info = await resolveCfFile(f.projectID, f.fileID, opts?.signal)
-          resolved++
-          report({
-            stage: 'modpack',
-            progress: 0.48 + (cfFiles.length ? (resolved / cfFiles.length) * 0.04 : 0),
-            text: `解析下载地址 ${resolved}/${cfFiles.length}`
-          })
-          return info
-        },
-        opts?.signal
-      )
-      pending = infos.map((info) => ({ rel: `mods/${info.fileName}`, url: info.url, size: info.size, sha1: info.sha1 }))
-    }
-
-    const tasks: DownloadTask[] = []
-    for (const f of pending) {
-      const dest = safeJoin(instDir, f.rel)
-      if (!dest) throw new Error(`整合包文件路径不安全：${f.rel}`)
-      tasks.push({
-        label: f.rel,
-        url: f.url,
-        urls: f.urls,
-        dest,
-        sha1: f.sha1,
-        sha512: f.sha512,
-        size: f.size || undefined
-      })
-    }
-
-    if (tasks.length) {
-      try {
-        await downloadModpackFiles(
-          tasks,
-          (d, t, speed, detail) => {
-            const doneBytes = detail.bytesDone
-            const ratio = detail.fraction ?? 0
-            report({
-              stage: 'modpack',
-              progress: 0.52 + ratio * 0.43,
-              text:
-                detail.bytesTotal != null
-                  ? `下载整合包文件 ${d}/${t}（${fmtMB(doneBytes)}/${fmtMB(detail.bytesTotal)}）${detail.activeFiles?.length && detail.activeFiles.length <= 2 ? ' · ' + detail.activeFiles.join('、') : ''}`
-                  : `下载整合包文件 ${d}/${t}`,
-              speed,
-              etaSeconds: detail.etaSeconds ?? undefined,
-              bytesDone: detail.bytesDone,
-              bytesTotal: detail.bytesTotal ?? undefined,
-              indeterminate: detail.indeterminate
-            })
-          },
-          getSettings().mirror,
-          opts?.signal
-        )
-      } catch (e) {
-        throw new Error(`整合包文件下载失败：${errText(e)}`)
-      }
-    }
+    report({ stage: 'modpack', progress: 0.95, text: '写入已校验的整合包文件…' })
+    await prepared!.install(opts?.signal)
 
     // 7) 解压 overrides 覆盖到实例目录
     report({ stage: 'modpack', progress: 0.96, text: '解压覆盖文件…' })
@@ -1104,5 +1142,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
     fs.rmSync(instDir, { recursive: true, force: true })
     if (backupDir && fs.existsSync(backupDir)) fs.renameSync(backupDir, instDir)
     throw e
+  } finally {
+    await prepared?.dispose()
   }
 }

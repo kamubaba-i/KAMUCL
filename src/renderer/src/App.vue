@@ -2,6 +2,7 @@
 import { shouldReportGameCrash, signedExitCode } from '@shared/gameExit'
 const isMac = window.kamucl.platform === 'darwin'
 import LaunchNotice from './components/LaunchNotice.vue'
+import ModpackSupplement from './components/ModpackSupplement.vue'
 import { instanceCenter, openInstanceCenter } from './instanceCenter'
 import { loadExitNotices, clearNotices } from './store'
 import { useNavigationBubble } from './composables/useNavigationBubble'
@@ -224,7 +225,7 @@ const qqGroup = computed(() => store.settings?.qqGroupNumber?.trim() || QQ_GROUP
 /** 更新下载任务进度（从下载中心任务列表取，含速度） */
 const updateTask = computed(() => store.tasks.find((t) => t.id === updateModal.taskId))
 const updatePercent = computed(() => updateTask.value?.progress ?? 0)
-const updateSpeedText = computed(() => (updateTask.value?.speed ? formatSpeed(updateTask.value.speed) + '/s' : ''))
+const updateSpeedText = computed(() => (updateTask.value?.speed ? formatSpeed(updateTask.value.speed) : ''))
 
 function openUpdateModal(release: ReleaseInfo, rollback = false) {
   updateModal.release = release
@@ -281,7 +282,8 @@ async function onUpdateInstallNow() {
   if (!release) return
   try {
     await applyUpdate(release)
-    // 主进程将退出：无需后续处理
+    updateModal.open = false
+    toast('更新已就绪，下次手动启动时应用', 'success')
   } catch (e) {
     toast('安装更新失败：' + errText(e), 'error')
     updateModal.open = false
@@ -1066,6 +1068,7 @@ onMounted(async () => {
   offs.push(
     window.kamucl.on('window:caption-pointerdown', closeTopDropdowns),
     onProgress((e) => {
+      if (e.manualFiles && !store.tasks.some(t => t.manualFiles?.token === e.manualFiles?.token)) dlOpen.value = true
       store.progress = e
       if (e.versionId) store.installProgress[e.versionId] = e
       upsertTaskProgress(e)
@@ -1087,7 +1090,7 @@ onMounted(async () => {
     onUpdatePrompt((payload) => {
       // 回滚通知（更新失败自动还原后备份）
       if ((payload as { rollbackNotice?: boolean }).rollbackNotice) {
-        toast('更新失败，已自动回滚到当前版本', 'error')
+        toast('上次更新未完成，已停止自动重试。可在设置中重新下载或选择备份恢复。', 'error')
         return
       }
       store.updatePrompt = { release: payload, rollback: false }
@@ -1096,7 +1099,7 @@ onMounted(async () => {
       if (updateModal.open && r.taskId === updateModal.taskId) updateModal.slowHint = true
     }),
     onUpdateReady((r) => {
-      toast(`新版本 v${r.version} 已下载完成，关闭启动器时将自动安装`, 'success')
+      toast(`新版本 v${r.version} 已下载完成，下次启动时应用`, 'success')
     }),
     onInstallDone((r) => {
       store.installing.delete(r.versionId)
@@ -1453,6 +1456,7 @@ onUnmounted(() => {
                 <div data-ui="App:a1b294f53a4e" class="dl-sub muted">
                   <template v-if="t.status === 'running'">
                     {{ taskSubText(t) }} · {{ t.indeterminate ? '正在计算总量' : '总进度 ' + taskProgressPercent(t) + '%' }}{{ taskEtaText(t.etaSeconds) }}
+                    <span v-if="t.speed && t.speed > 0"> · {{ formatSpeed(t.speed) }}</span>
                   </template>
                   <template v-else-if="t.status === 'paused'">已暂停 · {{ t.indeterminate ? '总量未知' : taskProgressPercent(t) + '%' }}</template>
                   <template v-else-if="t.status === 'cancelling'">正在停止网络与后台任务…</template>
@@ -1462,8 +1466,19 @@ onUnmounted(() => {
                     失败于「{{ stageLabel(t.stage || 'error') }}」阶段：{{ t.error }}
                   </template>
                 </div>
+                <ModpackSupplement v-if="t.manualFiles && (t.status === 'running' || t.status === 'paused')" :request="t.manualFiles" :paused="t.status === 'paused'" />
                 <div data-ui="App:c299fc9739a0" v-if="t.status === 'running' || t.status === 'paused' || t.status === 'cancelling'" class="dl-bar" :class="{ 'is-indeterminate': t.indeterminate && t.status === 'running' }">
                   <div data-ui="App:21050ee2a501" class="dl-bar-fill" :style="{ width: t.indeterminate ? '35%' : taskProgressPercent(t) + '%' }"></div>
+                </div>
+                <div data-ui="download.parallel-stages" v-if="t.parallelStages?.length && (t.status === 'running' || t.status === 'paused')" class="dl-stages">
+                  <div v-for="lane in t.parallelStages" :key="lane.id" :data-ui="'download.stage.' + lane.id" class="dl-stage" :class="{ 'is-done': lane.state === 'done' }">
+                    <div class="dl-stage-heading">
+                      <span>{{ lane.label }}</span>
+                      <span class="muted">{{ lane.state === 'done' ? '已就绪' : lane.state === 'waiting' ? '准备中' : taskProgressPercent({ status: 'running', progress: lane.progress }) + '%' }}</span>
+                    </div>
+                    <div class="dl-stage-detail muted" :title="lane.text">{{ lane.text }}</div>
+                    <div class="dl-bar"><div class="dl-bar-fill" :style="{ width: taskProgressPercent({ status: lane.state === 'done' ? 'done' : 'running', progress: lane.progress }) + '%' }"></div></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2249,6 +2264,12 @@ onUnmounted(() => {
   background: linear-gradient(90deg, var(--accent-2), var(--accent));
   transition: width 0.3s ease;
 }
+.dl-stages { display: grid; gap: 10px; margin-top: 14px; }
+.dl-stage { min-width: 0; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--card-2); }
+.dl-stage-heading { display: flex; justify-content: space-between; gap: 8px; font-size: var(--text-xs); font-weight: 600; }
+.dl-stage-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); margin-top: 3px; }
+.dl-stage .dl-bar { height: 3px; margin-top: 6px; }
+.dl-stage.is-done .dl-stage-heading { color: var(--accent); }
 .dl-bar.is-indeterminate .dl-bar-fill {
   animation: dl-indeterminate 1.25s ease-in-out infinite;
 }

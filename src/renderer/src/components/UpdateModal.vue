@@ -80,7 +80,7 @@ const sizeText = computed(() => {
       <p class="muted upd-note">下载进度同时显示在下载中心，支持断点续传。</p>
       <p v-if="slowHint" class="upd-slow">下载速度持续偏低，可以通过下方备用方式获取安装包。</p>
     </template>
-    <p v-else class="upd-done-text">安装包已下载并通过 SHA256 完整性校验。重启启动器完成安装，替换前会自动备份当前版本。</p>
+    <p v-else class="upd-done-text">安装包已下载并通过 SHA256 完整性校验。下次手动启动时完成安装，替换前会自动备份当前版本。</p>
     <details v-if="state !== 'done'" class="upd-help" :open="slowHint || undefined">
       <summary>其他下载方式与安装说明</summary>
       <p class="muted">{{ QQ_GROUP_HINT }}</p>
@@ -91,7 +91,7 @@ const sizeText = computed(() => {
       <div class="upd-actions">
         <template v-if="state === 'found'"><button v-if="!rollback" class="upd-skip" @click="emit('skip')">跳过此版本</button><div class="upd-actions-right"><button class="btn btn-ghost" @click="emit('later')">稍后提醒</button><button class="btn btn-gold" @click="emit('updateNow')">{{ rollback ? '确认回退' : '立即更新' }}</button></div></template>
         <div v-else-if="state === 'downloading'" class="upd-actions-right"><button class="btn btn-ghost" @click="emit('cancelDownload')">取消下载</button></div>
-        <div v-else class="upd-actions-right"><button class="btn btn-ghost" @click="emit('close')">稍后</button><button class="btn btn-gold" @click="emit('installNow')">立即重启安装</button></div>
+        <div v-else class="upd-actions-right"><button class="btn btn-ghost" @click="emit('close')">稍后</button><button class="btn btn-gold" @click="emit('installNow')">下次启动应用</button></div>
       </div>
     </template>
   </UpdateDialogShell>
