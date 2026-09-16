@@ -5,7 +5,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import DefaultGameOptions from '../components/DefaultGameOptions.vue'
-import { errText, getDefaultKeys, resetDefaultKeys, setDefaultKey, getDefaultResourcePacks, importDefaultResourcePacks, pickDefaultResourcePacks, removeDefaultResourcePack, moveDefaultResourcePack } from '../api'
+import { errText, getDefaultKeys, resetDefaultKeys, setDefaultKey, getDefaultResourcePacks, importDefaultResourcePacks, pickDefaultResourcePacks, removeDefaultResourcePack, moveDefaultResourcePack, setDefaultResourcePackEnabled } from '../api'
 import type { DefaultResourcePack } from '@shared/types'
 import { store, toast } from '../store'
 import { updateSettings } from '../settingsUpdates'
@@ -160,13 +160,14 @@ onUnmounted(stopCapture)
       </div>
       <div v-for="(pack, index) in resourcePacks" :key="pack.id" class="cfg-row">
         <span class="cfg-label" :title="pack.name">{{ pack.name }}</span>
+        <label class="cfg-sync pack-enable" :data-ui="`default-pack:${pack.id}:enabled`"><span>{{ pack.enabled ? '已启用' : '未启用' }}</span><span class="switch"><input type="checkbox" :aria-label="`启用材质包 ${pack.name}`" :checked="pack.enabled" :disabled="packsBusy" @change="editPacks(() => setDefaultResourcePackEnabled(pack.id, ($event.target as HTMLInputElement).checked))"/><span class="switch-ui"></span></span></label>
         <button class="btn btn-ghost btn-sm" :disabled="packsBusy || index === 0" title="降低优先级" @click="editPacks(() => moveDefaultResourcePack(pack.id, -1))">↑</button>
         <button class="btn btn-ghost btn-sm" :disabled="packsBusy || index === resourcePacks.length - 1" title="提高优先级" @click="editPacks(() => moveDefaultResourcePack(pack.id, 1))">↓</button>
         <button class="btn btn-ghost btn-sm" :disabled="packsBusy" @click="editPacks(() => removeDefaultResourcePack(pack.id))">移除</button>
       </div>
       <p v-if="!resourcePacks.length" class="muted">将材质包拖到这里，或点击下方按钮添加。</p>
       <button class="btn btn-ghost" :disabled="packsBusy" @click="editPacks(pickDefaultResourcePacks, true)">{{ packsBusy ? '正在导入…' : '添加材质包…' }}</button>
-      <p class="muted group-hint">添加后自动开启同步。启动前复制并启用；关闭同步不改动实例。移除后下次启动不再默认启用，原文件和已复制文件保留。</p>
+      <p class="muted group-hint">添加后自动开启同步。每个材质包可独立启停，下次启动游戏时生效；未启用的包不会复制，并取消其默认启用。关闭总同步不改动实例。原文件和已复制文件保留。</p>
     </div>
     <div v-if="loading" class="card empty"><span class="spin"></span></div>
     <!-- 按键配置（同步开关整合进卡片头部，不再单独占一张卡） -->
@@ -245,6 +246,8 @@ onUnmounted(stopCapture)
 .cfg-cat { font-size: var(--text-sm); color: var(--text-dim); margin: 0 0 var(--space-2); font-weight: 650; }
 .cfg-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2); border-radius: var(--radius-sm); }
 .cfg-row:hover { background: var(--card-2); }
+.pack-enable { flex-shrink: 0; white-space: nowrap; }
+.default-packs .cfg-label { overflow-wrap: anywhere; }
 .cfg-label { flex: 1; min-width: 0; font-size: var(--text-sm); }
 .cfg-bind {
   min-width: 120px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm);

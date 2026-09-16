@@ -308,6 +308,7 @@ export const importDefaultResourcePacks = (files: string[]) => invoke<DefaultRes
 export const pickDefaultResourcePacks = () => invoke<DefaultResourcePack[]>(IPC.defaultPacksPick)
 export const removeDefaultResourcePack = (id: string) => invoke<DefaultResourcePack[]>(IPC.defaultPacksRemove, id)
 export const moveDefaultResourcePack = (id: string, direction: number) => invoke<DefaultResourcePack[]>(IPC.defaultPacksMove, id, direction)
+export const setDefaultResourcePackEnabled = (id: string, enabled: boolean) => invoke<DefaultResourcePack[]>(IPC.defaultPacksSetEnabled, id, enabled)
 
 // ---------------- 启动器自更新与版本回退 ----------------
 export const checkUpdate = (force = false) => invoke<import('@shared/types').UpdateCheckResult>(IPC.updateCheck, force)

@@ -912,6 +912,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   })
   ipcMain.handle(IPC.defaultPacksRemove, (_e, id: string) => defaultPacks.removeDefaultResourcePack(id))
   ipcMain.handle(IPC.defaultPacksMove, (_e, id: string, direction: number) => defaultPacks.moveDefaultResourcePack(id, direction))
+  ipcMain.handle(IPC.defaultPacksSetEnabled, (_e, id: string, enabled: boolean) => defaultPacks.setDefaultResourcePackEnabled(id, enabled))
 
   // ---------------- 启动器自更新与版本回退 ----------------
   applyUpdate.setUpdateEmitter(send)

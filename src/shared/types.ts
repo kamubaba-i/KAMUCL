@@ -831,6 +831,7 @@ export const IPC = {
   defaultPacksPick: 'defaultPacks:pick',
   defaultPacksRemove: 'defaultPacks:remove',
   defaultPacksMove: 'defaultPacks:move',
+  defaultPacksSetEnabled: 'defaultPacks:setEnabled',
   // 桥接 MOD 实时配置面板（游戏目录 .kamucl-bridge.json 发现 + token 校验，仅本机）
   bridgeStatus: 'bridge:status', // (versionId: string) => BridgeStatus
   bridgeManifest: 'bridge:manifest', // (versionId: string) => { protocol, params: BridgeParam[] }
@@ -950,7 +951,7 @@ export interface CommunityResult {
   categories: string[]
 }
 
-export interface DefaultResourcePack { id: string; name: string; size: number }
+export interface DefaultResourcePack { id: string; name: string; size: number; enabled: boolean }
 
 export interface CommunitySearchPage {
   items: CommunityResult[]
