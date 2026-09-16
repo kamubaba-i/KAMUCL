@@ -6,7 +6,9 @@ import { resolveInstanceMetadata } from './instanceMetadata'
 import { mavenIdentity } from './mavenIdentity'
 import { withFileJob } from './fileJobs'
 import { downloadLimiter } from './downloadLimits'
-import { app } from 'electron'
+import { app, shell } from 'electron'
+import { recycleVersion } from './versionRemoval'
+import { samePath } from './folderPaths'
 import fs from 'node:fs'
 import path from 'node:path'
 import type {
@@ -881,18 +883,24 @@ export function renameVersion(id: string, newName: string): void {
     throw e
   }
 }
-export function removeVersion(id: string): void {
-  // 自定义图标与启动卡缩略图随实例删除（内置资源无文件落地）。
-  try {
-    const j = readVersionJson(id)
-    if (j._icon?.startsWith('file:')) {
-      fs.rmSync(path.join(instanceIconsDir(), j._icon.slice(5)), { force: true })
-    }
-    if (j._thumbnail) removeInstanceThumbnail(j._thumbnail, folderOfVersion(id))
-  } catch {
-    /* 清理图标失败不阻断删除 */
-  }
-  fs.rmSync(versionDir(id), { recursive: true, force: true })
+export async function removeVersion(id: string, requestedFolder?: string): Promise<void> {
+  const folder = requestedFolder || folderOfVersion(id)
+  if (!getSettings().folders.some(f => samePath(f.path, folder))) throw new Error('游戏文件夹尚未登记')
+  await withGameFolder(folder, async () => {
+    const { assertInstanceIdle } = await import('./instanceCenter')
+    const { getRunningVersionIds } = await import('./launch')
+    // Also cover a preparing JVM and shared/custom game directories.
+    if (getRunningVersionIds().has(id)) throw new Error('该版本的游戏仍在运行或正在退出，请等待结束后重试')
+    let json: VersionJson | undefined
+    try { json = readVersionJson(id) } catch { /* Incomplete installations can also be removed. */ }
+    await recycleVersion(folder, id, {
+      assertIdle: async target => {
+        await assertInstanceIdle(target)
+        if (json) await assertInstanceIdle(instanceDirectoryState(id, json, folder).path)
+      },
+      trash: target => shell.trashItem(target)
+    })
+  })
 }
 
 /** 设置实例图标：'mob:<内置id>' / 'file:<文件名>' / '' 恢复默认；更换时清理旧的自定义图标文件 */
@@ -957,7 +965,7 @@ export function resetVersionThumbnail(id: string): void {
  * 清理安装失败的残留（.installing 标记存在时调用）：
  * 删除整个版本目录（该标记只在安装开始时创建，目录必然是不完整产物）
  */
-export function cleanupPartialInstall(id: string): boolean {
+export async function cleanupPartialInstall(id: string): Promise<boolean> {
   if (!fs.existsSync(installMarkPath(id))) return false
   fs.rmSync(versionDir(id), { recursive: true, force: true })
   return true

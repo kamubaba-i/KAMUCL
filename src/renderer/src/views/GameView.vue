@@ -522,7 +522,7 @@ async function onConfirmRemove() {
   if (!v || removeModal.busy) return
   removeModal.busy = true
   try {
-    await removeVersion(v.id)
+    await removeVersion(v.id, v.folder)
     await refreshInstalled()
     removeModal.open = false
     toast(`已删除 ${v.id}`, 'success')
@@ -1438,7 +1438,7 @@ async function confirmIsolation() {
     <ConfirmModal
       :open="removeModal.open"
       title="删除版本"
-      :message="`确定要删除版本「${removeModal.target?.id}」吗？该版本的游戏文件将被移除（共享的依赖库与资源会保留），此操作不可恢复。`"
+      :message="`确定要删除版本「${removeModal.target?.id}」吗？该版本目录将移入系统回收站（共享的依赖库与资源会保留）。`"
       :busy="removeModal.busy"
       @cancel="removeModal.open = false"
       @confirm="onConfirmRemove"

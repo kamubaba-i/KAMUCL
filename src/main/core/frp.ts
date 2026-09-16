@@ -13,6 +13,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { downloadFile } from './download'
+import { parseFrpLine, frpLineReader } from './frpLog'
 
 /** 默认本地转发目标（MC 局域网开放端口） */
 export const DEFAULT_LOCAL_HOST = '127.0.0.1'
@@ -207,24 +208,6 @@ function appendLog(state: RunningSession, entry: FrpLogEntry): void {
   if (state.logs.length > MAX_LOGS) state.logs.splice(0, state.logs.length - MAX_LOGS)
 }
 
-/** 从 frpc 日志中识别远程地址：常见形式 `xxx.natfrp.cloud:12345`。 */
-const REMOTE_RE = /([a-zA-Z0-9][a-zA-Z0-9-]*\.(?:natfrp\.cloud|nyatwork\.cn|frp\.com|frp\.net)\s*:\s*\d{2,5})/
-
-/** 识别 frpc 启动错误。 */
-function classifyLine(text: string): FrpStatus | null {
-  const lower = text.toLowerCase()
-  if (lower.includes('invalid token') || lower.includes('login to server failed') || lower.includes('authorization failed')) {
-    return 'auth_failed'
-  }
-  if (lower.includes('tunnel not exists') || lower.includes('tunnel offline') || lower.includes('proxy not found')) {
-    return 'tunnel_offline'
-  }
-  if (lower.includes('proxy success') || lower.includes('start proxy success')) {
-    return 'running'
-  }
-  return null
-}
-
 export class FrpController {
   private session: RunningSession | null = null
   private epoch = 0
@@ -323,45 +306,30 @@ export class FrpController {
       }
     })
 
+    let addressPriority = 0
     const handleLine = (stream: 'stdout' | 'stderr', text: string): void => {
       const cleaned = sanitize(text, accessKey)
       const entry: FrpLogEntry = { ts: new Date().toISOString(), stream, text: cleaned }
       appendLog(newSession, entry)
       emit({ type: 'log', data: entry })
 
-      const classified = classifyLine(cleaned)
-      if (classified && classified !== newSession.status) {
-        newSession.status = classified
-        emit({ type: 'status', status: classified, message: this.statusMessage(newSession) })
+      const parsed = parseFrpLine(cleaned)
+      if (parsed.address && parsed.priority >= addressPriority && parsed.address !== newSession.remoteAddress) {
+        newSession.remoteAddress = parsed.address
+        addressPriority = parsed.priority
+        emit({ type: 'ready', remoteAddress: parsed.address })
       }
-
-      const remoteMatch = cleaned.match(REMOTE_RE)
-      if (remoteMatch && !newSession.remoteAddress) {
-        newSession.remoteAddress = remoteMatch[1].replace(/\s+/g, '')
-        emit({ type: 'ready', remoteAddress: newSession.remoteAddress })
-        if (newSession.status !== 'running') {
-          newSession.status = 'running'
-          emit({ type: 'status', status: 'running', remoteAddress: newSession.remoteAddress, message: this.statusMessage(newSession) })
-        }
+      if (parsed.status && parsed.status !== newSession.status) {
+        newSession.status = parsed.status
+        emit({ type: 'status', status: parsed.status, remoteAddress: newSession.remoteAddress ?? undefined, message: this.statusMessage(newSession) })
       }
     }
 
-    const dataToLines = (stream: 'stdout' | 'stderr'): (chunk: Buffer | string) => void => {
-      let buf = ''
-      return (chunk) => {
-        buf += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-        let nl = buf.indexOf('\n')
-        while (nl !== -1) {
-          const line = buf.slice(0, nl).replace(/\r$/, '')
-          buf = buf.slice(nl + 1)
-          if (line.trim()) handleLine(stream, line)
-          nl = buf.indexOf('\n')
-        }
-      }
+    for (const stream of ['stdout', 'stderr'] as const) {
+      const reader = frpLineReader(line => handleLine(stream, line))
+      proc[stream]?.on('data', reader.write)
+      proc[stream]?.on('end', reader.end)
     }
-
-    proc.stdout?.on('data', dataToLines('stdout'))
-    proc.stderr?.on('data', dataToLines('stderr'))
 
     proc.on('error', (err) => {
       const message = sanitize(err.message, accessKey)

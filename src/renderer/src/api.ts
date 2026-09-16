@@ -133,7 +133,7 @@ export const getManifest = (refresh = false) => invoke<RemoteVersion[]>(IPC.vers
 export const getInstalled = () => invoke<InstalledVersion[]>(IPC.versionsInstalled)
 export const installVersion = (id: string, opts?: InstallOptions) =>
   invoke<void>(IPC.versionsInstall, id, opts)
-export const removeVersion = (id: string) => invoke<void>(IPC.versionsRemove, id)
+export const removeVersion = (id: string, folder?: string) => invoke<void>(IPC.versionsRemove, id, folder)
 export const renameVersion = (id: string, newName: string) =>
   invoke<void>(IPC.versionsRename, id, newName)
 export const setVersionJava = (id: string, javaPath: string, automatic = false, folder?: string) =>

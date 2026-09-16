@@ -372,7 +372,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   )
   ipcMain.handle(IPC.tasksPause, (_e, taskId: string) => pauseTask(String(taskId ?? '')))
   ipcMain.handle(IPC.tasksResume, (_e, taskId: string) => resumeTask(String(taskId ?? '')))
-  ipcMain.handle(IPC.versionsRemove, (_e, versionId: string) => versions.removeVersion(versionId))
+  ipcMain.handle(IPC.versionsRemove, (_e, versionId: string, folder?: string) => versions.removeVersion(versionId, folder))
   ipcMain.handle(IPC.versionsRename, (_e, id: string, newName: string) => {
     const vid = String(id ?? '')
     const name = String(newName ?? '').trim()
