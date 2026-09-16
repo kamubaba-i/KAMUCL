@@ -925,9 +925,6 @@ async function confirmIsolation() {
           </button>
         </div>
       </div>
-      <div class="folder-shortcuts" aria-label="文件夹列表">
-        <button v-for="folder in folders" :key="folder.path" class="btn btn-sm" :class="folder.path === activeFolder ? 'btn-gold' : 'btn-ghost'" :disabled="folderBusy" :title="folder.path" @click="chooseFolderPath(folder.path)" @contextmenu.stop.prevent="showFolderContextMenu(folder.path)">{{ folder.name }}</button>
-      </div>
       <div v-if="folderMissing && currentFolder" class="folder-missing-card" role="alert">
         <div class="folder-missing-text">
           <strong>检测不到该文件夹</strong>
@@ -938,23 +935,7 @@ async function confirmIsolation() {
           <button class="btn btn-ghost btn-sm" @click="folderMissingDismissed = true">稍后处理</button>
         </div>
       </div>
-      <div class="folder-scan-state" :class="folderScan?.status">
-        <template v-if="folderBusy">
-          <span class="spin"></span><span>正在扫描版本与完整性…</span>
-        </template>
-        <template v-else-if="folderScan">
-          <span class="folder-state-dot"></span>
-          <span>
-            {{ folderScan.structure === 'kamucl' ? 'KAMUCL 游戏根目录' : folderScan.structure === 'minecraft' ? 'Minecraft 根目录' : folderScan.structure === 'empty' ? '空游戏目录' : '目录不可用' }}
-            · 已识别 {{ folderScan.versions.length }} 个版本
-            · {{ folderScan.durationMs }} ms
-          </span>
-          <span v-if="folderScan.errors.length" class="folder-scan-error" :title="folderScan.errors.join('\n')">
-            {{ folderScan.errors[0] }}{{ folderScan.errors.length > 1 ? `（另有 ${folderScan.errors.length - 1} 项）` : '' }}
-          </span>
-        </template>
-        <span v-else class="muted">尚未扫描</span>
-      </div>
+      <p v-if="folderScan?.errors.length" class="folder-scan-error" role="status">{{ folderScan.errors[0] }}</p>
     </section>
 
     <!-- 控制行：Tab + 搜索/筛选/刷新/下载源（同一行横向排布，窄窗口自动换行） -->
@@ -1019,7 +1000,7 @@ async function confirmIsolation() {
       <div><span class="tag tag-gold">最新正式版</span><strong>{{ latestRelease.id }}</strong>
         <time :datetime="latestRelease.releaseTime">发布于 {{ formatDate(latestRelease.releaseTime) }}</time>
       </div>
-      <button class="btn btn-gold" :disabled="store.installing.has(latestRelease.id)" @click="openInstall(latestRelease)">{{ store.installing.has(latestRelease.id) ? '下载中' : isInstalled(latestRelease) ? '再安装' : '安装' }}</button>
+      <button class="btn btn-gold" :disabled="store.installing.has(latestRelease.id)" @click="openInstall(latestRelease)">{{ store.installing.has(latestRelease.id) ? '下载中' : isInstalled(latestRelease) ? '再次安装' : '安装' }}</button>
     </div>
     <!-- 版本列表 -->
     <div v-if="tab === 'download'" class="card list-card">
@@ -1060,7 +1041,7 @@ async function confirmIsolation() {
               :disabled="store.installing.has(v.id)"
               @click="openInstall(v)"
             >
-              {{ store.installing.has(v.id) ? '下载中' : isInstalled(v) ? '再安装' : '安装' }}
+              {{ store.installing.has(v.id) ? '下载中' : isInstalled(v) ? '再次安装' : '安装' }}
             </button>
           </div>
         </div>

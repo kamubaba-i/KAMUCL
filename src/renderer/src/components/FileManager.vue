@@ -319,7 +319,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :class="{ 'resource-page': props.rel !== 'mods' }">
     <!-- 标题行 -->
     <div class="fm-head">
       <div class="page-head fm-head-left">
@@ -523,6 +523,9 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
   margin: 0 auto;
 }
 
+.resource-page .fm-head { flex-direction: column; align-items: stretch; }
+.resource-page .fm-head-left { flex: none; width: 100%; }
+.resource-page .fm-actions { width: 100%; }
 .fm-head {
   display: flex;
   align-items: flex-end;

@@ -371,7 +371,11 @@ watch(
 // ---------------- 最近游戏与菜单 ----------------
 // 收藏优先 + 最近游玩排序；启动某实例后 recordLastPlayed 更新使其自然提前。
 // 选中实例不再直接置顶——只有启动过才排到第一个。
-const recent = computed(() => sortWithFavorite(activeInstalled.value).slice(0, 4))
+const wideRecent = ref(window.innerWidth >= 1500)
+const updateRecentWidth = () => { wideRecent.value = window.innerWidth >= 1500 }
+onMounted(() => window.addEventListener('resize', updateRecentWidth))
+onUnmounted(() => window.removeEventListener('resize', updateRecentWidth))
+const recent = computed(() => sortWithFavorite(activeInstalled.value).slice(0, wideRecent.value ? 8 : 4))
 const sortedInstalled = computed(() => sortWithFavorite(store.installed))
 
 const versionMenu = reactive({ open: false, top: 0, left: 0, width: 230 })
@@ -612,7 +616,7 @@ onUnmounted(() => {
             </button>
           </div>
           <button class="account-provider" @click="store.currentView = 'accounts'">
-            <span class="provider-mark" :class="store.selectedAccount.type">{{ store.selectedAccount.type === 'microsoft' ? 'M' : store.selectedAccount.type === 'yggdrasil' ? 'Y' : 'O' }}</span>
+            <span class="provider-mark" :class="store.selectedAccount.type"><svg v-if="store.selectedAccount.type === 'microsoft'" viewBox="0 0 22 22" aria-label="Microsoft"><path fill="#f25022" d="M0 0h10v10H0z"/><path fill="#7fba00" d="M12 0h10v10H12z"/><path fill="#00a4ef" d="M0 12h10v10H0z"/><path fill="#ffb900" d="M12 12h10v10H12z"/></svg><template v-else>{{ store.selectedAccount.type === 'yggdrasil' ? 'Y' : 'O' }}</template></span>
             <span>{{ accountTypeLabel }}</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
           </button>
@@ -914,6 +918,8 @@ onUnmounted(() => {
 .account-more svg, .skin-refresh svg { width: 17px; height: 17px; }
 .account-placeholder { display: flex; align-items: center; justify-content: center; width: 54px; height: 54px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-dim); font-size: 20px; }
 .account-provider { display: grid; grid-template-columns: 26px minmax(0, 1fr) 15px; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 15px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--card-2); color: var(--text); font-family: inherit; font-size: 12px; font-weight: 550; text-align: left; cursor: pointer; }
+.provider-mark.microsoft { background: transparent; border-radius: 0; }
+.provider-mark.microsoft svg { width: 22px; height: 22px; }
 .account-provider:hover { border-color: var(--border-strong); }
 .account-provider > svg { width: 15px; height: 15px; color: var(--text-dim); }
 .provider-mark { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, #f35325 0 48%, #81bc06 48% 100%); color: #fff; font-size: 10px; font-weight: 800; }

@@ -23,7 +23,8 @@ import AdmZip from 'adm-zip'
 import type { LaunchState, ProgressEvent } from '../../shared/types'
 import { getSettings } from './settings'
 import { getValidAccount, selectedAccount } from './accounts'
-import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable, selectJavaByMajor } from './java'
+import { validateJavaRuntime } from './javaRuntimeHealth'
+import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable, selectHealthyJava, probeJavaAsync } from './java'
 import { macJavaArchitecture } from './javaArchitecture'
 import {
   assetsDir,
@@ -536,7 +537,7 @@ async function launchOwned(
         emit({ stage: 'java', progress: 1, text: '使用手动指定的 Java' })
       } else {
         const need = requiredMajor(merged)
-        const found = selectJavaByMajor(await scanJavaForLaunch(), need, macJavaArchitecture(merged))
+        const found = await selectHealthyJava(await scanJavaForLaunch(), need, macJavaArchitecture(merged))
         if (!found) {
           throw new Error(
             `该版本需要 Java ${need} (64位)，但未找到（Java 自动管理已关闭）。请在设置中选择 Java 或开启自动管理`
@@ -550,6 +551,13 @@ async function launchOwned(
       const selectedJavaPath = javaPath
       javaPath = await resolveJavaExecutable(javaPath)
       if (selectedJavaPath !== javaPath) log(`[KAMUCL] Java 转发入口已解析到真实运行时: ${javaPath}`)
+      const javaInfo = await probeJavaAsync(javaPath)
+      const need = requiredMajor(merged)
+      const requiredArch = macJavaArchitecture(merged)
+      if (!javaInfo || !javaInfo.is64Bit || javaInfo.major < need || (requiredArch && javaInfo.architecture !== requiredArch)) {
+        throw new Error('所选 Java 版本或架构不适配：需要 Java ' + need + '+（64 位' + (requiredArch ? '，' + requiredArch : '') + '），请修改实例设置或开启自动管理')
+      }
+      await validateJavaRuntime(javaPath, javaInfo.major)
       return javaPath
     })
   ])

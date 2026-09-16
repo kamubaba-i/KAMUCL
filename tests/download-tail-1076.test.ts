@@ -43,7 +43,7 @@ test('last mod inherits free batch connections while its original request is sti
     const tasks = [data, ...Array<Buffer>(7).fill(small)].map((payload, i) => ({ url: f.base + (i ? '/small' : '/large'), dest: path.join(f.root, i + '.jar'), size: payload.length, sha1: sha(payload) }))
     await downloadAll(tasks, undefined, 8, 'official', AbortSignal.timeout(4000))
     assert(largePeak >= 4, 'budget must update without finishing/restarting the old request')
-    assert(peak <= 8, 'all files still share the global limit')
+    assert(peak <= DEFAULT_DOWNLOAD_LIMITS.downloadThreads, 'all files still share the global limit')
     assert.equal(sha(fs.readFileSync(tasks[0].dest)), sha(data))
   } finally { await f.close() }
 })

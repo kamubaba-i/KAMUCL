@@ -223,7 +223,8 @@ onUnmounted(stopCapture)
 
 <style scoped>
 /* 间距全部走全局设计令牌：元素与板块边缘保持呼吸感（card-pad 由 .card 提供） */
-.cfg-page { max-width: 1040px; }
+.cfg-page { width: 100%; max-width: 1040px; margin: 0 auto; }
+.cfg-page > .page-head { margin-bottom: 24px; }
 .cfg-sections{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:24px}.cfg-sections button{display:flex;flex-direction:column;align-items:flex-start;gap:7px;text-align:left;padding:18px 20px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);cursor:pointer;transition:background 180ms,border-color 180ms}.cfg-sections small{font-size:12px;color:var(--text-dim)}.cfg-sections button.active{border-color:var(--accent);background:var(--accent-soft)}.cfg-sections button:hover{border-color:var(--accent)}
 @media(max-width:700px){.cfg-sections{gap:8px}.cfg-sections button{padding:12px}.cfg-sections small{display:none}}
 .default-packs { margin-bottom: var(--sec-gap); }

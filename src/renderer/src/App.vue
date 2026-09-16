@@ -778,6 +778,7 @@ async function onCancelTask(id: string) {
 
 /** 任务副标题：阶段标签与进度文本重复时只显示一次 */
 function taskSubText(t: { stage: string; text: string }): string {
+  if (t.stage === 'parallel') return ''
   const label = stageLabel(t.stage)
   return t.text.startsWith(label) ? t.text : `${label} · ${t.text}`
 }
@@ -1455,7 +1456,7 @@ onUnmounted(() => {
                 </div>
                 <div data-ui="App:a1b294f53a4e" class="dl-sub muted">
                   <template v-if="t.status === 'running'">
-                    {{ taskSubText(t) }} · {{ t.indeterminate ? '正在计算总量' : '总进度 ' + taskProgressPercent(t) + '%' }}{{ taskEtaText(t.etaSeconds) }}
+                    {{ taskSubText(t) ? taskSubText(t) + ' · ' : '' }}{{ t.indeterminate ? '正在计算总量' : '总进度 ' + taskProgressPercent(t) + '%' }}{{ taskEtaText(t.etaSeconds) }}
                     <span v-if="t.speed && t.speed > 0"> · {{ formatSpeed(t.speed) }}</span>
                   </template>
                   <template v-else-if="t.status === 'paused'">已暂停 · {{ t.indeterminate ? '总量未知' : taskProgressPercent(t) + '%' }}</template>
@@ -2387,12 +2388,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1080px) {
-  .shell {
-    width: calc(100% - 16px);
-    height: calc(100% - 16px);
-    margin: 8px;
-    border-radius: var(--radius-lg);
-  }
   .content {
     padding: var(--space-4);
   }

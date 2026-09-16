@@ -62,6 +62,13 @@ export const transferTimeouts = { inactivityMs: 15_000 }
 export const slowSpeedThresholds = { largeFileBytes: 1024*1024, largeWindowMs: 8000, largeMinBps: 256*1024, windowMs: 15000, minWindowBytes: 16*1024, warmupBytes: 1024*1024, warmupMs: 15000 }
 const failures = new Map<string, { count: number; until: number }>()
 const origin = (url: string) => { try { return new URL(url).origin } catch { return url } }
+const serverCooldowns = new Map<string, number>()
+export function retryAfterTime(value: string | null, now = Date.now()): number {
+  if (!value) return now + 30_000
+  const seconds = Number(value)
+  const until = Number.isFinite(seconds) ? now + Math.max(0, seconds) * 1000 : Date.parse(value)
+  return Number.isFinite(until) ? Math.max(now, until) : now + 30_000
+}
 export function noteHostFailure(url: string): void {
   const key = origin(url), count = (failures.get(key)?.count ?? 0) + 1
   failures.set(key, { count, until: count < 2 ? 0 : Date.now() + Math.min(count * 60_000, 600_000) })
@@ -120,6 +127,10 @@ async function reuse(dest: string, expected: Integrity, roots: string[], signal?
 /** One request owns one limiter slot, private file handle and cancellation controller. */
 async function receive(url: string, temporary: string, expected: Integrity, signal: AbortSignal | undefined, progress: ProgressFn | undefined, hasAlternative: boolean, range?: { start: number; end: number }, connected?: (url: string) => void): Promise<number> {
   await waitIfTaskPaused(signal)
+  // Respect source rate limits across all files, including parallel range workers.
+  while ((serverCooldowns.get(origin(url)) ?? 0) > Date.now()) {
+    await abortableDelay(Math.min(1000, serverCooldowns.get(origin(url))! - Date.now()), signal)
+  }
   const release = await downloadLimiter.acquire(signal)
   const controller = new AbortController()
   const abort = () => controller.abort(signal?.reason)
@@ -153,7 +164,13 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     waiting = true
     response = await downloadFetch(url, { signal: controller.signal, headers, bodyTimeoutMs: 120_000, separateConnection: !!range, systemProxy: expected.systemProxy })
     waiting = false; sinceData = 0
-    if (!response.ok) throw new DownloadHttpError(response.status, url)
+    if (!response.ok) {
+      if (response.status === 429 || (response.status === 503 && response.headers.has('retry-after'))) {
+        if (serverCooldowns.size > 128) for (const [host, until] of serverCooldowns) if (until <= Date.now()) serverCooldowns.delete(host)
+        serverCooldowns.set(origin(url), Math.max(serverCooldowns.get(origin(url)) ?? 0, retryAfterTime(response.headers.get('retry-after'))))
+      }
+      throw new DownloadHttpError(response.status, url)
+    }
     if (!response.body) throw new InvalidContent('下载响应没有内容')
     connected?.(response.url || url)
     let total = range ? range.end - range.start + 1 : expected.size ?? 0
@@ -380,7 +397,7 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
     }
   })
 }
-export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressFn, concurrency = 8, mirror: MirrorPref = 'official', signal?: AbortSignal): Promise<void> {
+export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressFn, concurrency = downloadLimiter.maxConcurrent, mirror: MirrorPref = 'official', signal?: AbortSignal): Promise<void> {
   const tracker = new DownloadProgressTracker(), speed = new SmoothedSpeedEstimator(), active = new Map<number,string>()
   tasks.forEach(task => tracker.add(task.size)); tracker.seal()
   const controller = new AbortController(), abort = () => controller.abort(signal?.reason)

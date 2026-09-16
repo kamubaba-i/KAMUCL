@@ -26,7 +26,7 @@ test('home recent games: selection no longer pins to top; launch recency drives 
   // recent 不再把 selected 提前
   const recent = home.slice(home.indexOf('const recent = computed'), home.indexOf('const sortedInstalled'))
   assert(!recent.includes('selected'), 'recent must not reference selected for pinning')
-  assert.match(recent, /sortWithFavorite\(activeInstalled\.value\)\.slice\(0, 4\)/)
+  assert.match(recent, /sortWithFavorite\(activeInstalled\.value\)\.slice\(0, wideRecent\.value \? 8 : 4\)/)
 })
 
 test('personalization edit panel: opaque background, clear boundary, avoids top tip bar', () => {

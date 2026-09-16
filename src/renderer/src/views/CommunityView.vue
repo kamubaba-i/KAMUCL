@@ -465,9 +465,9 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
 
     <!-- 搜索卡片 -->
     <div class="card search-card">
-      <div class="filter-row">
-        <span class="muted">兼容筛选：{{ query.mcVersion || '全部 Minecraft' }}<template v-if="supportsLoader"> / {{ query.loader || '全部 Loader' }}</template><template v-else> · 不按模组加载器筛选</template></span>
-        <SelectMenu v-if="store.installed.length" class="filter-select instance-filter" :model-value="currentInstance ? instanceKey(currentInstance) : ''" placeholder="选择实例…" :options="store.installed.filter(x => !x.failed && !x.incomplete).map(v => ({value:instanceKey(v),label:v.id+'（'+v.mcVersion+(v.loader?' · '+v.loader:'')+'）'}))" @change="useInstance" />
+      <div class="filter-row instance-row">
+        <label class="instance-label">选择版本</label>
+        <SelectMenu v-if="store.installed.length" class="filter-select instance-filter" aria-label="选择版本" :model-value="currentInstance ? instanceKey(currentInstance) : ''" placeholder="选择实例…" :options="store.installed.filter(x => !x.failed && !x.incomplete).map(v => ({value:instanceKey(v),label:v.id+'（'+v.mcVersion+(v.loader?' · '+v.loader:'')+'）'}))" @change="useInstance" />
         <button class="btn btn-ghost btn-sm" @click="useCurrentInstance">使用当前实例</button>
       </div>
       <div class="search-row">
@@ -705,6 +705,8 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
 </template>
 
 <style scoped>
+.instance-row { align-items: baseline; }
+.instance-label { align-self: baseline; line-height: 1.4; white-space: nowrap; }
 .page {
   display: flex;
   flex-direction: column;

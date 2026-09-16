@@ -2,6 +2,7 @@
  * 渲染进程对 preload 桥接（window.kamucl）的类型化封装。
  * 所有 IPC 通道名一律取自 @shared/types 的 IPC / IPC_EVENT 常量。
  */
+import { refreshSkinAfter } from './skinRevision'
 import { IPC, IPC_EVENT } from '@shared/types'
 import type {
   DefaultResourcePack,
@@ -222,10 +223,13 @@ export const hideJava = (path: string) => invoke<void>(IPC.javaHide, path)
 
 // ---------------- 皮肤/披风 ----------------
 /** 当前微软账号的皮肤/披风档案 */
-export const getSkinProfile = (refresh = false) => invoke<ProfileSkins>(IPC.skinProfile, refresh)
+export const getSkinProfile = (refresh = false) => {
+  const request = invoke<ProfileSkins>(IPC.skinProfile, refresh)
+  return refresh ? refreshSkinAfter(request) : request
+}
 /** 上传皮肤（64×64 PNG），返回最新档案 */
 export const uploadSkin = (filePath: string, variant: SkinVariant) =>
-  invoke<ProfileSkins>(IPC.skinUpload, filePath, variant)
+  refreshSkinAfter(invoke<ProfileSkins>(IPC.skinUpload, filePath, variant))
 /** 激活披风（传 id）/ 卸下披风（传 null），返回最新档案 */
 export const changeCape = (capeId: string | null) => invoke<ProfileSkins>(IPC.skinCape, capeId)
 /** 历史皮肤（含 dataUrl 缩略图，新→旧） */
@@ -237,7 +241,7 @@ export const renameSkinHistory = (id: string, name: string) =>
   invoke<SkinHistoryEntry[]>(IPC.skinHistoryRename, id, name)
 /** 用历史记录快速换回，返回最新档案 */
 export const uploadSkinFromHistory = (id: string) =>
-  invoke<ProfileSkins>(IPC.skinUploadHistory, id)
+  refreshSkinAfter(invoke<ProfileSkins>(IPC.skinUploadHistory, id))
 /** 当前选中账号的头像数据（微软=皮肤 dataURL / 离线=minotar 头像 dataURL / 无=null） */
 export const getSkinAvatar = (accountId?: string) => invoke<string | null>(IPC.skinAvatar, accountId)
 

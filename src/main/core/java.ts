@@ -19,6 +19,7 @@ import { mapLaunchFiles, SharedPreparation } from './launchPreparation'
 import { macJavaArchitecture } from './javaArchitecture'
 import { provisionJava, javaPackageSize } from './javaSources'
 import { httpFetch } from './httpClient'
+import { validateJavaRuntime } from './javaRuntimeHealth'
 const probeCache = new JavaProbeCache(() => path.join(app.getPath('userData'), 'java-probe-cache.json'))
 
 const javaLog = logScope('java')
@@ -161,7 +162,7 @@ function runTextProcess(
   })
 }
 
-async function probeJavaAsync(exe: string, signal?: AbortSignal): Promise<JavaInfo | null> {
+export async function probeJavaAsync(exe: string, signal?: AbortSignal): Promise<JavaInfo | null> {
   const cached = probeCache.get(exe)
   if (cached) return cached
   try {
@@ -898,11 +899,26 @@ export function ensureJava(versionJson: VersionJson, emit: ProgressEmit): Promis
   return javaPreparations.run(key, () => ensureJavaInternal(versionJson, emit))
 }
 
+export async function selectHealthyJava(available: JavaInfo[], need: number, architecture?: string): Promise<JavaInfo | null> {
+  let remaining = [...available]
+  while (remaining.length) {
+    const candidate = selectJavaByMajor(remaining, need, architecture)
+    if (!candidate) return null
+    remaining = remaining.filter(item => item !== candidate)
+    try {
+      const exe = await resolveJavaExecutable(candidate.path)
+      await validateJavaRuntime(exe, candidate.major)
+      return { ...candidate, path: exe }
+    } catch (error) { javaLog.warn('跳过不完整的 Java：' + candidate.path + '；' + String(error)) }
+  }
+  return null
+}
+
 async function ensureJavaInternal(versionJson: VersionJson, emit: ProgressEmit): Promise<string> {
   const need = requiredMajor(versionJson)
   const started = Date.now()
   const architecture = macJavaArchitecture(versionJson)
-  const local = selectJavaByMajor(await scanJavaForLaunch(), need, architecture)
+  const local = await selectHealthyJava(await scanJavaForLaunch(), need, architecture)
   if (local) {
     if (local.major === need) javaLog.debug(`本机已有 Java ${need}（64位）：${local.path}`)
     else javaLog.info(`本机没有 Java ${need}，向上兼容选用 Java ${local.major}（${local.version}，64位）：${local.path}`)
@@ -949,6 +965,7 @@ async function downloadAndExtractJava(need: number, emit: ProgressEmit, architec
       emit({ stage: 'java', progress: .95, text: `正在验证 Java ${need} · ${pkg.provider}（${arch}）` })
       const verified = await probeJavaAsync(exe)
       if (!verified || verified.major !== need || verified.architecture !== (arch === 'aarch64' ? 'arm64' : 'x64')) throw new Error(`Java ${need} 无法运行或架构不匹配${IS_MAC && process.arch === 'arm64' && arch === 'x64' ? '；旧版游戏需要 Intel Java，请确认系统已安装 Rosetta' : ''}`)
+      await validateJavaRuntime(exe, verified.major)
       // Publish a fresh directory only after verification. Never remove or replace
       // a runtime that an already-running game may still be using.
       const target = path.join(root, `jre-${need}-${arch}-${path.basename(staging).slice(6)}`)
