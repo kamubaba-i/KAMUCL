@@ -3,10 +3,13 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 
 // Minecraft, LWJGL and supported loaders need these modules even when -version works.
-export const GAME_JAVA_MODULES = ['java.base', 'java.desktop', 'java.logging', 'java.management', 'java.naming', 'java.instrument', 'java.sql', 'jdk.unsupported', 'jdk.crypto.ec', 'jdk.zipfs']
-export function missingGameModules(output: string): string[] {
+export const GAME_JAVA_MODULES = ['java.base', 'java.desktop', 'java.logging', 'java.management', 'java.naming', 'java.instrument', 'java.sql', 'jdk.unsupported', 'jdk.zipfs']
+export function missingGameModules(output: string, major: number): string[] {
   const modules = new Set(output.split(/\r?\n/).map(line => line.trim().split('@')[0]))
-  return GAME_JAVA_MODULES.filter(name => !modules.has(name))
+  // Since JDK 22 SunEC lives in java.base; jdk.crypto.ec is only an optional empty compatibility module.
+  // https://www.oracle.com/java/technologies/javase/22-relnote-issues.html#JDK-8308398
+  const required = major < 22 ? [...GAME_JAVA_MODULES, 'jdk.crypto.ec'] : GAME_JAVA_MODULES
+  return required.filter(name => !modules.has(name))
 }
 async function stamp(file: string): Promise<string> {
   const stat = await fs.stat(file)
@@ -29,7 +32,7 @@ export function createJavaRuntimeValidator(probe: typeof run = run) {
    const candidates = process.platform === 'win32'
      ? ['bin/server/jvm.dll', 'jre/bin/server/jvm.dll']
      : process.platform === 'darwin' ? ['lib/server/libjvm.dylib', 'jre/lib/server/libjvm.dylib']
-       : ['lib/server/libjvm.so', 'lib/amd64/server/libjvm.so', 'jre/lib/amd64/server/libjvm.so', 'lib/aarch64/server/libjvm.so']
+       : ['lib/server/libjvm.so', 'lib/amd64/server/libjvm.so', 'jre/lib/amd64/server/libjvm.so', 'lib/aarch64/server/libjvm.so', 'jre/lib/aarch64/server/libjvm.so']
    const images = major >= 9 ? [image] : [image, path.join(home, 'jre/lib/rt.jar')]
    const firstStamp = async (files: string[]) => {
      for (const file of files) { try { return await stamp(file) } catch {} }
@@ -40,7 +43,7 @@ export function createJavaRuntimeValidator(probe: typeof run = run) {
    if (!check) {
      check = (async () => {
        if (major >= 9) {
-         const missing = missingGameModules(await probe(actual, ['--list-modules']))
+         const missing = missingGameModules(await probe(actual, ['--list-modules']), major)
          if (missing.length) throw new Error(`Java 为精简运行环境，缺少游戏所需模块：${missing.join('、')}。请选择完整 Java 或开启自动管理。`)
          await probe(actual, ['--validate-modules'])
        } else {

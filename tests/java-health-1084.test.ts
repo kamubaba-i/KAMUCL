@@ -7,9 +7,9 @@ import { createJavaRuntimeValidator, GAME_JAVA_MODULES, missingGameModules } fro
 
 test('Java module checks reject trimmed desktop runtimes without requiring JDK compiler modules', () => {
   const full = GAME_JAVA_MODULES.map(m => `${m}@25.0.1`).join('\r\n')
-  assert.deepEqual(missingGameModules(full), [])
-  assert.deepEqual(missingGameModules(full.replace('java.desktop@25.0.1', '')), ['java.desktop'])
-  assert(missingGameModules('java.base@25').includes('jdk.unsupported'))
+  assert.deepEqual(missingGameModules(full, 25), [])
+  assert.deepEqual(missingGameModules(full.replace('java.desktop@25.0.1', ''), 25), ['java.desktop'])
+  assert(missingGameModules('java.base@25', 25).includes('jdk.unsupported'))
 })
 test('selected Java health validates files, modules and graph; changes invalidate successful cache', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'kamucl-java-health-'))
@@ -33,4 +33,12 @@ test('selected Java health validates files, modules and graph; changes invalidat
     invalid = false; await check(exe, 25)
     await fs.unlink(jvm); await assert.rejects(check(exe, 25), /不完整/)
   } finally { await fs.rm(home, { recursive: true, force: true }) }
+})
+
+test('SunEC moved into java.base in Java 22: do not reject complete Azul JREs without the empty compatibility module', () => {
+  const modules = GAME_JAVA_MODULES.join('\n')
+  assert.deepEqual(missingGameModules(modules, 21), ['jdk.crypto.ec'])
+  assert.deepEqual(missingGameModules(modules, 22), [])
+  assert.deepEqual(missingGameModules(modules, 25), [])
+  assert.deepEqual(missingGameModules(modules + '\njdk.crypto.ec', 21), [])
 })
