@@ -778,8 +778,6 @@ input[type='number'] {
 /* 所有可用按钮统一提供静止高亮，保持布局与个性化动效。 */
 @media (hover: hover) {
   button:not(:disabled):not([aria-disabled="true"]):hover {
-    outline: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
-    outline-offset: 1px;
     filter: brightness(1.08);
   }
   .btn-ghost:hover:not(:disabled) {

@@ -2,6 +2,7 @@
 import { shouldReportGameCrash, signedExitCode } from '@shared/gameExit'
 const isMac = window.kamucl.platform === 'darwin'
 import LaunchNotice from './components/LaunchNotice.vue'
+import CreatorMotto from './components/CreatorMotto.vue'
 import ModpackSupplement from './components/ModpackSupplement.vue'
 import { instanceCenter, openInstanceCenter } from './instanceCenter'
 import { loadExitNotices, clearNotices } from './store'
@@ -1322,7 +1323,7 @@ onUnmounted(() => {
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
-        <div class="topbar-spacer" aria-hidden="true"></div>
+        <div class="topbar-spacer"><CreatorMotto :disabled="store.editMode" /></div>
 
         <div data-ui="App:5f4d42b34aae" class="top-actions">
           <button data-ui="App:e7efd70d16b8" v-if="store.currentView !== 'home'" class="top-btn dl-toggle" @click="dlOpen = !dlOpen">
@@ -1836,8 +1837,8 @@ onUnmounted(() => {
   pointer-events: none;
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 80%, transparent), var(--hover));
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent), 0 3px 12px #00000008;
+  border: none;
+  box-shadow: 0 3px 12px #00000008;
   transition: transform 300ms cubic-bezier(.22, 1, .36, 1), width 300ms cubic-bezier(.22, 1, .36, 1), height 300ms cubic-bezier(.22, 1, .36, 1), opacity 120ms ease;
   will-change: transform;
 }
@@ -2052,7 +2053,7 @@ onUnmounted(() => {
   height: 16px;
 }
 
-.topbar-spacer { flex: 1; align-self: stretch; }
+.topbar-spacer { flex: 1; min-width: 0; align-self: stretch; }
 
 .top-actions {
   display: flex;
