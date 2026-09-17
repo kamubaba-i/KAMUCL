@@ -394,6 +394,7 @@ export interface Settings {
   disabledFeatures: string[]
   /** 收藏的版本 id 列表（各列表置顶） */
   favoriteVersions: string[]
+  favoriteInstanceOverrides?: Record<string, boolean>
   /** 首页布局：模块顺序与显隐（main=主列，side=右栏，数组顺序即渲染顺序） */
   homeLayout: HomeLayout
   /** 背景自定义 */

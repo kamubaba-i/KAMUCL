@@ -675,7 +675,7 @@ onUnmounted(() => {
           @click="chooseVersion(version.id)"
           @contextmenu.prevent="showFolderContextMenu(version.folder, version.id)"
         >
-          <svg v-if="isFavorite(version.id)" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01Z" /></svg>
+          <svg v-if="isFavorite(version.id, version.folder)" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01Z" /></svg>
           <span v-else class="menu-spacer"></span>
           {{ versionLabel(version) }}
         </button>
@@ -695,8 +695,8 @@ onUnmounted(() => {
         <button class="menu-item" @click="startVersion(cardMenuVersion.id); cardMenu.id = ''">启动实例</button>
         <button class="menu-item" title="新建允许命令的创造模式测试世界并自动进入（Minecraft 1.20+）" :disabled="running || launching || restartBusy" @click="startVersion(cardMenuVersion.id, true); cardMenu.id = ''">启动并创建命令世界</button>
         <button class="menu-item" :disabled="!running || restartBusy" @click="quickRestart(cardMenuVersion)">快速重启游戏</button>
-        <button class="menu-item" @click="toggleFavorite(cardMenuVersion.id); cardMenu.id = ''">
-          {{ isFavorite(cardMenuVersion.id) ? '取消收藏' : '收藏实例' }}
+        <button class="menu-item" @click="toggleFavorite(cardMenuVersion.id, cardMenuVersion.folder); cardMenu.id = ''">
+          {{ isFavorite(cardMenuVersion.id, cardMenuVersion.folder) ? '取消收藏' : '收藏实例' }}
         </button>
         <button class="menu-item" @click="openVersionFolder(cardMenuVersion.id)">打开文件夹</button>
         <button class="menu-item danger" @click="requestRemove(cardMenuVersion)">删除实例</button>

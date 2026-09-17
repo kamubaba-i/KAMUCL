@@ -131,18 +131,18 @@ export const refreshAccount = (id: string) => invoke<Account>(IPC.accountsRefres
 // ---------------- 版本 ----------------
 export const getVersionCatalog = (refresh = false) => invoke<{ versions: RemoteVersion[]; checkedAt: number; stale: boolean }>(IPC.versionsCatalog, refresh)
 export const getManifest = (refresh = false) => invoke<RemoteVersion[]>(IPC.versionsManifest, refresh)
-export const getInstalled = () => invoke<InstalledVersion[]>(IPC.versionsInstalled)
-export const installVersion = (id: string, opts?: InstallOptions) =>
-  invoke<void>(IPC.versionsInstall, id, opts)
+export const getInstalled = (all = false) => invoke<InstalledVersion[]>(IPC.versionsInstalled, all)
+export const installVersion = (id: string, opts?: InstallOptions, folder?: string) =>
+  invoke<void>(IPC.versionsInstall, id, opts, folder)
 export const removeVersion = (id: string, folder?: string) => invoke<void>(IPC.versionsRemove, id, folder)
-export const renameVersion = (id: string, newName: string) =>
-  invoke<void>(IPC.versionsRename, id, newName)
+export const renameVersion = (id: string, newName: string, folder?: string) =>
+  invoke<void>(IPC.versionsRename, id, newName, folder)
 export const setVersionJava = (id: string, javaPath: string, automatic = false, folder?: string) =>
   invoke<void>(IPC.versionsSetJava, id, javaPath, automatic, folder)
-export const setVersionResolution = (id: string, resolution: GameResolution | null) =>
-  invoke<void>(IPC.versionsSetResolution, id, resolution)
-export const cleanupPartialInstall = (id: string) =>
-  invoke<boolean>(IPC.versionsCleanup, id)
+export const setVersionResolution = (id: string, resolution: GameResolution | null, folder?: string) =>
+  invoke<void>(IPC.versionsSetResolution, id, resolution, folder)
+export const cleanupPartialInstall = (id: string, folder?: string) =>
+  invoke<boolean>(IPC.versionsCleanup, id, folder)
 
 // ---------------- 游戏文件夹管理 ----------------
 export const listFolders = () =>
@@ -161,22 +161,22 @@ export const setActiveFolder = (path: string) => invoke<string>(IPC.foldersSetAc
 export const scanFolder = (path: string) => invoke<FolderScanResult>(IPC.foldersScan, path)
 export const openGameFolder = (path: string) => invoke<void>(IPC.foldersOpen, path)
 export const showFolderContextMenu = (folder: string, versionId?: string) => invoke<void>(IPC.foldersContextMenu, folder, versionId)
-export const setVersionIsolation = (id: string, isolated: boolean) =>
-  invoke<void>(IPC.versionsSetIsolation, id, isolated)
-export const getIsolationPlan = (id: string) =>
-  invoke<IsolationMigrationPlan>(IPC.versionsIsolationPlan, id)
+export const setVersionIsolation = (id: string, isolated: boolean, folder?: string) =>
+  invoke<void>(IPC.versionsSetIsolation, id, isolated, folder)
+export const getIsolationPlan = (id: string, folder?: string) =>
+  invoke<IsolationMigrationPlan>(IPC.versionsIsolationPlan, id, folder)
 /** 设置实例图标（'mob:<id>' / 'file:<文件名>' / '' 恢复默认） */
-export const setVersionIcon = (id: string, icon: string) =>
-  invoke<void>(IPC.versionsSetIcon, id, icon)
+export const setVersionIcon = (id: string, icon: string, folder?: string) =>
+  invoke<void>(IPC.versionsSetIcon, id, icon, folder)
 /** 上传自定义实例图标，返回新 icon 值（取消 = null） */
-export const uploadVersionIcon = (id: string) =>
-  invoke<string | null>(IPC.versionsUploadIcon, id)
-export const uploadVersionThumbnail = (id: string) =>
-  invoke<string | null>(IPC.versionsUploadThumbnail, id)
-export const setVersionThumbnailFit = (id: string, fit: ImageFit) =>
-  invoke<void>(IPC.versionsSetThumbnailFit, id, fit)
-export const resetVersionThumbnail = (id: string) =>
-  invoke<void>(IPC.versionsResetThumbnail, id)
+export const uploadVersionIcon = (id: string, folder?: string) =>
+  invoke<string | null>(IPC.versionsUploadIcon, id, folder)
+export const uploadVersionThumbnail = (id: string, folder?: string) =>
+  invoke<string | null>(IPC.versionsUploadThumbnail, id, folder)
+export const setVersionThumbnailFit = (id: string, fit: ImageFit, folder?: string) =>
+  invoke<void>(IPC.versionsSetThumbnailFit, id, fit, folder)
+export const resetVersionThumbnail = (id: string, folder?: string) =>
+  invoke<void>(IPC.versionsResetThumbnail, id, folder)
 export const listLoaders = (loader: LoaderName, mc: string) =>
   invoke<string[]>(IPC.loadersList, loader, mc)
 export const listFabricApi = (mc: string) => invoke<FabricApiVersion[]>(IPC.fabricApiList, mc)

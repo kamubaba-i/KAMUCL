@@ -1,6 +1,7 @@
 import type { InstanceTarget } from './instanceCenter'
 export type RecordingKind = 'replaymod' | 'flashback'
 export interface RecordingEntry {
+  folder?: string
   id: string; name: string; kind: RecordingKind; size: number; modified: number
   source: string; directory: string; library: boolean; error?: string
 }

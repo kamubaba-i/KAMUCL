@@ -15,11 +15,11 @@ import { recycleFile } from './recycleFile'
 import { withFileJob } from './fileJobs'
 import { registerTask, finishTask, waitIfTaskPaused } from './tasks'
 
-type Source = { root: string; label: string; library: boolean }
+type Source = { folder?: string; root: string; label: string; library: boolean }
 type Stored = { entry: RecordingEntry; source: Source; rel: string }
 const catalog = new Map<string, Stored>()
 const key = (s: string) => process.platform === 'win32' ? path.resolve(s).toLowerCase() : path.resolve(s)
-let catalogRoot = '', scanGeneration = 0
+let scanGeneration = 0
 function activeRoot() {
   const settings = getSettings(), root = settings.activeFolder || settings.gameDir
   if (!root || !settings.folders.some(f => key(f.path) === key(root))) throw new Error('请先选择已登记的游戏文件夹')
@@ -31,9 +31,9 @@ async function library(root: string) {
   return dir
 }
 function selectedItems(ids: unknown): Stored[] {
-  if (key(catalogRoot || '.') !== key(activeRoot())) throw new Error('游戏文件夹已切换，请刷新录像列表')
+  const bound = new Set(getSettings().folders.map(f => key(f.path)))
   if (!Array.isArray(ids) || !ids.length || ids.length > 10000) throw new Error('请选择录像文件')
-  return [...new Set(ids)].map(id => { const s = catalog.get(id); if (!s) throw new Error('录像列表已变化，请刷新'); return s })
+  return [...new Set(ids)].map(id => { const s = catalog.get(id); if (!s || !s.source.folder || !bound.has(key(s.source.folder))) throw new Error('录像所属文件夹已解除绑定，请刷新列表'); return s })
 }
 async function recordingDirectory(root: string, kind: RecordingKind, create = false) {
   const dir = await safePath(root, RECORDING_DIRS[kind], true)
@@ -41,12 +41,21 @@ async function recordingDirectory(root: string, kind: RecordingKind, create = fa
   return dir
 }
 async function scan(): Promise<RecordingCatalog> {
-  const generation = ++scanGeneration, root = activeRoot(), collection = await library(root)
-  const sources: Source[] = [{ root: collection, label: '集中收藏', library: true }, { root, label: '当前游戏文件夹 · 共享目录', library: false }]
+  const generation = ++scanGeneration, collection = path.join(activeRoot(), 'recordings')
+  const sources: Source[] = []
   const warnings: string[] = [], instances: RecordingCatalog['instances'] = []
-  for (const v of scanInstalledFolder(root).versions) {
-    try { const c = centerTarget({ folder: v.folder, id: v.id }); sources.push({ root: c.dir, label: v.id, library: false }); instances.push({ folder: v.folder, id: v.id, name: v.id + ' · ' + v.folder }) }
-    catch { warnings.push('无法读取实例：' + v.id) }
+  const roots = [...new Map(getSettings().folders.map(f => [key(f.path), f])).values()]
+  for (const registered of roots) {
+    const root = path.resolve(registered.path), label = registered.name || root
+    sources.push({ folder: root, root: path.join(root, 'recordings'), label: label + ' · 集中收藏', library: true }, { folder: root, root, label: label + ' · 共享目录', library: false })
+    try {
+      const result = scanInstalledFolder(root)
+      warnings.push(...result.errors.map(error => root + '：' + error))
+      for (const v of result.versions) {
+        try { const c = centerTarget({ folder: root, id: v.id }); sources.push({ folder: root, root: c.dir, label: v.id, library: false }); instances.push({ folder: root, id: v.id, name: v.id + ' · ' + root }) }
+        catch { warnings.push('无法读取实例：' + root + ' / ' + v.id) }
+      }
+    } catch (e) { warnings.push(root + '：' + String(e)) }
   }
   const found = new Map<string, Stored>(), seen = new Set<string>(); let visited = 0
   for (const source of sources) {
@@ -66,14 +75,14 @@ async function scan(): Promise<RecordingCatalog> {
           if (found.size >= 10000) throw new Error('仅显示前 10000 个录像文件')
           const full = await safePath(source.root, next), stat = await fs.promises.lstat(full)
           const id = crypto.createHash('sha256').update(key(full)).digest('hex')
-          found.set(id, { source, rel: next, entry: { id, name: file.name, kind, size: stat.size, modified: stat.mtimeMs, source: source.label, directory: path.dirname(full), library: source.library } })
+          found.set(id, { source, rel: next, entry: { folder: source.folder, id, name: file.name, kind, size: stat.size, modified: stat.mtimeMs, source: source.label, directory: path.dirname(full), library: source.library } })
         }
       }
-      try { await visit(RECORDING_DIRS[kind], 0) } catch (e) { warnings.push(source.label + '：' + String(e)) }
+      try { await visit(RECORDING_DIRS[kind], 0) } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') warnings.push(source.label + '：' + String(e)) }
     }
   }
-  if (generation === scanGeneration && key(root) === key(activeRoot())) {
-    catalogRoot = root; catalog.clear(); for (const [id, entry] of found) catalog.set(id, entry)
+  if (generation === scanGeneration) {
+    catalog.clear(); for (const [id, entry] of found) catalog.set(id, entry)
   }
   return { entries: [...found.values()].map(s => s.entry).sort((a, b) => b.modified - a.modified), warnings, library: collection, instances }
 }

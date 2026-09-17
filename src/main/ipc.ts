@@ -331,9 +331,15 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.versionsManifest, (_e, refresh?: boolean) =>
     versions.fetchVersionManifest(settings.getSettings().mirror, refresh === true)
   )
-  ipcMain.handle(IPC.versionsInstalled, () => versions.listInstalled())
+  ipcMain.handle(IPC.versionsInstalled, (_e, all?: boolean) => all === true ? versions.listAllInstalled() : versions.listInstalled())
+  function scopedVersion<T>(id: string, folder: string | undefined, action: () => T): T {
+    const target = folder || folderOfVersion(id)
+    const norm = (p: string) => process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p)
+    if (!settings.getSettings().folders.some(f => norm(f.path) === norm(target))) throw new Error('游戏文件夹未绑定或已解除绑定')
+    return withGameFolder(target, action)
+  }
   // 异步执行，不阻塞返回；进度经 event:progress（带 taskId）推送，结束经 event:installDone 推送
-  ipcMain.handle(IPC.versionsInstall, (_e, versionId: string, opts?: InstallOptions) => {
+  ipcMain.handle(IPC.versionsInstall, (_e, versionId: string, opts?: InstallOptions, folder?: string) => scopedVersion(versionId, folder || settings.getSettings().activeFolder, () => {
     const vid = String(versionId ?? '')
     const task = registerTask(`安装版本 ${vid}${opts?.loader ? ` + ${opts.loader}` : ''}`, 'version')
     const progressGuard = new ProgressEventGuard()
@@ -374,7 +380,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
           })
         })
         .finally(() => finishTask(task.id))
-    })
+    }))
   // 取消进行中的后台任务（版本安装/整合包导入/资源下载）
   ipcMain.handle(IPC.tasksCancel, (_e, taskId: string) =>
     cancelTaskAndWait(String(taskId ?? ''))
@@ -382,7 +388,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.tasksPause, (_e, taskId: string) => pauseTask(String(taskId ?? '')))
   ipcMain.handle(IPC.tasksResume, (_e, taskId: string) => resumeTask(String(taskId ?? '')))
   ipcMain.handle(IPC.versionsRemove, (_e, versionId: string, folder?: string) => versions.removeVersion(versionId, folder))
-  ipcMain.handle(IPC.versionsRename, (_e, id: string, newName: string) => {
+  ipcMain.handle(IPC.versionsRename, (_e, id: string, newName: string, folder?: string) => scopedVersion(id, folder, () => {
     const vid = String(id ?? '')
     const name = String(newName ?? '').trim()
     // 前置校验：游戏运行中禁止改名（文件夹句柄被占用，且引用会错乱）
@@ -390,18 +396,20 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       throw new Error('该版本正在运行中，请先退出游戏再改名')
     }
     versions.renameVersion(vid, name)
-    // 引用同步：收藏列表
+    // 旧版 ID 收藏保留给其他目录同名实例，当前实例迁移到目录限定的键。
     const s = settings.getSettings()
-    if (s.favoriteVersions.includes(vid)) {
-      settings.saveSettings({
-        favoriteVersions: s.favoriteVersions.map((x) => (x === vid ? name : x))
-      })
+    const root = (folder || folderOfVersion(vid)).replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+    const oldKey = JSON.stringify([root, vid]), nextKey = JSON.stringify([root, name])
+    if (s.favoriteVersions.includes(vid) || (s.favoriteInstanceOverrides && oldKey in s.favoriteInstanceOverrides)) {
+      const overrides = { ...s.favoriteInstanceOverrides, [nextKey]: s.favoriteInstanceOverrides?.[oldKey] ?? s.favoriteVersions.includes(vid) }
+      delete overrides[oldKey]
+      settings.saveSettings({ favoriteInstanceOverrides: overrides })
     }
     // 引用同步：服务器绑定（隔离实例的 servers.dat 随目录迁移，无需额外处理）
-    servers.renameBinding(vid, name)
-  })
-  ipcMain.handle(IPC.versionsCleanup, (_e, id: string) =>
-    versions.cleanupPartialInstall(String(id ?? ''))
+    servers.renameBinding(vid, name, folder || folderOfVersion(vid))
+  }))
+  ipcMain.handle(IPC.versionsCleanup, (_e, id: string, folder?: string) =>
+    scopedVersion(id, folder, () => versions.cleanupPartialInstall(String(id ?? '')))
   )
 
   // ---------------- 游戏文件夹管理 ----------------
@@ -436,14 +444,14 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   )
   ipcMain.handle(
     IPC.versionsSetResolution,
-    (_e, id: string, resolution: GameResolution | null) =>
-      versions.setVersionResolution(String(id ?? ''), resolution ?? null)
+    (_e, id: string, resolution: GameResolution | null, folder?: string) =>
+      scopedVersion(id, folder, () => versions.setVersionResolution(String(id ?? ''), resolution ?? null))
   )
-  ipcMain.handle(IPC.versionsSetIcon, (_e, id: string, icon: string) =>
-    versions.setVersionIcon(String(id ?? ''), String(icon ?? ''))
+  ipcMain.handle(IPC.versionsSetIcon, (_e, id: string, icon: string, folder?: string) =>
+    scopedVersion(id, folder, () => versions.setVersionIcon(String(id ?? ''), String(icon ?? '')))
   )
   // 上传自定义图标：弹窗选图 → 校验类型/大小 → 复制进 .kamucl/icons 并写入版本 json
-  ipcMain.handle(IPC.versionsUploadIcon, async (_e, id: string) => {
+  ipcMain.handle(IPC.versionsUploadIcon, (_e, id: string, targetFolder?: string) => scopedVersion(id, targetFolder, async () => {
     const vid = String(id ?? '')
     const win = getWin()
     const opts = {
@@ -463,8 +471,8 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     const icon = `file:${name}`
     versions.setVersionIcon(vid, icon)
     return icon
-  })
-  ipcMain.handle(IPC.versionsUploadThumbnail, async (_e, id: string) => {
+  }))
+  ipcMain.handle(IPC.versionsUploadThumbnail, (_e, id: string, targetFolder?: string) => scopedVersion(id, targetFolder, async () => {
     const versionId = String(id ?? '')
     const version = versions.readVersionJson(versionId)
     const source = await pickImage('导入实例启动卡缩略图')
@@ -482,18 +490,18 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
       appearance.removeInstanceThumbnail(imported.path, folder)
       throw error
     }
-  })
-  ipcMain.handle(IPC.versionsSetThumbnailFit, (_e, id: string, fit: ImageFit) =>
-    versions.setVersionThumbnailFit(String(id ?? ''), fit)
+  }))
+  ipcMain.handle(IPC.versionsSetThumbnailFit, (_e, id: string, fit: ImageFit, folder?: string) =>
+    scopedVersion(id, folder, () => versions.setVersionThumbnailFit(String(id ?? ''), fit))
   )
-  ipcMain.handle(IPC.versionsResetThumbnail, (_e, id: string) =>
-    versions.resetVersionThumbnail(String(id ?? ''))
+  ipcMain.handle(IPC.versionsResetThumbnail, (_e, id: string, folder?: string) =>
+    scopedVersion(id, folder, () => versions.resetVersionThumbnail(String(id ?? '')))
   )
-  ipcMain.handle(IPC.versionsSetIsolation, (_e, versionId: string, isolated: boolean) =>
-    versions.setIsolation(String(versionId ?? ''), isolated === true)
+  ipcMain.handle(IPC.versionsSetIsolation, (_e, versionId: string, isolated: boolean, folder?: string) =>
+    scopedVersion(versionId, folder, () => versions.setIsolation(String(versionId ?? ''), isolated === true))
   )
-  ipcMain.handle(IPC.versionsIsolationPlan, (_e, versionId: string) =>
-    instances.isolationMigrationPlan(String(versionId ?? ''))
+  ipcMain.handle(IPC.versionsIsolationPlan, (_e, versionId: string, folder?: string) =>
+    scopedVersion(versionId, folder, () => instances.isolationMigrationPlan(String(versionId ?? '')))
   )
   ipcMain.handle(IPC.loadersList, (_e, loader: LoaderName, mcVersion: string) =>
     loaders.listLoaderVersions(loader, mcVersion)

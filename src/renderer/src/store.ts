@@ -303,27 +303,25 @@ export async function refreshInstalled() {
 }
 
 // ---------------- 版本收藏 ----------------
-export function isFavorite(id: string): boolean {
-  return (store.settings?.favoriteVersions ?? []).includes(id)
+function favoriteKey(id: string, folder = store.settings?.activeFolder || store.settings?.gameDir || '') {
+  return JSON.stringify([normalizeFolder(folder), id])
 }
-
-export async function toggleFavorite(id: string) {
-  const cur = store.settings?.favoriteVersions ?? []
-  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+export function isFavorite(id: string, folder?: string): boolean {
+  return store.settings?.favoriteInstanceOverrides?.[favoriteKey(id, folder)] ?? (store.settings?.favoriteVersions ?? []).includes(id)
+}
+export async function toggleFavorite(id: string, folder?: string) {
+  const next = { ...store.settings?.favoriteInstanceOverrides, [favoriteKey(id, folder)]: !isFavorite(id, folder) }
   try {
-    store.settings = await saveSettings({ favoriteVersions: next })
-    toast(isFavorite(id) ? '已收藏' : '已取消收藏', 'success')
-  } catch (e) {
-    toast('收藏失败：' + errText(e), 'error')
-  }
+    store.settings = await saveSettings({ favoriteInstanceOverrides: next })
+    toast(isFavorite(id, folder) ? '已收藏' : '已取消收藏', 'success')
+  } catch (e) { toast('收藏失败：' + errText(e), 'error') }
 }
 
 /** 收藏置顶 + 组内最近游玩倒序 */
-export function sortWithFavorite<T extends { id: string }>(list: T[]): T[] {
-  const fav = new Set(store.settings?.favoriteVersions ?? [])
+export function sortWithFavorite<T extends { id: string; folder?: string }>(list: T[]): T[] {
   return [...list].sort((a, b) => {
-    const fa = fav.has(a.id) ? 0 : 1
-    const fb = fav.has(b.id) ? 0 : 1
+    const fa = isFavorite(a.id, a.folder) ? 0 : 1
+    const fb = isFavorite(b.id, b.folder) ? 0 : 1
     if (fa !== fb) return fa - fb
     return (store.lastPlayed[b.id] ?? 0) - (store.lastPlayed[a.id] ?? 0)
   })

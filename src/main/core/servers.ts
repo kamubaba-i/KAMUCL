@@ -19,7 +19,7 @@ const serverLog = logScope('servers')
 import { listAllInstalled } from './versions'
 import { setActiveGameFolder } from './gameFolders'
 import { canonicalPath, pathIdentity } from './folderPaths'
-import { editedServers } from './serverEditing'
+import { editedServers, renamedServerBindings } from './serverEditing'
 import {
   parseServerAddress,
   serverAssociationKey,
@@ -251,20 +251,9 @@ export function prepareServerLaunch(
 }
 
 /** 实例重命名后同步 servers.json 中的绑定 versionId */
-export function renameBinding(oldId: string, newId: string): void {
-  const list = listServers()
-  let changed = false
-  for (const s of list) {
-    if (s.versionId === oldId) {
-      s.versionId = newId
-      changed = true
-    }
-    if (s.candidateVersionIds?.includes(oldId)) {
-      s.candidateVersionIds = s.candidateVersionIds.map((id) => (id === oldId ? newId : id))
-      changed = true
-    }
-  }
-  if (changed) persist(list)
+export function renameBinding(oldId: string, newId: string, folder?: string): void {
+  const ambiguous = !!folder && listAllInstalled().some(v => v.id === oldId && pathIdentity(v.folder) !== pathIdentity(folder))
+  persist(renamedServerBindings(listServers(), oldId, newId, folder, ambiguous))
 }
 
 // ---------------- servers.dat 只读同步 ----------------
