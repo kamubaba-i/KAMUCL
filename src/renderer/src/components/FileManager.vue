@@ -14,6 +14,12 @@ import DupCleanModal from './DupCleanModal.vue'
 import SelectMenu from './SelectMenu.vue'
 import type { FsEntry, ModUpdateReport } from '@shared/types'
 
+function dragResource(event: DragEvent, entry: FsEntry) {
+  event.preventDefault(); event.stopPropagation()
+  if (store.editMode || batchBusy.value || loading.value || !currentVersion.value) return
+  const names = selection.value.has(entry.name) ? [...selection.value] : [entry.name]
+  window.kamucl.send('fs:drag', effectiveRel.value, names, currentVersion.value.folder || activeFolder.value)
+}
 const props = defineProps<{
   /** 页面标题，如「模组」 */
   title: string
@@ -456,8 +462,8 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       <div v-else class="fm-list">
         <div v-for="e in visibleEntries" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
           <input v-if="isModEntry(e)" type="checkbox" :aria-label="'选择 '+e.name" :checked="selection.has(e.name)" :disabled="batchBusy" @change="selectMod(e.name,($event.target as HTMLInputElement).checked)"/>
-          <span class="fm-file-icon">
-            <img v-if="modIcons[e.name]" :src="modIcons[e.name]" alt="" @error="delete modIcons[e.name]" />
+          <span class="fm-file-icon" :draggable="!store.editMode && !batchBusy && !loading" @dragstart="dragResource($event, e)">
+            <img v-if="modIcons[e.name]" :src="modIcons[e.name]" draggable="false" alt="" @error="delete modIcons[e.name]" />
             <svg v-else-if="e.isDir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
             </svg>
@@ -466,7 +472,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
               <path d="M14 2v6h6" />
             </svg>
           </span>
-          <span class="fm-name" :title="e.name">{{ e.name }}<small v-if="catalog[e.name]?.name && catalog[e.name].name!==e.name" class="fm-internal">{{catalog[e.name].name}}</small></span>
+          <span class="fm-name" :title="e.name + ' · 按住拖到桌面或文件夹'" :draggable="!store.editMode && !batchBusy && !loading" @dragstart="dragResource($event, e)">{{ e.name }}<small v-if="catalog[e.name]?.name && catalog[e.name].name!==e.name" class="fm-internal">{{catalog[e.name].name}}</small></span>
           <span v-if="isDisabledMod(e)" class="tag fm-disabled-tag">已禁用</span>
           <span class="muted fm-meta">{{ e.isDir ? '文件夹' : fmtSize(e.size) }}</span>
           <span class="muted fm-meta fm-date">{{ fmtDate(e.mtime) }}</span>
@@ -567,6 +573,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
   display: flex;
   flex-direction: column;
 }
+.fm-name[draggable="true"],.fm-file-icon[draggable="true"]{cursor:grab}
 .fm-row {
   display: flex;
   align-items: center;

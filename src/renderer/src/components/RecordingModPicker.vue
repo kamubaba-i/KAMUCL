@@ -31,10 +31,10 @@ function choose(value: string) { emit('update:modelValue', { kind: kind.value as
     <template v-if="kind">
       <p v-if="!loader" class="muted">请先选择模组加载器，以检查兼容版本。</p>
       <p v-else-if="busy" class="muted">正在检查兼容的模组版本…</p>
-      <div v-else-if="error"><p role="alert">{{ error }}</p><button class="btn btn-ghost btn-sm" @click="retry++">重试</button></div>
-      <template v-else><p class="modal-label">模组版本</p><SelectMenu v-if="options.length" v-model="file" :options="options" @change="choose" /><p v-else class="muted">当前 Minecraft {{ mc }} / {{ loader }} 暂无兼容版本，请更换加载器或选择“不安装”。</p></template>
+      <div v-else-if="error" class="recording-unavailable"><p role="alert">{{ error }}</p><button class="btn btn-ghost btn-sm" @click="retry++">重试</button></div>
+      <template v-else><p class="modal-label">模组版本</p><SelectMenu v-if="options.length" v-model="file" :options="options" @change="choose" /><p v-else class="recording-unavailable" role="alert"><strong>⚠ {{ kind === 'replaymod' ? 'ReplayMod' : 'Flashback' }} 暂无兼容版本</strong><br>当前 Minecraft {{ mc }} / {{ loader }} 无法安装此录像模组。请更换加载器或选择“不安装录像模组”。</p></template>
       <p class="muted">创建独立实例，同时下载所选版本及兼容的必要前置；不会修改其他实例的模组。</p>
     </template>
   </section>
 </template>
-<style scoped>.recording-picker{margin:20px 0;padding-top:4px}.recording-picker p{line-height:1.6}.recording-picker :deep(.select-menu-btn){width:100%}</style>
+<style scoped>.recording-picker{margin:20px 0;padding-top:4px}.recording-picker p{line-height:1.6}.recording-picker :deep(.select-menu-btn){width:100%}.recording-unavailable{color:var(--danger,#e05260);border:1px solid currentColor;background:color-mix(in srgb,var(--danger,#e05260) 10%,transparent);border-radius:12px;padding:12px 14px;font-size:14px}.recording-unavailable strong{font-size:15px;font-weight:700}</style>

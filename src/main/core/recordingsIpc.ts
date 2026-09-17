@@ -1,11 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { IPC_EVENT } from '../../shared/types'
 import { RECORDING_DIRS, type RecordingCatalog, type RecordingEntry, type RecordingKind, type RecordingRequest, type RecordingResult } from '../../shared/recordings'
 import { getSettings } from './settings'
-import { listAllInstalled } from './versions'
+import { scanInstalledFolder } from './versions'
+import { startNativeFileDrag } from './nativeFileDrag'
+import { dragPath } from './resourceDragPaths'
 import { centerTarget, assertInstanceIdle } from './instanceCenter'
 import { safePath } from './backupStore'
 import { copyRecording, validateRecording } from './recordingFiles'
@@ -16,19 +18,33 @@ import { registerTask, finishTask, waitIfTaskPaused } from './tasks'
 type Source = { root: string; label: string; library: boolean }
 type Stored = { entry: RecordingEntry; source: Source; rel: string }
 const catalog = new Map<string, Stored>()
-const library = () => path.join(app.getPath('userData'), 'recordings')
 const key = (s: string) => process.platform === 'win32' ? path.resolve(s).toLowerCase() : path.resolve(s)
+let catalogRoot = '', scanGeneration = 0
+function activeRoot() {
+  const settings = getSettings(), root = settings.activeFolder || settings.gameDir
+  if (!root || !settings.folders.some(f => key(f.path) === key(root))) throw new Error('请先选择已登记的游戏文件夹')
+  return path.resolve(root)
+}
+async function library(root: string) {
+  const dir = await safePath(root, 'recordings', true)
+  await fs.promises.mkdir(dir, { recursive: true })
+  return dir
+}
+function selectedItems(ids: unknown): Stored[] {
+  if (key(catalogRoot || '.') !== key(activeRoot())) throw new Error('游戏文件夹已切换，请刷新录像列表')
+  if (!Array.isArray(ids) || !ids.length || ids.length > 10000) throw new Error('请选择录像文件')
+  return [...new Set(ids)].map(id => { const s = catalog.get(id); if (!s) throw new Error('录像列表已变化，请刷新'); return s })
+}
 async function recordingDirectory(root: string, kind: RecordingKind, create = false) {
   const dir = await safePath(root, RECORDING_DIRS[kind], true)
   if (create) await fs.promises.mkdir(dir, { recursive: true })
   return dir
 }
 async function scan(): Promise<RecordingCatalog> {
-  await fs.promises.mkdir(library(), { recursive: true })
-  const sources: Source[] = [{ root: library(), label: '集中收藏', library: true }]
+  const generation = ++scanGeneration, root = activeRoot(), collection = await library(root)
+  const sources: Source[] = [{ root: collection, label: '集中收藏', library: true }, { root, label: '当前游戏文件夹 · 共享目录', library: false }]
   const warnings: string[] = [], instances: RecordingCatalog['instances'] = []
-  for (const f of getSettings().folders) sources.push({ root: f.path, label: f.name + ' · 共享目录', library: false })
-  for (const v of listAllInstalled()) {
+  for (const v of scanInstalledFolder(root).versions) {
     try { const c = centerTarget({ folder: v.folder, id: v.id }); sources.push({ root: c.dir, label: v.id, library: false }); instances.push({ folder: v.folder, id: v.id, name: v.id + ' · ' + v.folder }) }
     catch { warnings.push('无法读取实例：' + v.id) }
   }
@@ -56,8 +72,10 @@ async function scan(): Promise<RecordingCatalog> {
       try { await visit(RECORDING_DIRS[kind], 0) } catch (e) { warnings.push(source.label + '：' + String(e)) }
     }
   }
-  catalog.clear(); for (const [id, entry] of found) catalog.set(id, entry)
-  return { entries: [...found.values()].map(s => s.entry).sort((a, b) => b.modified - a.modified), warnings, library: library(), instances }
+  if (generation === scanGeneration && key(root) === key(activeRoot())) {
+    catalogRoot = root; catalog.clear(); for (const [id, entry] of found) catalog.set(id, entry)
+  }
+  return { entries: [...found.values()].map(s => s.entry).sort((a, b) => b.modified - a.modified), warnings, library: collection, instances }
 }
 async function current(s: Stored): Promise<string> {
   const file = await safePath(s.source.root, s.rel), stat = await fs.promises.lstat(file)
@@ -66,9 +84,22 @@ async function current(s: Stored): Promise<string> {
 }
 export function registerRecordingsIpc(getWin: () => BrowserWindow | null) {
   ipcMain.handle('recordings:list', scan)
+  ipcMain.on('recordings:drag', (event, ids: unknown) => {
+    if (event.sender !== getWin()?.webContents) return
+    try {
+      const items = selectedItems(ids)
+      if (items.length > 1000) throw new Error('每次最多拖出 1000 个录像，请分批选择')
+      const files = items.map(s => {
+        const file = dragPath(s.source.root, s.rel), stat = fs.lstatSync(file)
+        if (!stat.isFile() || stat.size !== s.entry.size || stat.mtimeMs !== s.entry.modified) throw new Error('录像已变化，请刷新后重试')
+        return file
+      })
+      startNativeFileDrag(event.sender, files)
+    } catch (e) { if (!event.sender.isDestroyed()) event.sender.send('files:dragError', String(e)) }
+  })
   ipcMain.handle('recordings:open', async (_e, id?: string) => {
-    if (id) { const s = catalog.get(id); if (!s) throw new Error('请刷新录像列表'); shell.showItemInFolder(await current(s)) }
-    else { await fs.promises.mkdir(library(), { recursive: true }); const error = await shell.openPath(library()); if (error) throw new Error(error) }
+    if (id) { shell.showItemInFolder(await current(selectedItems([id])[0])) }
+    else { const error = await shell.openPath(await library(activeRoot())); if (error) throw new Error(error) }
   })
   async function run(items: Stored[], action: RecordingRequest['action'], destination?: string) {
     const task = registerTask('录像文件 · ' + ({ collect: '收集', export: '提取', dispatch: '复制到实例', trash: '移入回收站' }[action]), 'world')
@@ -85,7 +116,8 @@ export function registerRecordingsIpc(getWin: () => BrowserWindow | null) {
             await withFileJob(item.source.root, signal, async () => { if (!item.source.library) await assertInstanceIdle(item.source.root); await current(item); await recycleFile(path.dirname(file), path.basename(file)) })
           } else {
             await validateRecording(file, item.entry.kind)
-            const root = destination || library()
+            if (!destination) throw new Error('未指定录像目标目录')
+            const root = destination
             await withFileJob(root, signal, async () => {
               if (action === 'dispatch') await assertInstanceIdle(root)
               const dir = action === 'export' ? root : await recordingDirectory(root, item.entry.kind, true)
@@ -103,18 +135,19 @@ export function registerRecordingsIpc(getWin: () => BrowserWindow | null) {
   }
   ipcMain.handle('recordings:operate', async (_e, request: RecordingRequest) => {
     if (!request || !['collect', 'export', 'dispatch', 'trash'].includes(request.action) || !Array.isArray(request.ids) || request.ids.length < 1 || request.ids.length > 10000) throw new Error('录像操作参数无效')
-    const items = [...new Set(request.ids)].map(id => { const s = catalog.get(id); if (!s) throw new Error('录像列表已变化，请刷新'); return s })
-    let dest: string | undefined
+    const root = activeRoot(), items = selectedItems(request.ids)
+    let dest: string | undefined = request.action === 'collect' ? await library(root) : undefined
     if (request.action === 'dispatch') { if (!request.target) throw new Error('请选择目标实例'); dest = centerTarget(request.target).dir }
     if (request.action === 'export') { const picked = await dialog.showOpenDialog({ title: '选择录像提取文件夹', properties: ['openDirectory', 'createDirectory'] }); if (picked.canceled) return null; dest = picked.filePaths[0] }
     return run(items, request.action, dest)
   })
   ipcMain.handle('recordings:import', async () => {
+    const root = activeRoot()
     const picked = await dialog.showOpenDialog({ title: '导入录像到集中收藏', properties: ['openFile', 'multiSelections'], filters: [{ name: 'ReplayMod / Flashback', extensions: ['mcpr', 'zip'] }] })
     if (picked.canceled) return null
-    await fs.promises.mkdir(library(), { recursive: true })
+    const destination = await library(root)
     const items: Stored[] = []
     for (const file of picked.filePaths) { const stat = await fs.promises.lstat(file); items.push({ source: { root: path.dirname(file), label: '导入', library: false }, rel: path.basename(file), entry: { id: file, name: path.basename(file), kind: /\.mcpr$/i.test(file) ? 'replaymod' : 'flashback', size: stat.size, modified: stat.mtimeMs, source: '导入', directory: path.dirname(file), library: false } }) }
-    return run(items, 'collect')
+    return run(items, 'collect', destination)
   })
 }

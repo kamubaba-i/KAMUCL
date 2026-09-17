@@ -110,3 +110,4 @@ import './java-health-1084.test'
 import './recycle-1085.test'
 
 import './recordings-1086.test'
+import './recordings-1087.test'

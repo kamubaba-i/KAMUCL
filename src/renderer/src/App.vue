@@ -1072,6 +1072,7 @@ onMounted(async () => {
   offs.push(() => window.removeEventListener('pointerdown', onGlobalPointerDown, true))
   offs.push(
     window.kamucl.on('window:caption-pointerdown', closeTopDropdowns),
+    window.kamucl.on('files:dragError', (error) => toast('无法拖出文件：' + String(error), 'error')),
     onProgress((e) => {
       if (e.manualFiles && !store.tasks.some(t => t.manualFiles?.token === e.manualFiles?.token)) dlOpen.value = true
       store.progress = e

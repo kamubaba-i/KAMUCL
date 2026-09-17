@@ -1,4 +1,7 @@
 import { registerRecordingsIpc } from './core/recordingsIpc'
+import { startNativeFileDrag } from './core/nativeFileDrag'
+import { dragResourceFilesSync } from './core/resourceDragPaths'
+import { centerTarget } from './core/instanceCenter'
 import { recordingModVersions } from './core/recordingMods'
 import { recycleFile } from './core/recycleFile'
 import { withFileJob as withRecycleJob } from './core/fileJobs'
@@ -1034,6 +1037,15 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     return dir
   }
   const listDir = async (rel: string, folder?: string): Promise<FsEntry[]> => listResourceEntries(await safeDir(rel, folder))
+  ipcMain.on('fs:drag', (event, rel: string, names: unknown, folder: string) => {
+    if (event.sender !== getWin()?.webContents) return
+    try {
+      if (typeof rel !== 'string' || !/^versions\/[^/\\]+\/(mods|resourcepacks|shaderpacks)$/.test(rel)) throw new Error('不支持拖出该目录')
+      if (typeof folder !== 'string' || !folder) throw new Error('未指定游戏文件夹')
+      const [,id,kind] = rel.split('/')
+      startNativeFileDrag(event.sender, dragResourceFilesSync(path.join(centerTarget({folder,id}).dir, kind), names))
+    } catch (e) { if (!event.sender.isDestroyed()) event.sender.send('files:dragError', String(e)) }
+  })
   ipcMain.handle(IPC.appOpenDir, async (_e, rel?: string, folder?: string) => {
     const dir = await safeDir(String(rel ?? ''), folder)
     fs.mkdirSync(dir, { recursive: true })
