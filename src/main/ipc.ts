@@ -1,3 +1,5 @@
+import { recycleFile } from './core/recycleFile'
+import { withFileJob as withRecycleJob } from './core/fileJobs'
 import { planModMigration, applyModMigration } from './core/modMigration'
 import { pendingModpackFiles, supplyModpackFiles } from './core/modpackManualFiles'
 import { registerInstanceCenterIpc } from './core/instanceCenterIpc'
@@ -1036,8 +1038,13 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.fsList, (_e, rel: string, folder?: string) => listDir(String(rel ?? ''), folder))
   ipcMain.handle(IPC.fsRemove, async (_e, rel: string, name: string, folder?: string) => {
     const dir = await safeDir(String(rel ?? ''), folder)
-    const target = path.join(dir, path.basename(String(name ?? '')))
-    await fs.promises.rm(target, { recursive: true, force: true })
+    const parts = String(rel ?? '').split(/[\\/]+/).filter(Boolean)
+    if (!((parts.length === 1 || (parts.length === 3 && parts[0] === 'versions')) && ['mods', 'resourcepacks', 'shaderpacks'].includes(parts[parts.length - 1]))) throw new Error('不支持删除该目录中的文件')
+    await withRecycleJob(dir, undefined, async () => {
+      const { assertInstanceIdle } = await import('./core/instanceCenter')
+      await assertInstanceIdle(path.dirname(dir))
+      await recycleFile(dir, name)
+    })
     return listDir(String(rel ?? ''), folder)
   })
   /**

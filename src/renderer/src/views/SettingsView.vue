@@ -558,7 +558,7 @@ async function onRemovePlugin(p: PluginInfo) {
   try {
     plugins.value = await removePlugin(p.id)
     pluginDirty.value = true
-    toast(`已删除插件 ${p.name}`, 'success')
+    toast(`插件已移入回收站：${p.name}`, 'success')
   } catch (e) {
     toast('删除失败：' + errText(e), 'error')
   }
@@ -1104,7 +1104,7 @@ async function onRemovePlugin(p: PluginInfo) {
                 class="btn btn-sm"
                 :class="pluginConfirmRemove === p.id ? 'btn-danger' : 'btn-ghost'"
                 @click="onRemovePlugin(p)"
-              >{{ pluginConfirmRemove === p.id ? '确认删除' : '删除' }}</button>
+              >{{ pluginConfirmRemove === p.id ? '移入回收站' : '删除' }}</button>
               <label class="switch" :title="p.enabled ? '停用插件' : '启用插件'">
                 <input type="checkbox" :checked="p.enabled" @change="onTogglePlugin(p, ($event.target as HTMLInputElement).checked)" />
                 <span class="switch-ui"></span>

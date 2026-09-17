@@ -195,7 +195,7 @@ async function onDeleteHistory(item: SkinHistoryEntry) {
     const map = { ...historyRenders.value }
     delete map[item.id]
     historyRenders.value = map
-    toast('已删除历史皮肤', 'success')
+    toast('历史皮肤已移入回收站', 'success')
   } catch (e) {
     toast('删除失败：' + errText(e), 'error')
   } finally {

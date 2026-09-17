@@ -207,7 +207,7 @@ async function onConfirmRemove() {
     if(generation!==loadGeneration)return
     entries.value=result
     delModal.open = false
-    toast(`已删除 ${entry.name}`, 'success')
+    toast(`已移入回收站：${entry.name}`, 'success')
   } catch (e) {
     toast('删除失败：' + errText(e), 'error')
   } finally {
@@ -489,7 +489,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
     <ConfirmModal
       :open="delModal.open"
       title="删除文件"
-      :message="`确定要删除「${delModal.target?.name}」吗？此操作不可恢复。`"
+      :message="`确定要删除「${delModal.target?.name}」吗？文件将移入系统回收站，可从回收站恢复。`"
       :busy="delModal.busy"
       @cancel="delModal.open = false"
       @confirm="onConfirmRemove"

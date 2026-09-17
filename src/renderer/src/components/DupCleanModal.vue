@@ -59,6 +59,7 @@ async function onConfirmDelete() {
   if (deleting.value || !deleteList.value.length) return
   deleting.value = true
   let ok = 0
+  const failed: string[] = []
   try {
     for (const item of deleteList.value) {
       try {
@@ -68,9 +69,10 @@ async function onConfirmDelete() {
         /* 单文件失败继续 */
       }
     }
-    toast(`已删除 ${ok} 个重复 MOD 文件`, 'success')
+    toast(`已移入回收站 ${ok} 个重复 MOD 文件` + (failed.length ? `；${failed.length} 个失败：${failed.join('；')}` : ''), failed.length ? 'error' : 'success')
     emit('deleted')
-    emit('close')
+    if (failed.length) await scanSingle()
+    else emit('close')
   } finally {
     deleting.value = false
   }
@@ -125,7 +127,7 @@ onMounted(() => {
           <div v-if="loading" class="dup-loading"><span class="spin"></span><span class="muted">正在解析 MOD 文件…</span></div>
           <div v-else-if="!groups.length" class="dup-empty muted">该版本没有重复的 MOD ✓</div>
           <template v-else>
-            <p class="muted dup-hint">发现 {{ groups.length }} 组重复 MOD（同一 mod id 多文件共存）。每组选择一个保留版本，其余将删除：</p>
+            <p class="muted dup-hint">发现 {{ groups.length }} 组重复 MOD（同一 mod id 多文件共存）。每组选择一个保留版本，其余将移入系统回收站：</p>
             <div class="dup-list">
               <div v-for="g in groups" :key="g.modId" class="dup-group">
                 <div class="dup-group-head">
