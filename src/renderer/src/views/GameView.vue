@@ -37,6 +37,7 @@ import { instanceLaunchBusy } from '@shared/launchTracking'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import IconPickerModal from '../components/IconPickerModal.vue'
 import SelectMenu from '../components/SelectMenu.vue'
+import RecordingModPicker from '../components/RecordingModPicker.vue'
 import ThumbnailPickerModal from '../components/ThumbnailPickerModal.vue'
 import type {
   FabricApiVersion,
@@ -381,6 +382,7 @@ const modal = reactive({
   apiVersion: '',
   loadingApi: false,
   apiError: '',
+  recordingMod: undefined as InstallOptions['recordingMod'],
   instanceName: '',
   instanceEdited: false
 })
@@ -389,7 +391,8 @@ const modal = reactive({
 const defaultInstanceName = computed(() => {
   const mc = modal.version?.id ?? ''
   if (!modal.loader) return mc
-  if (modal.loader === 'forge') return `${mc}-forge-${modal.loaderVersion || '?'}`
+  if (!modal.loaderVersion) return `${mc}-${modal.loader}`
+  if (modal.loader === 'forge') return `${mc}-forge-${modal.loaderVersion}`
   if (modal.loader === 'neoforge') return `neoforge-${modal.loaderVersion || '?'}`
   return `${modal.loader}-loader-${modal.loaderVersion || '?'}-${mc}`
 })
@@ -422,6 +425,7 @@ function openInstall(v: RemoteVersion) {  modal.open = true
   modal.apiVersion = ''
   modal.loadingApi = false
   modal.apiError = ''
+  modal.recordingMod = undefined
   modal.instanceName = ''
   modal.instanceEdited = false
 }
@@ -480,6 +484,7 @@ const canConfirm = computed(
     (modal.loader === '' || !!modal.loaderVersion) &&
     (modal.loader !== 'fabric' || !modal.apiOn ||
       (!modal.loadingApi && !modal.apiError && !!modal.apiVersion)) &&
+    (!modal.recordingMod || (!!modal.loader && !!modal.recordingMod.fileId)) &&
     !instanceError.value
 )
 
@@ -489,6 +494,7 @@ async function confirmInstall() {
   const opts: InstallOptions = modal.loader
     ? {
         loader: modal.loader,
+        recordingMod: modal.recordingMod,
         loaderVersion: modal.loaderVersion || undefined,
         fabricApi:
           modal.loader === 'fabric' && modal.apiOn && modal.apiVersion
@@ -1487,6 +1493,8 @@ async function confirmIsolation() {
               </template>
             </template>
           </template>
+
+          <RecordingModPicker v-model="modal.recordingMod" :mc="modal.version?.id || ''" :loader="modal.loader" />
 
           <!-- 实例名（所有实例均可自定义；纯净版默认 MC 版本号，加载器实例按规则生成） -->
           <p class="modal-label">实例名</p>

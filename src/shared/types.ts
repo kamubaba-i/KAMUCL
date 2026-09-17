@@ -160,6 +160,7 @@ export interface IsolationMigrationPlan {
 export type LoaderName = 'forge' | 'fabric' | 'quilt' | 'neoforge'
 
 export interface InstallOptions {
+  recordingMod?: { kind: import("./recordings").RecordingKind; fileId: string }
   loader?: LoaderName
   loaderVersion?: string
   /** Fabric 专用：同时安装的 Fabric API 版本号（不传 = 不装） */

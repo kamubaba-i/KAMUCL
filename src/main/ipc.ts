@@ -1,3 +1,5 @@
+import { registerRecordingsIpc } from './core/recordingsIpc'
+import { recordingModVersions } from './core/recordingMods'
 import { recycleFile } from './core/recycleFile'
 import { withFileJob as withRecycleJob } from './core/fileJobs'
 import { planModMigration, applyModMigration } from './core/modMigration'
@@ -92,6 +94,8 @@ function errText(err: unknown): string {
 
 export function registerIpc(getWin: () => BrowserWindow | null): void {
   registerInstanceCenterIpc(getWin)
+  registerRecordingsIpc(getWin)
+  ipcMain.handle("recordings:modVersions", (_e, kind, mc, loader) => recordingModVersions(kind, mc, loader))
   ipcMain.handle(IPC.exitHistoryList, () => exitHistory().list())
   ipcMain.handle(IPC.exitHistoryAck, () => exitHistory().acknowledge())
   ipcMain.handle(IPC.exitHistoryClear, () => exitHistory().clearHistory())

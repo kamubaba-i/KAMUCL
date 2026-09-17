@@ -108,3 +108,5 @@ import './version-catalog-1081.test'
 import './deletion-frp-1082.test'
 import './java-health-1084.test'
 import './recycle-1085.test'
+
+import './recordings-1086.test'

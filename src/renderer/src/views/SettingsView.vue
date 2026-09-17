@@ -205,6 +205,7 @@ const featureToggles = [
   { key: 'mods', label: '模组（资源管理）' },
   { key: 'packs', label: '资源包' },
   { key: 'shaders', label: '光影包' },
+  { key: 'recordings', label: '录像' },
   { key: 'keys', label: '默认配置' },
   { key: 'bridge', label: 'MOD 面板' },
   { key: 'servers', label: '服务器' },

@@ -19,6 +19,7 @@ export type ViewName =
   | 'mods'
   | 'packs'
   | 'shaders'
+  | 'recordings'
   | 'keys'
   | 'bridge'
   | 'skins'

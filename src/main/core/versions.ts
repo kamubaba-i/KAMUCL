@@ -500,7 +500,7 @@ export async function installVersion(
   signal?: AbortSignal
 ): Promise<string> {
   // 安装期间切换活动文件夹或默认隔离设置，不能改变本次任务的落盘目标。
-  const isolated = getSettings().defaultIsolation
+  const isolated = !!opts.recordingMod || getSettings().defaultIsolation
   return withGameFolder(gameDir(), () => installVersionInFolder(versionId, opts, emit, signal, isolated))
 }
 
@@ -515,6 +515,9 @@ async function installVersionInFolder(
   signal: AbortSignal | undefined,
   isolated: boolean
 ): Promise<string> {
+  const { prepareRecordingMod, installRecordingMods } = await import("./recordingMods")
+  const recordingFiles = await prepareRecordingMod(versionId, opts)
+  signal?.throwIfAborted()
   const report = createWeightedProgressEmit(emit, VERSION_INSTALL_STAGE_RANGES)
   // 子安装器完成并不代表整个任务完成，Fabric API 仍可能在下载。
   const prepareReport: ProgressEmit = (event) => {
@@ -540,11 +543,15 @@ async function installVersionInFolder(
     // 必须先确定最终游戏目录，再安装附加模组；失败时直接报错，不能写入共享目录兜底。
     if (isolated) setNewInstanceIsolation(installedId, true)
     // Fabric：可选同时安装 Fabric API 到 mods 文件夹
-    if (opts.loader === 'fabric' && opts.fabricApi) {
+    if (opts.loader === 'fabric' && opts.fabricApi && !opts.recordingMod) {
       // 目标目录必须跟随实例隔离状态：隔离实例 → versions/<id>/mods；共享 → <folder>/mods
       const j = readVersionJson(installedId)
       const modsDir = path.join(instanceDirectoryState(installedId, j).path, 'mods')
       await installFabricApi(versionId, opts.fabricApi, report, signal, modsDir)
+    }
+    if (recordingFiles.length) {
+      const mods = path.join(instanceDirectoryState(installedId, readVersionJson(installedId)).path, 'mods')
+      await installRecordingMods(mods, recordingFiles, signal, fraction => report({ stage: 'download', progress: fraction, text: '下载并校验录像模组与必要前置' }))
     }
     report({ stage: 'done', progress: 1, text: `${installedId} 安装完成` })
     return installedId

@@ -64,6 +64,7 @@ import HomeView from './views/HomeView.vue'
 const InstanceCenter = defineAsyncComponent(() => import('./components/InstanceCenter.vue'))
 const GameView = defineAsyncComponent(() => import('./views/GameView.vue'))
 const ModsView = defineAsyncComponent(() => import('./views/ModsView.vue'))
+const RecordingsView = defineAsyncComponent(() => import('./views/RecordingsView.vue'))
 const PacksView = defineAsyncComponent(() => import('./views/PacksView.vue'))
 const ShadersView = defineAsyncComponent(() => import('./views/ShadersView.vue'))
 const KeysView = defineAsyncComponent(() => import('./views/KeysView.vue'))
@@ -86,6 +87,7 @@ const viewMap: Record<ViewName, Component> = {
   game: GameView,
   mods: ModsView,
   packs: PacksView,
+  recordings: RecordingsView,
   shaders: ShadersView,
   keys: KeysView,
   bridge: BridgeView,
@@ -109,6 +111,11 @@ const navItems: Array<{ key: ViewName; label: string; icon: string }> = [
     key: 'game',
     label: '游戏版本',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M7.5 10.8v3.4M5.8 12.5h3.4"/><circle cx="15.6" cy="11.9" r="0.6" fill="currentColor" stroke="none"/><circle cx="18" cy="13.6" r="0.6" fill="currentColor" stroke="none"/></svg>'
+  },
+  {
+    key: 'friends',
+    label: '联机',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M2 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 4 5"/></svg>'
   },
   {
     key: 'keys',
@@ -164,6 +171,7 @@ const resourceSubItems: Array<{ key: ViewName; label: string; icon: string }> = 
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
   },
 
+  { key: 'recordings', label: '录像', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 10 4-3v10l-4-3"/></svg>' },
   {
     key: 'bridge',
     label: 'MOD 面板',
@@ -174,17 +182,13 @@ const resourceSubItems: Array<{ key: ViewName; label: string; icon: string }> = 
     label: '服务器',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>'
   },
-  {
-    key: 'friends',
-    label: '联机',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M2 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 4 5"/></svg>'
-  }
+
 ]
 
 /** 资源管理组是否展开（默认折叠；当前在其中任一子页时强制展开高亮） */
 const resourceExpanded = ref(false)
 const inResourceGroup = computed(() =>
-  ['mods', 'packs', 'shaders', 'bridge', 'servers', 'friends'].includes(store.currentView)
+  ['mods', 'packs', 'shaders', 'bridge', 'servers', 'recordings'].includes(store.currentView)
 )
 
 // Route timings also respect the OS preference when Vue uses explicit timeout fallback.
