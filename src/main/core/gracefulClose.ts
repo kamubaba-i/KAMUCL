@@ -68,7 +68,7 @@ export function focusGameWindow(child: GameProcessHandle, timeoutMs = 30000): Pr
 // 创建的子进程会被连带终止（job object 树杀）；detached:true、cmd start 包装均不能在保留
 // stdout 管道的前提下逃逸。实测 koffi 直调 CreateProcessW 创建的进程（stdio 接匿名管道、
 // bInheritHandles=TRUE）在启动器 app.exit 后继续运行且管道数据完整——因此游戏进程改由
-// CreateProcessW 创建，父子生命周期完全解耦；stdout/stderr 经 koffi 异步 ReadFile 泵回。
+// CreateProcessW 创建，父子生命周期完全解耦；stdout/stderr 仅在管道已有数据时读取，不占用共享异步线程池。
 // koffi 缺失/非 Windows 时回退 node spawn（macOS/Linux 子进程本就不随父进程退出而死）。
 
 const CREATE_NO_WINDOW = 0x08000000
@@ -83,8 +83,6 @@ interface KoffiLibrary {
 }
 interface KoffiFunc {
   (...args: unknown[]): unknown
-  /** koffi 异步调用：末位为回调 (err, retval, ...outParams)，在线程池执行不阻塞主线程 */
-  async(...args: unknown[]): void
 }
 interface KoffiModule {
   load(name: string): KoffiLibrary
@@ -103,7 +101,7 @@ interface Kernel32Api {
   terminate(handle: number, exitCode: number): boolean
   waitForExit(handle: number): Promise<void>
   getExitCode(handle: number): number
-  pumpStream(handle: number, push: (chunk: Buffer) => void, end: () => void): void
+  pumpStream(handle: number, push: (chunk: Buffer) => void, end: () => void): (() => void) | void
 }
 
 let kernel32Promise: Promise<Kernel32Api | null> | null = null
@@ -145,6 +143,7 @@ function loadKernel32(): Promise<Kernel32Api | null> {
       const terminateProcess = k32.func('TerminateProcess', 'bool', ['uintptr', 'uint32'])
       const getExitCodeProcess = k32.func('GetExitCodeProcess', 'bool', ['uintptr', koffi.out(koffi.pointer('uint32'))])
       const readFile = k32.func('ReadFile', 'bool', ['uintptr', 'void *', 'uint32', koffi.out(koffi.pointer('uint32')), 'void *'])
+      const peekNamedPipe = k32.func('PeekNamedPipe', 'bool', ['uintptr', 'void *', 'uint32', 'void *', koffi.out(koffi.pointer('uint32')), 'void *'])
       const waitForSingleObject = k32.func('WaitForSingleObject', 'uint32', ['uintptr', 'uint32'])
 
       const makePipe = (): { read: number; write: number } | null => {
@@ -177,8 +176,14 @@ function loadKernel32(): Promise<Kernel32Api | null> {
         close: (handle) => { if (handle) closeHandle(handle) },
         terminate: (handle, exitCode) => terminateProcess(handle, exitCode) === true,
         waitForExit: (handle) => new Promise((resolve) => {
-          // 线程池阻塞等待，不占用主线程；INFINITE 只等这一个游戏进程
-          waitForSingleObject.async(handle, 0xffffffff, () => resolve())
+          // Infinite FFI waits and idle ReadFile calls exhaust the shared worker pool:
+          // a second JVM then blocks writing its very first mod-discovery messages.
+          // A zero-timeout probe never occupies a worker while the game is alive.
+          const check = (): void => {
+            if (waitForSingleObject(handle, 0) === 0x00000102) setTimeout(check, 250)
+            else resolve()
+          }
+          check()
         }),
         getExitCode: (handle) => {
           const out = Buffer.alloc(4)
@@ -187,16 +192,44 @@ function loadKernel32(): Promise<Kernel32Api | null> {
         pumpStream: (handle, push, end) => {
           const buf = Buffer.alloc(64 * 1024)
           const got = Buffer.alloc(4)
-          const step = (): void => {
-            readFile.async(handle, buf, buf.length, got, null, (err: unknown, retval: unknown) => {
-              if (err) { end(); return }
-              const n = got.readUInt32LE(0)
-              if (retval === false || n === 0) { end(); return } // broken pipe = 对端关闭，EOF
-              push(Buffer.from(buf.subarray(0, n)))
-              step()
-            })
+          const available = Buffer.alloc(4)
+          let stopped = false
+          let timer: ReturnType<typeof setTimeout> | undefined
+          let immediate: ReturnType<typeof setImmediate> | undefined
+          let idleDelay = 10
+          const finish = (): void => {
+            if (stopped) return
+            stopped = true
+            clearTimeout(timer)
+            clearImmediate(immediate)
+            end()
           }
-          step()
+          const step = (): void => {
+            if (stopped) return
+            const started = performance.now()
+            let drained = 0
+            while (drained < 1024 * 1024 && performance.now() - started < 4) {
+              // This handle has exactly one reader. Never ask ReadFile for more
+              // than PeekNamedPipe reports: an empty anonymous pipe would block.
+              if (!peekNamedPipe(handle, null, 0, null, available, null)) { finish(); return }
+              const count = Math.min(available.readUInt32LE(0), buf.length)
+              if (!count) {
+                timer = setTimeout(step, idleDelay)
+                idleDelay = Math.min(100, idleDelay + 10)
+                return
+              }
+              if (!readFile(handle, buf, count, got, null)) { finish(); return }
+              const n = got.readUInt32LE(0)
+              if (!n) { finish(); return }
+              drained += n
+              idleDelay = 10
+              push(Buffer.from(buf.subarray(0, n)))
+            }
+            // Yield after each bounded burst so heavy mod logging cannot starve UI/IPC.
+            immediate = setImmediate(step)
+          }
+          immediate = setImmediate(step)
+          return finish
         }
       }
     } catch (error) {
@@ -223,6 +256,7 @@ export function windowsQuote(arg: string): string {
 
 export class DetachedGameProcess extends EventEmitter implements GameProcessHandle {
   private outputClosed: Promise<void>[] = []
+  private stopOutput: Array<() => void> = []
   pid: number | undefined
   exitCode: number | null = null
   signalCode: string | null = null
@@ -252,16 +286,17 @@ export class DetachedGameProcess extends EventEmitter implements GameProcessHand
         const timer = setTimeout(resolve, 2000)
         void Promise.all(this.outputClosed).then(() => { clearTimeout(timer); resolve() })
       })
+      for (const stop of this.stopOutput) stop()
       this.emit('close', this.exitCode, this.signalCode)
     })
   }
 
-  /** koffi 异步 ReadFile 泵：数据到达 push 进流；broken pipe（对端关闭）→ 关读端并结束流 */
+  /** Read available output only; EOF or bounded post-exit cleanup closes our read handle. */
   private pump(api: Kernel32Api, readHandle: number): Readable {
     const stream = new Readable({ read() { /* 推模式：数据到达即 push */ } })
     let finish!: () => void
     this.outputClosed.push(new Promise<void>(resolve => { finish = resolve }))
-    api.pumpStream(
+    const stop = api.pumpStream(
       readHandle,
       (chunk) => { stream.push(chunk) },
       () => {
@@ -270,6 +305,7 @@ export class DetachedGameProcess extends EventEmitter implements GameProcessHand
         finish()
       }
     )
+    if (typeof stop === 'function') this.stopOutput.push(stop)
     return stream
   }
 
