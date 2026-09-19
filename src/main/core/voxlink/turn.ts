@@ -6,6 +6,8 @@
  * Tickets are only sent to the allocation's node. Never log tickets or room tokens.
  */
 import dgram from 'node:dgram'
+import { setTimeout as delay } from 'node:timers/promises'
+import { openTurnTcp } from './turnTcp'
 import dns from 'node:dns/promises'
 import crypto from 'node:crypto'
 import type { RudpCodec, RudpTarget } from './rudp'
@@ -47,7 +49,8 @@ function exchange(socket: dgram.Socket, target: RudpTarget, packet: Buffer, acce
     const onMessage = (p: Buffer, info: dgram.RemoteInfo) => { if (info.address === target.address && info.port === target.port && accept(p)) finish(undefined,p) }
     const onClose = () => finish(new Error('中继连接已关闭'))
     const onAbort = () => finish(new Error('中继连接已取消'))
-    const send = () => { try { socket.send(packet,target.port,target.address,()=>{}) } catch { finish(new Error('中继连接已关闭')) } }
+    let sent = 0
+    const send = () => { if (repeat && sent++ >= 5) return; try { socket.send(packet,target.port,target.address,()=>{}) } catch { finish(new Error('中继连接已关闭')) } }
     const timer = setTimeout(() => finish(new Error('中继节点响应超时')), timeout)
     const retry = repeat ? setInterval(send,repeat) : undefined
     socket.on('message',onMessage); socket.once('close',onClose); signal.addEventListener('abort',onAbort,{once:true})
@@ -95,7 +98,8 @@ export class TurnSession {
   private closed=false
   private bound=false
   private detachAbort=()=>{}
-  private constructor(readonly socket: dgram.Socket, readonly target: RudpTarget, readonly sessionId: string, readonly role: 1|2) { this.codec=new TurnCodec(sessionId,role) }
+  private closeTransport=()=>{}
+  private constructor(public socket: dgram.Socket, public target: RudpTarget, readonly sessionId: string, readonly role: 1|2) { this.codec=new TurnCodec(sessionId,role) }
   static async bind(data: {sessionId:string;host:string;port:number;ticket:string}, role:1|2, signal:AbortSignal): Promise<TurnSession> {
     if (!validTurnEndpoint(data.host,data.port) || !/^[a-f\d]{32}$/i.test(data.sessionId) || typeof data.ticket!=='string' || !data.ticket || data.ticket.length>4096) throw new Error('中继凭据无效')
     const {socket,target,detachAbort}=await socketFor(data.host,data.port,signal)
@@ -104,10 +108,31 @@ export class TurnSession {
     const ticket=Buffer.from(data.ticket,'ascii'), packet=Buffer.alloc(23+ticket.length)
     header(3).copy(packet);session.codec.session.copy(packet,4);packet[20]=role;packet.writeUInt16BE(ticket.length,21);ticket.copy(packet,23)
     try {
-      const result=await exchange(socket,target,packet,p=>isPacket(p,4,22)&&p.subarray(4,20).equals(session.codec.session)&&p[20]===role,4600,signal,900)
-      if(result[21]!==0) throw new Error(['','中继凭据无效','中继凭据过期','中继会话已满','中继角色冲突','中继节点繁忙'][result[21]]||'中继绑定失败')
+      const bindRound = async () => {
+        try {
+          const result = await exchange(session.socket,session.target,packet,p=>isPacket(p,4,22)&&p.subarray(4,20).equals(session.codec.session)&&p[20]===role,4600,signal,900)
+          // Upstream treats ROLE_CONFLICT as an accepted bind whose first reply was lost.
+          // The response has already been checked against this endpoint, session and role.
+          return result[21] === 4 ? 0 : result[21]
+        } catch { signal.throwIfAborted(); return 5 }
+      }
+      let code = 5
+      for (let round=0;round<3;round++) {
+        code=await bindRound()
+        if(code===0)break
+        if(code!==5 && code!==4)throw new Error(['','中继凭据无效','中继凭据过期','中继会话已满'][code]||'中继绑定失败')
+        if(round<2)await delay(1000,undefined,{signal})
+      }
+      if(code===5) {
+        detachAbort();closeSocket(socket)
+        const channel=await openTurnTcp(data.host,data.port,signal)
+        session.socket=channel.socket;session.target=channel.target;session.closeTransport=channel.close
+        for(let round=0;round<2;round++) {code=await bindRound();if(code===0)break;if(code!==4&&code!==5)break;if(round===0)await delay(1000,undefined,{signal})}
+      }
+      // Binding alone does not report success: the engine still waits for the peer/data path.
+      if(code!==0)throw new Error(code===4?'中继角色暂被占用，请稍后重试':'中继绑定失败（UDP 与 TCP 均不可用）')
       session.bound=true; session.keepalive=setInterval(()=>session.control(6),15_000)
-      socket.once('close',()=>{if(session.keepalive)clearInterval(session.keepalive)})
+      session.socket.once('close',()=>{if(session.keepalive)clearInterval(session.keepalive)})
       return session
     } catch(e) { session.close();throw e }
   }
@@ -119,6 +144,6 @@ export class TurnSession {
     if(this.closed)return;this.closed=true
     this.detachAbort()
     if(this.keepalive)clearInterval(this.keepalive)
-    if(this.bound)this.control(8,()=>closeSocket(this.socket));else closeSocket(this.socket)
+    if(this.bound)this.control(8,()=>{closeSocket(this.socket);this.closeTransport()});else {closeSocket(this.socket);this.closeTransport()}
   }
 }

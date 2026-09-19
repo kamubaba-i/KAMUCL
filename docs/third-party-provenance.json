@@ -13,7 +13,7 @@
     "integrity": "package-lock.json"
   },
   "voxlink": {
-    "revision": "6b11d930fe4fe568dacc8c47fa0e46e08fa4b110",
+    "revision": "721c7fae05851971996e49a3ad0e595d5aa9a053",
     "license": "LGPL-3.0-only",
     "files": [
       "punchAuth.ts",
@@ -21,8 +21,15 @@
       "rudp.ts",
       "punch.ts",
       "session.ts",
-      "engine.ts"
+      "engine.ts",
+      "modsync.ts",
+      "modsyncService.ts",
+      "tcpPunch.ts",
+      "turnTcp.ts",
+      "connectionLog.ts"
     ],
-    "history": "Old Go port replaced; no retroactive license assertion"
+    "history": "Old Go port replaced; no retroactive license assertion",
+    "previousRevision": "6b11d930fe4fe568dacc8c47fa0e46e08fa4b110",
+    "contract": "docs/launcher-integration.md"
   }
 }

@@ -732,7 +732,7 @@ function versionJsonInFolder(folder: string, id: string): string {
 }
 
 /** 扫描指定 Minecraft 根目录；损坏条目不会静默消失，而以 incomplete + errors 返回。 */
-export function scanInstalledFolder(folder: string): {
+export function scanInstalledFolder(folder: string, onlyId?: string): {
   versions: InstalledVersion[]
   errors: string[]
 } {
@@ -743,7 +743,7 @@ export function scanInstalledFolder(folder: string): {
   if (!fs.existsSync(dir)) return { versions: out, errors }
   let entries: fs.Dirent[]
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+    entries = fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory() && (!onlyId || entry.name === onlyId))
   } catch (error) {
     return {
       versions: out,

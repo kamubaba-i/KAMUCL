@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // KAMUCL HTTP adapter. Endpoint/envelope contract: VoxLink SignalingClient.java 6b11d93.
-export const APP_VERSION = '1.1.5'
+import { version } from '../../../../package.json'
+export const APP_VERSION = version
 export const DEFAULT_SERVER_URL = 'https://p2p.wuhui.icu'
 export const HTTP_TIMEOUT_MS = 10_000
 export const MAX_RESPONSE_LEN = 4 << 20
@@ -20,14 +21,14 @@ export class ApiClient {
   readonly timeoutMs: number
   private deadlines = new Map<string, number>()
   constructor(options: ApiClientOptions = {}) { this.userAgent = options.userAgent ?? `KAMUCL-App/${APP_VERSION}`; this.timeoutMs = options.timeoutMs ?? HTTP_TIMEOUT_MS }
-  async do(base: string, method: 'GET' | 'POST', route: string, query: Record<string, QueryValue | QueryValue[]>, body: unknown): Promise<unknown> {
+  async do(base: string, method: 'GET' | 'POST', route: string, query: Record<string, QueryValue | QueryValue[]>, body: unknown, signal?: AbortSignal): Promise<unknown> {
     if (!validateServerURL(base)) throw new APIError('NETWORK', '服务器地址无效')
     const key = route === '/room/update' ? `${base}|${String((body as { code?: string })?.code ?? '')}` : ''
     if (key && (this.deadlines.get(key) ?? 0) > Date.now()) throw new APIError('RATE_LIMITED', '请稍后再修改房间', 429)
     const url = new URL(base); url.searchParams.set('route', route)
     for (const [name, values] of Object.entries(query)) for (const value of Array.isArray(values) ? values : [values]) if (value != null) url.searchParams.append(name, String(value))
     try {
-      const response = await fetch(url, { method, signal: AbortSignal.timeout(this.timeoutMs), headers: { 'User-Agent': this.userAgent, 'X-VoxLink-Version': APP_VERSION, 'Content-Type': 'application/json' }, ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}) })
+      const response = await fetch(url, { method, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs), headers: { 'User-Agent': this.userAgent, 'X-VoxLink-Version': APP_VERSION, 'Content-Type': 'application/json' }, ...(method === 'POST' ? { body: JSON.stringify(body ?? {}) } : {}) })
       const reader = response.body?.getReader(); const chunks: Uint8Array[] = []; let size = 0
       try {
         if (reader) while (true) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > MAX_RESPONSE_LEN) throw new APIError('RESPONSE_LIMIT', '服务器响应过大', response.status); chunks.push(part.value) }

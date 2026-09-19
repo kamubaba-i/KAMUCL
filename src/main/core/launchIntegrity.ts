@@ -4,13 +4,32 @@ import AdmZip from 'adm-zip'
 import { verifyFile, downloadFile, type MirrorPref } from './download'
 
 export interface LaunchArtifact { dest: string; url?: string; sha1?: string; size?: number }
+// Only successful checks are reused, within this launcher process. Any changed
+// inode, size, mtime, ctime or expected digest forces a full check again.
+const verifiedArtifacts = new Map<string, { signature: string; expires: number }>()
+async function artifactSignature(file: LaunchArtifact): Promise<string | null> {
+  try {
+    const stat = await fs.promises.lstat(file.dest, { bigint: true })
+    if (!stat.isFile() || stat.isSymbolicLink()) return null
+    return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, file.sha1 ?? '', file.size ?? ''].join(':')
+  } catch { return null }
+}
 export async function invalidLaunchArtifact(file: LaunchArtifact): Promise<string | null> {
+  const key = path.resolve(file.dest), before = await artifactSignature(file)
+  const cached = verifiedArtifacts.get(key)
+  if (before && cached?.signature === before && cached.expires > Date.now()) return null
+  verifiedArtifacts.delete(key)
   const reason = await verifyFile(file.dest, file)
   if (reason) return reason
   if (!file.sha1 && /\.jar$/i.test(file.dest)) {
     try { if (!new AdmZip(file.dest).test()) return 'JAR 内容校验失败' } catch { return 'JAR 格式损坏' }
   }
-  return null
+  if (before && before === await artifactSignature(file)) {
+    if (verifiedArtifacts.size >= 8192) verifiedArtifacts.delete(verifiedArtifacts.keys().next().value!)
+    verifiedArtifacts.set(key, { signature: before, expires: Date.now() + 5 * 60_000 })
+    return null
+  }
+  return '文件在完整性校验期间发生变化，请重试'
 }
 
 /** Validate first; a readable path is not evidence of a complete download. */

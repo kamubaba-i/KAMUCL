@@ -13,7 +13,7 @@ test('VoxLink ACK 不形成响应热循环，取消后 wait 立即结束且不�
   await Promise.all([once(socket, 'listening'), once(peer, 'listening')])
   const punch = new Puncher({ conn: socket, timeoutMs: 1000 })
   let responses = 0
-  peer.on('message', () => responses++)
+  peer.on('message', p => { if(p[2] === 2) responses++ })
   try {
     punch.setTarget({ address: '127.0.0.1', port: peer.address().port })
     punch.start(); punch.start()

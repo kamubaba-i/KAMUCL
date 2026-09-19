@@ -31,7 +31,7 @@ export function rudpDecode(packet:Buffer):RudpFrame|null {
   return {type,seq:packet.readUInt32BE(3),ack:packet.readUInt32BE(7),payload:packet.subarray(offset),fecCount:count,fecLengths:lengths}
 }
 export class RudpConn extends EventEmitter {
-  private running=false;private ended=false;private lastRx=Date.now();private lastPing=0
+  private running=false;private ended=false;private closing=false;private lastRx=Date.now();private lastPing=0
   private nextSend=0;private nextRead=0;private pending=new Map<number,{data:Buffer;sent:number;created:number}>()
   private reordered=new Map<number,Buffer>();private incoming:Buffer[]=[];private queuedBytes=0
   private timer:ReturnType<typeof setInterval>|undefined
@@ -48,7 +48,7 @@ export class RudpConn extends EventEmitter {
     if(this.ended||!this.remote)return
     let packet=signPunchFrame(rudpEncode({type,seq,ack:this.nextRead,payload,fecCount:0,fecLengths:[]}),this.options.authKey)
     if(this.options.codec)packet=this.options.codec.encode(packet)
-    this.socket.send(packet,this.remote.port,this.remote.address,error=>{if(error)this.closeWith(error.message)})
+    try {this.socket.send(packet,this.remote.port,this.remote.address,error=>{if(error)this.closeWith(error.message)})} catch {this.closeWith('传输连接已关闭')}
   }
   private receive=(packet:Buffer,from:dgram.RemoteInfo):void=>{
     if(this.ended||!this.remote||from.address!==this.remote.address||from.port!==this.remote.port)return
@@ -71,13 +71,14 @@ export class RudpConn extends EventEmitter {
     // ACK/keepalive are not echoed, preventing two peers from amplifying traffic.
     this.wake()
   }
+  private socketClosed=():void=>this.closeWith('传输连接已关闭')
   private socketError=(error:Error):void=>this.closeWith(error.message)
   start():void {
     if(this.running||this.ended)return
-    this.running=true;this.lastRx=Date.now();this.socket.on('message',this.receive);this.socket.on('error',this.socketError)
+    this.running=true;this.lastRx=Date.now();this.socket.on('message',this.receive);this.socket.on('error',this.socketError);this.socket.on('close',this.socketClosed)
     this.timer=setInterval(()=>{
       const now=Date.now()
-      if(now-this.lastRx>60000){this.closeWith('对端连接超时');return}
+      if(now-this.lastRx>15000){this.closeWith('对端连接超时');return}
       for(const [seq,entry]of this.pending){if(now-entry.created>24000){this.closeWith('可靠传输重试超时');return}if(now-entry.sent>=400){entry.sent=now;this.send(RUDP_TYPE_DATA,entry.data,seq)}}
       if(now-this.lastPing>=1000){this.lastPing=now;this.send(RUDP_TYPE_KEEPALIVE)}
     },50)
@@ -107,9 +108,9 @@ export class RudpConn extends EventEmitter {
     });this.readers=job.catch(()=>{});return job
   }
   closeWith(reason:string):void{
-    if(this.ended)return
-    this.send(RUDP_TYPE_DISCONNECT);this.ended=true;this.running=false;clearInterval(this.timer)
-    this.socket.off('message',this.receive);this.socket.off('error',this.socketError)
+    if(this.ended||this.closing)return
+    this.closing=true;this.send(RUDP_TYPE_DISCONNECT);this.ended=true;this.running=false;clearInterval(this.timer)
+    this.socket.off('message',this.receive);this.socket.off('error',this.socketError);this.socket.off('close',this.socketClosed)
     if(this.options.ownsSocket!==false)try{this.socket.close()}catch{}
     this.pending.clear();this.reordered.clear();this.wake();this.emit('closed',reason);this.onClosed?.(reason)
   }

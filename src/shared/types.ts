@@ -799,6 +799,7 @@ export const IPC = {
   serversList: 'servers:list', // () => ServerEntry[]
   serversAdd: 'servers:add', // (name: string, address: string) => ServerEntry[]
   serversEdit: 'servers:edit', // (id: string, name: string, address: string) => ServerEntry[]
+  serversFavorite: 'servers:favorite',
   serversRemove: 'servers:remove', // (id: string) => ServerEntry[]
   serversPing: 'servers:ping', // (address: string) => ServerPingResult  6 秒超时
   serversBind: 'servers:bind', // (id: string, versionId: string, folder?: string) => ServerEntry[]  绑定/解绑具体实例
@@ -1092,6 +1093,7 @@ export interface WorldImportResult {
 
 // ---------------- 服务器 ----------------
 export interface ServerEntry {
+  favorite?: boolean
   id: string
   name: string
   /** 交给 Minecraft 的规范化地址（默认端口省略）。 */

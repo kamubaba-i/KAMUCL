@@ -16,7 +16,8 @@ import { parseNbt, buildServersDat } from './nbt'
 import { logScope } from './launcherLog'
 
 const serverLog = logScope('servers')
-import { listAllInstalled } from './versions'
+import { listAllInstalled, scanInstalledFolder } from './versions'
+import { getSettings } from './settings'
 import { setActiveGameFolder } from './gameFolders'
 import { canonicalPath, pathIdentity } from './folderPaths'
 import { editedServers, renamedServerBindings } from './serverEditing'
@@ -48,6 +49,7 @@ export function listServers(): ServerEntry[] {
           host: parsed.host,
           port: parsed.port
         }
+        if (old.favorite === true) entry.favorite = true
         if (old.versionId) entry.versionId = String(old.versionId)
         if (old.folder) entry.folder = canonicalPath(String(old.folder))
         if (old.minecraftVersion) entry.minecraftVersion = String(old.minecraftVersion)
@@ -108,6 +110,15 @@ export function addServer(name: string, address: string): ServerEntry[] {
   return list
 }
 
+export function favoriteServer(id: string, favorite: boolean): ServerEntry[] {
+  const list = listServers()
+  const entry = list.find(s => s.id === id)
+  if (!entry) throw new Error('服务器不存在')
+  entry.favorite = favorite
+  persist(list)
+  return list
+}
+
 export function removeServer(id: string): ServerEntry[] {
   const list = listServers().filter((s) => s.id !== id)
   persist(list)
@@ -126,9 +137,11 @@ export function editServer(id: string, name: string, address: string): ServerEnt
 function findInstalledTarget(
   versionId: string,
   folder?: string,
-  targets = listAllInstalled()
+  targets?: InstalledVersion[]
 ): InstalledVersion {
-  let matches = targets.filter((target) => target.id === versionId)
+  if (folder && !getSettings().folders.some(f => pathIdentity(f.path) === pathIdentity(folder))) throw new Error('关联的游戏文件夹已解除绑定，请重新选择实例')
+  const available = targets ?? (folder ? scanInstalledFolder(folder, versionId).versions : listAllInstalled())
+  let matches = available.filter((target) => target.id === versionId)
   if (folder) {
     const identity = pathIdentity(folder)
     matches = matches.filter((target) => pathIdentity(target.folder) === identity)

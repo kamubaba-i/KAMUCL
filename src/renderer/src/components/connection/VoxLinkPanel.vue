@@ -1,20 +1,29 @@
 <script setup lang="ts">
-import ReferenceLinks from './ReferenceLinks.vue'
+import VoxLinkModSync from './VoxLinkModSync.vue'
+import SelectMenu from '../SelectMenu.vue'
+import type { InstalledVersion } from '@shared/types'
+import VoxLinkRelatedLinks from './VoxLinkRelatedLinks.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { DEFAULT_VOXLINK_ROOM_NAME, VOXLINK_ROOM_NAME_MAX, normalizeVoxlinkRoomName, isVoxlinkContentBlocked, VOXLINK_ROOM_BLOCKED_MESSAGE } from '@shared/voxlinkRoom'
 import ConnectionPanel from './ConnectionPanel.vue'
 import ConnectionStatus from './ConnectionStatus.vue'
-import { toast } from '../../store'
-import { copyText } from '../../api'
+import { toast, store } from '../../store'
+import { copyText, getInstalled } from '../../api'
 
 interface LobbyRoom { code: string; name: string; currentPlayers?: number; maxPlayers?: number; hasPassword?: boolean; category?: string; gameVersion?: string; loader?: string; clientTag?: string; natType?: string }
 interface RoomInfo { code: string; name: string; currentPlayers: number; maxPlayers: number; isHost: boolean; gameVersion?: string; loader?: string }
-interface Snapshot { pending?:boolean; joinedAt?:number; connection?:ConnStateEvent|null; stages?:Record<string,StageEvent>; state: string; room: RoomInfo | null; session: { state: string; code: string; isHost: boolean; room: RoomInfo | null }; settings: { allowRelay: boolean; theme: string } }
+interface Snapshot { pending?:boolean; joinedAt?:number; connection?:ConnStateEvent|null; stages?:Record<string,StageEvent>; state: string; room: RoomInfo | null; session: { state: string; code: string; isHost: boolean; room: RoomInfo | null }; settings: { allowRelay: boolean; theme: string; uploadDiagnostics?: boolean } }
 /** 引擎 stage 事件（voxlink/engine.ts emitStage）：阶段条唯一数据源，禁止前端自演进度 */
 interface StageEvent { key: 'stun' | 'punch' | 'relay' | 'host_stun' | 'host_punch' | 'turn'; status: 'active' | 'retry' | 'ok' | 'degraded' | 'fail'; detail: string; ts: number }
 /** 引擎 conn:state 事件：phase = p2p | direct | prelay */
 interface ConnStateEvent { phase?: string; status?: string; address?: string; detail?: string }
 
+const instances = ref<InstalledVersion[]>([])
+const instanceKey = ref('')
+const instanceOptions = computed(() => instances.value.filter(v => !v.failed && !v.incomplete).map(v => ({ value: JSON.stringify([v.folder, v.id]), label: `${v.id} · ${v.folder}` })))
+const chosenInstance = computed(() => instances.value.find(v => JSON.stringify([v.folder, v.id]) === instanceKey.value))
+const selectedTarget = computed(() => chosenInstance.value ? { id: chosenInstance.value.id, folder: chosenInstance.value.folder } : undefined)
+const pendingJoin = ref('')
 const state = ref<Snapshot | null>(null)
 const busy = ref(false)
 const error = ref('')
@@ -231,15 +240,17 @@ function onEvent(payload: { type: string; data: unknown }): void {
   }
   if (payload.type === 'stage') { onStage(payload.data as StageEvent); return }
   if (payload.type === 'conn:state') { onConnState(payload.data as ConnStateEvent); return }
+  if (payload.type === 'mods:download-result') toast(String((payload.data as { message?: string })?.message || '模组已下载，请重启游戏使其生效'), 'info')
   if (payload.type === 'bridge') pushLog(`[bridge] ${JSON.stringify(payload.data)}`)
 }
 
 async function call<T>(channel: string, payload?: unknown): Promise<T | undefined> {
-  try { return await window.kamucl.invoke(channel, payload) } catch (e) { error.value = (e as Error).message?.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') ?? '操作失败'; return undefined }
+  try { return await window.kamucl.invoke(channel, payload) as T } catch (e) { error.value = (e as Error).message?.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') ?? '操作失败'; return undefined }
 }
 
 async function startHost(): Promise<void> {
   if (busy.value) return
+  if (!selectedTarget.value) { error.value = '请选择房主正在使用的游戏实例'; return }
   error.value = ''; roomNameError.value = ''
   let name: string
   try { name = normalizeVoxlinkRoomName(roomName.value) } catch (e) {
@@ -250,7 +261,7 @@ async function startHost(): Promise<void> {
   busy.value = true
   const operation=++uiOperation
   try {
-    const r = await window.kamucl.invoke('voxlink:start', { mode: 'host', roomName: name, isPublic: isPublic.value }) as { ok: boolean }
+    const r = await window.kamucl.invoke('voxlink:start', { mode: 'host', roomName: name, isPublic: isPublic.value, target: selectedTarget.value }) as { ok: boolean }
     if (r?.ok) await status()
   } catch (e) {
     if(operation!==uiOperation)return
@@ -269,6 +280,10 @@ async function startJoin(code: string): Promise<void> {
   const c = code.trim().toUpperCase()
   if (!/^[A-HJ-NP-Z2-9]{6}$/.test(c)) { error.value = 'VoxLink 房间码为 6 位字符（不含 I、L、O、0、1）'; return }
   if(busy.value)return
+  pendingJoin.value = c
+}
+async function joinAfterMods(): Promise<void> {
+  const c = pendingJoin.value; pendingJoin.value = ''
   const operation=++uiOperation
   busy.value = true; error.value = ''; resetConn()
   const r = await call<{ ok: boolean }>('voxlink:start', { mode: 'join', code: c })
@@ -305,6 +320,10 @@ async function loadLobby(): Promise<void> {
   if (r) rooms.value = r.rooms ?? []
   loadingLobby.value = false
 }
+async function toggleDiagnostics(): Promise<void> {
+  const result = await call<{ uploadDiagnostics: boolean }>('voxlink:settings', { uploadDiagnostics: !state.value?.settings.uploadDiagnostics })
+  if (state.value && result) state.value.settings.uploadDiagnostics = result.uploadDiagnostics
+}
 async function toggleRelay(): Promise<void> {
   if (!state.value) return
   const allowRelay = await call<{ allowRelay: boolean }>('voxlink:settings', { allowRelay: !state.value.settings.allowRelay })
@@ -329,8 +348,9 @@ async function copy(value?: string | null): Promise<void> {
 }
 
 onMounted(async () => {
-  offEvent = window.kamucl.on('voxlink:event', onEvent)
+  offEvent = window.kamucl.on('voxlink:event', payload => onEvent(payload as { type: string; data: unknown }))
   await status()
+  try { instances.value = await getInstalled(true); instanceKey.value = JSON.stringify([store.settings?.activeFolder, store.resourceVersionId]); if (!chosenInstance.value) instanceKey.value = instanceOptions.value[0]?.value || '' } catch {}
   if (sessionState.value === 'idle') await loadLobby()
   // 仅用于把真实事件的耗时换算成秒，不是进度动画
   tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
@@ -340,6 +360,7 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
 
 <template>
   <div class="voxlink-page">
+    <VoxLinkModSync v-if="pendingJoin" :code="pendingJoin" :target="selectedTarget" @join="joinAfterMods" @dismiss="pendingJoin = ''" />
     <!-- 状态区：会话状态 + 房间码 + 连接过程阶段条 -->
     <ConnectionPanel title="连接状态" subtitle="房间与打洞全程由引擎真实事件驱动，这里只反映真实进度">
       <template #action><ConnectionStatus :tone="overallTone" :label="overallLabel" /></template>
@@ -371,6 +392,10 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
 
     <!-- 主操作区：创建 / 加入 / 大厅 用页内 Tab 分开 -->
     <ConnectionPanel title="开始联机" subtitle="三种入口分 Tab 展示，同一时间只做一件事">
+      <label v-if="!joined" class="connection-field">联机使用的游戏实例
+        <SelectMenu v-model="instanceKey" :options="instanceOptions" :disabled="busy || !!pendingJoin" placeholder="选择游戏实例" />
+        <small>房主将共享此实例的模组清单；房客下载的模组也只放入所选实例。</small>
+      </label>
       <div class="connect-tabs" role="tablist" aria-label="联机入口">
         <button class="connect-tab" :class="{ active: tab === 'host' }" role="tab" :aria-selected="tab === 'host'" @click="switchTab('host')">创建房间</button>
         <button class="connect-tab" :class="{ active: tab === 'join' }" role="tab" :aria-selected="tab === 'join'" @click="switchTab('join')">加入房间</button>
@@ -459,11 +484,12 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
       </div>
     </ConnectionPanel>
 
-    <ReferenceLinks :links="[{ label: 'GitHub', url: 'https://github.com/AUGUHDAR/VoxLink' }, { label: 'MC 百科', url: 'https://www.mcmod.cn/class/28295.html' }, { label: '联机服务', url: 'https://p2p.wuhui.icu/' }]" />
+    <VoxLinkRelatedLinks />
     <!-- 参考信息区：默认折叠 -->
     <details class="connection-details reference-details">
       <summary>联机说明与中继设置</summary>
       <div class="connection-detail-content">
+        <label class="connection-toggle"><span>发送联机故障诊断<small>向 VoxLink 服务上传脱敏的联机过程日志，帮助排查早期断线；不包含游戏日志和模组文件。</small></span><input type="checkbox" :checked="state?.settings.uploadDiagnostics ?? false" @change="toggleDiagnostics" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
         <label class="connection-toggle"><span>允许中继与自动后备连接<small>允许玩家中继；加入 60 秒仍未连通时自动尝试 TURN。20 秒后也可手动选择 TURN</small></span><input type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="!!state && sessionState !== 'idle'" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
         <p>主路径是 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器；打洞约 20 秒未成功时，可手动选择「尝试直连」或「使用玩家中继」两种后备路径，两者都由引擎真实事件驱动。</p>
         <p>打通后需要在游戏「多人游戏 → 直接连接」中手动填入本地地址完成加入——启动器不会替你点最后一下。</p>

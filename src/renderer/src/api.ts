@@ -260,6 +260,7 @@ export const cancelGameRestart = () => invoke<void>(IPC.gameRestartCancel)
 export const killGame = (forceToken?: string) => invoke<{ requiresForce: boolean; forceToken?: string }>(IPC.gameKill, forceToken)
 
 // ---------------- 服务器 ----------------
+export const favoriteServer = (id: string, favorite: boolean) => invoke<ServerEntry[]>(IPC.serversFavorite, id, favorite)
 export const listServers = () => invoke<ServerEntry[]>(IPC.serversList)
 export const addServer = (name: string, address: string) =>
   invoke<ServerEntry[]>(IPC.serversAdd, name, address)

@@ -810,6 +810,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
   ipcMain.handle(IPC.serversEdit, (_e, id: string, name: string, address: string) =>
     servers.editServer(String(id ?? ''), String(name ?? ''), String(address ?? ''))
   )
+  ipcMain.handle(IPC.serversFavorite, (_e, id: string, favorite: boolean) => servers.favoriteServer(String(id ?? ''), favorite === true))
   ipcMain.handle(IPC.serversPing, (_e, address: string) =>
     servers.pingServer(String(address ?? ''))
   )

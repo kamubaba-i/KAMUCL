@@ -6,14 +6,19 @@ copyright, license and trademark rights remain with their respective holders.
 ## VoxLink protocol integration — LGPL-3.0-only
 
 Upstream: https://github.com/AUGUHDAR/VoxLink
-Revision: 6b11d930fe4fe568dacc8c47fa0e46e08fa4b110 (1.1.5).
+Revisions: 6b11d930fe4fe568dacc8c47fa0e46e08fa4b110 (original protocol replacement),
+721c7fae05851971996e49a3ad0e595d5aa9a053 (main, launcher-integration contract / 1.1.7 behaviors).
 Authors: AUGUHDAR / VoxLink contributors.
 
 The adaptations of PunchAuth.java and TurnRelayClient.java are in
 src/main/core/voxlink/punchAuth.ts and turn.ts. The replacement protocol runtime
 in rudp.ts, punch.ts, session.ts and engine.ts uses the licensed Java
 ReliableUdpTransport, SignalingClient, SignalingWsTransport and ConnectionManager
-protocols. These files are distributed under LGPL-3.0-only. Node lifecycle,
+protocols. The 1.0.91 adaptations additionally include modsync.ts, modsyncService.ts,
+tcpPunch.ts, turnTcp.ts and connectionLog.ts, based on the Java modsync package,
+TcpHolePuncher, P2PBridge, TurnTcpChannel, PunchProfile/PunchTuner and LogUploadManager.
+The authoritative integration contract is docs/launcher-integration.md at that revision.
+These files are distributed under LGPL-3.0-only. Node lifecycle,
 cancellation, HTTP fallback and UI reporting are KAMUCL changes.
 The former app-desktop Go adaptations have been replaced; the Java license does
 not establish authorization for that historical Go source.

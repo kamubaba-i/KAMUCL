@@ -4,6 +4,7 @@ import { withDeadline } from '@shared/deadline'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   addServer,
+  favoriteServer,
   editServer,
   copyText,
   bindServer,
@@ -253,7 +254,9 @@ async function doLaunch(s: ServerEntry, versionId: string) {
     )
     const prepared = await withDeadline(() => prepareServerLaunch(s.id, versionId, target?.folder ?? s.folder), 15000, '服务器启动准备超时，请检查实例目录是否可访问后重试')
     store.settings = await getSettings()
-    await refreshInstalled()
+    // Preparation already pins the target folder. Reuse the list loaded by this
+    // page instead of blocking launch on another scan of every installed instance.
+    store.installed = targets.value.filter(item => normalizedPath(item.folder) === normalizedPath(prepared.folder))
     await selectInstance(prepared.versionId, prepared.folder)
     store.launchingVersionId = prepared.versionId
     store.launchingFolder = prepared.folder
@@ -322,7 +325,7 @@ const pingOf = (s: ServerEntry): ServerPingResult | null =>
 // ---------------- 顶栏搜索联动（过滤名称/地址/MOTD） ----------------
 const keyword = computed(() => store.searchKeyword.trim().toLowerCase())
 const filteredServers = computed(() =>
-  keyword.value
+  (keyword.value
     ? servers.value.filter((s) => {
         const ping = pingOf(s)
         return (
@@ -331,8 +334,12 @@ const filteredServers = computed(() =>
           (ping?.motd.toLowerCase().includes(keyword.value) ?? false)
         )
       })
-    : servers.value
+    : servers.value).slice().sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite))
 )
+async function toggleFavorite(server: ServerEntry) {
+  try { servers.value = await favoriteServer(server.id, !server.favorite) }
+  catch (e) { toast('收藏失败：' + errText(e), 'error') }
+}
 const activeServer = computed(() => filteredServers.value.find(s => s.id === activeId.value) ?? filteredServers.value[0])
 const onlineCount = computed(() => servers.value.filter(s => pingOf(s)?.online).length)
 watch(servers, list => { selected.value = new Set([...selected.value].filter(id => list.some(s => s.id === id))) })
@@ -365,7 +372,7 @@ async function copyAddress(s: ServerEntry) {
     <div v-else-if="!filteredServers.length" class="connection-panel connection-empty"><h3>没有找到匹配的服务器</h3><p>试试其他名称、地址或关键词。</p><button class="btn btn-ghost" @click="store.searchKeyword = ''">清除搜索</button></div>
     <div v-else class="server-workspace">
       <section class="server-list" aria-label="服务器列表">
-        <ServerListItem v-for="s in filteredServers" :key="s.id" :server="s" :ping="pingOf(s)" :pending="pings[s.id] === 'loading'" :active="activeServer?.id === s.id" :select-mode="selectMode" :checked="selected.has(s.id)" @select="activeId = s.id" @toggle="toggleSelect(s.id)" @connect="onCardDblClick(s)" />
+        <ServerListItem v-for="s in filteredServers" :key="s.id" :server="s" :ping="pingOf(s)" :pending="pings[s.id] === 'loading'" :active="activeServer?.id === s.id" :select-mode="selectMode" :checked="selected.has(s.id)" @favorite="toggleFavorite(s)" @select="activeId = s.id" @toggle="toggleSelect(s.id)" @connect="onCardDblClick(s)" />
         <p class="connection-muted server-list-hint">选择查看详情 · 双击快速连接</p>
       </section>
       <ServerDetails v-if="activeServer" :server="activeServer" :ping="pingOf(activeServer)" :pending="pings[activeServer.id] === 'loading'" :busy="launchBusy || store.launchState?.status === 'running' || store.launchState?.status === 'launching'" :running="store.launchState?.status === 'running'" :binding="!!bindingId" :targets="targets" :bound="boundToken(activeServer)" :missing="versionMissing(activeServer)" :last-used="formatLastUsed(activeServer.lastUsedAt)" :target-token="targetToken" :target-label="targetLabel" @bind="onBind(activeServer, $event)" @connect="onCardDblClick(activeServer)" @refresh="pingOne(activeServer)" @edit="openAdd(activeServer)" @remove="requestDelete(activeServer)" @relink="relinkMissing(activeServer)" @versions="store.currentView = 'game'" @copy="copyAddress(activeServer)" />
