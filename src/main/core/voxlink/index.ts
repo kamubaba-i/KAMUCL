@@ -77,10 +77,11 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
     const name = normalizeVoxlinkRoomName(payload.roomName ?? DEFAULT_VOXLINK_ROOM_NAME)
     // hostPort 必填：未传则自动探测本机 MC 局域网端口
     let hostPort = Number(payload.hostPort ?? 0)
-    if (!(hostPort >= 1024 && hostPort <= 65535)) {
-      const ports = await a.detectMcPortsJSON()
+    if (!hostPort) {
+      const ports = await a.detectMcPortsJSON().catch(() => ({ ports: [] }))
       hostPort = ports.ports[0]?.port ?? 0
     }
+    if (!hostPort) throw new Error('请先启动游戏并对局域网开放世界')
     if(generation!==requestGeneration)throw new Error('操作已取消')
     const req: CreateRoomParams = {
       name,

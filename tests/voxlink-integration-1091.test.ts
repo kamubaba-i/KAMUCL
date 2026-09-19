@@ -8,7 +8,7 @@ import net from 'node:net'
 import dgram from 'node:dgram'
 import { once } from 'node:events'
 import { buildModManifests, diffMods, scanModHashes, safeModEntry } from '../src/main/core/voxlink/modsync'
-import { gradedPorts } from '../src/main/core/voxlink/punch'
+import { predict, generateTargetPorts } from '../src/main/core/voxlink/punchPolicy'
 import { TurnSession } from '../src/main/core/voxlink/turn'
 import { invalidLaunchArtifact } from '../src/main/core/launchIntegrity'
 import { VOXLINK_LINKS } from '../src/shared/voxlinkLinks'
@@ -67,10 +67,19 @@ test('launch verification warm cache still rejects same-size corruption with res
   assert(await invalidLaunchArtifact(file)); fs.unlinkSync(dest); assert(await invalidLaunchArtifact(file))
 })
 test('TURN tolerates lost-bind ROLE_CONFLICT and UDP blackhole switches to framed TCP with fragmented responses', { timeout: 18000 }, async t => {
-  const tcp = net.createServer(), udp = dgram.createSocket('udp4'), sockets = new Set<net.Socket>()
-  tcp.listen(0, '127.0.0.1'); await once(tcp, 'listening'); const port = (tcp.address() as net.AddressInfo).port
-  udp.bind(port, '127.0.0.1'); await once(udp, 'listening')
-  t.after(() => { for (const socket of sockets) socket.destroy(); tcp.close(); udp.close() })
+  const tcp = net.createServer(), sockets = new Set<net.Socket>()
+  let udp = dgram.createSocket('udp4'), port = 0
+  t.after(() => { for (const socket of sockets) socket.destroy(); if (tcp.listening) tcp.close(); try { udp.close() } catch {} })
+  // TCP's ephemeral allocator does not reserve the same UDP port on Windows.
+  // Bind UDP first and retry only OS port collisions; register cleanup before either bind.
+  for (let attempt = 0; ; attempt++) {
+    udp.bind(0, '127.0.0.1'); await once(udp, 'listening'); port = udp.address().port
+    try { tcp.listen(port, '127.0.0.1'); await once(tcp, 'listening'); break }
+    catch (error) {
+      if (attempt >= 9 || !['EADDRINUSE', 'EACCES'].includes((error as NodeJS.ErrnoException).code || '')) throw error
+      udp.close(); udp = dgram.createSocket('udp4')
+    }
+  }
   let udpBinds = 0, tcpBinds = 0
   udp.on('message', (p, from) => { if (p[3] !== 3) return; udpBinds++; const reply = Buffer.concat([p.subarray(0, 21), Buffer.from([5])]); reply[3] = 4; udp.send(reply, from.port, from.address) })
   tcp.on('connection', socket => {
@@ -91,12 +100,12 @@ test('TURN tolerates lost-bind ROLE_CONFLICT and UDP blackhole switches to frame
   assert.equal(udpBinds, 3); assert.equal(tcpBinds, 1); assert.equal(session.target.address, '127.0.0.1'); assert.notEqual(session.target.port, port)
   session.close(); controller.abort()
 })
-test('VoxLink links match eight contract entries; graded prediction stays bounded', () => {
+test('VoxLink links match contract; upstream regression and confidence range produce valid targets', () => {
   assert.equal(VOXLINK_LINKS.length, 8)
-  assert.equal(gradedPorts(30000, 0, 5).length, 0)
-  assert(gradedPorts(30000, 1, 0).length < gradedPorts(30000, 1, 4).length)
-  assert(gradedPorts(10, 100, 999).every(p => p > 0 && p < 65536))
-  assert(gradedPorts(30000, 100, 999).length <= 1000)
+  const result = predict([30000, 30010, 30020, 30030, 30040])
+  assert.equal(result.predictedPort, 30050)
+  assert.equal(result.range, 64)
+  assert(generateTargetPorts(result.predictedPort, result.range).every(p => p >= 1024 && p <= 65535))
 })
 
 test('WS is preferred for sends, reconnect re-polls identity, duplicate push is ignored and stop releases pending work', async t => {

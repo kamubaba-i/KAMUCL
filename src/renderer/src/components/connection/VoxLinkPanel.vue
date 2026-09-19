@@ -29,12 +29,25 @@ const busy = ref(false)
 const error = ref('')
 const leaving = ref(false), turnBusy = ref(false)
 let uiOperation=0
-const logs = ref<Array<{ ts: string; text: string }>>([])
+const logs = ref<Array<{ ts: string; text: string; stage:string; level:string }>>([])
+const manualPort = ref('')
+const logLevel = ref('important')
+const logGroups = computed(() => {
+  const groups = new Map<string, typeof logs.value>()
+  for (const log of logs.value) {
+    if (logLevel.value === 'important' && !['warn','error','stage'].includes(log.level)) continue
+    const rows = groups.get(log.stage) || []; rows.push(log); groups.set(log.stage, rows)
+  }
+  return [...groups].map(([label, rows]) => ({ label, rows }))
+})
+const inFlow = computed(() => joined.value || busy.value || !!state.value?.pending)
+const nextStep = computed(() => connected.value ? '地址已就绪，按下方指引进入好友的世界。' : isHost.value ? '保持世界对局域网开放，把房间码发给好友。' : conn.value?.status === 'failed' ? '可手动重试中继，或退出房间后重新加入。' : conn.value?.phase === 'turn' ? '正在建立你选择的中继通路，请稍候。' : '正在尝试直连；满 20 秒后，你可以选择使用中继。')
 
 // 主操作区页内 Tab：创建房间 / 加入房间 / 公共大厅 分开，避免同屏拥挤
 const tab = ref<'host' | 'join' | 'lobby'>('host')
 function switchTab(next: 'host' | 'join' | 'lobby'): void {
   tab.value = next
+  error.value = ''
   if (next === 'lobby' && !rooms.value.length) void loadLobby()
 }
 
@@ -90,13 +103,14 @@ const fallbackVisible = computed(() => joined.value && !isHost.value && !connect
 
 /** 状态区徽标：由会话与隧道真实状态推导（文案不含「已连接」，判定以 mcAddress 为准） */
 const overallTone = computed<'neutral' | 'success' | 'danger' | 'pending'>(() => {
-  if (sessionClosed.value) return 'danger'
+  if (sessionClosed.value || conn.value?.status === 'failed') return 'danger'
   if (connected.value) return 'success'
   if (joined.value) return 'pending'
   return 'neutral'
 })
 const overallLabel = computed(() => {
   if (sessionClosed.value) return '会话已结束'
+  if (conn.value?.status === 'failed') return '连接未完成'
   if (connected.value) return '数据隧道已建立'
   if (joined.value) return '连接进行中'
   return '尚未开始'
@@ -116,16 +130,22 @@ const steps = computed<Step[]>(() => {
   if (!joined.value) return []
   const list: Step[] = []
   list.push({ key: 'join', label: isHost.value ? '创建房间' : '加入房间', state: 'done', detail: state.value?.room?.name })
+  if (!isHost.value && ['turn', 'prelay'].includes(conn.value?.phase || '')) {
+    const key = conn.value?.phase === 'turn' ? 'turn' : 'relay'
+    list.push({ key, label: key === 'turn' ? 'TURN 中继' : '玩家中继', state: conn.value?.status === 'failed' ? 'fail' : stepState(stageMap.value[key], connected.value), detail: stageMap.value[key]?.detail || conn.value?.detail })
+    list.push({ key: 'tunnel', label: '游戏地址', state: connected.value ? 'done' : 'pending', detail: connected.value ? '地址已就绪' : '中继连通后显示' })
+    return list
+  }
   list.push({
     key: isHost.value ? 'host_stun' : 'stun',
-    label: 'NAT 探测（STUN）',
+    label: '检测网络',
     state: stepState(stunStage.value, false),
     detail: stunStage.value?.detail,
     seconds: stageSeconds.value[isHost.value ? 'host_stun' : 'stun']
   })
   list.push({
     key: isHost.value ? 'host_punch' : 'punch',
-    label: isHost.value ? '等待房客打洞' : 'UDP 打洞',
+    label: isHost.value ? '等待好友连接' : '建立直连',
     state: stepState(punchStage.value, connected.value && mcPhase.value === 'p2p'),
     detail: punching.value ? `已进行 ${punchElapsed.value} 秒` : punchStage.value?.detail,
     seconds: stageSeconds.value[isHost.value ? 'host_punch' : 'punch']
@@ -158,12 +178,12 @@ function sanitizeLog(text: string): string {
     .replace(/(\d{1,3}\.){3}\d{1,3}/g, (m) => (m === '127.0.0.1' ? m : '***'))
 }
 
-function pushLog(text: string): void {
+function pushLog(text: string, level='info', stage=conn.value?.phase || '准备'): void {
   const d = new Date()
   const ts = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':')
-  logs.value.push({ ts, text: sanitizeLog(text) })
+  logs.value.push({ ts, text: sanitizeLog(text), level, stage })
   if (logs.value.length > 300) logs.value.shift()
-  requestAnimationFrame(scrollLogBottom)
+
 }
 
 const logViewport = ref<HTMLElement | null>(null)
@@ -197,35 +217,18 @@ function onStage(s: StageEvent): void {
   stageMap.value = { ...stageMap.value, [s.key]: s }
   if (s.key === 'punch' && s.status === 'active' && !punchStartTs.value) punchStartTs.value = s.ts
   if (s.key === 'relay' && s.status === 'active') relayTried.value = true
-  pushLog(`[阶段] ${s.detail}`)
+  pushLog(s.detail, s.status === 'fail' ? 'error' : s.status === 'retry' ? 'warn' : 'stage', s.key)
 }
 
 function onConnState(d: ConnStateEvent): void {
+  const changed = conn.value?.phase !== d.phase || d.status === 'trying' && conn.value?.status !== 'trying'
+  if (changed) { stageMap.value = {}; stageSeconds.value = {} }
   conn.value = d
-  if (d?.status === 'success') {
-    if (d.phase === 'direct') {
-      // 直连成功：MC 手填地址 = 房主公网地址（远程地址只出现在连接指引，不进日志）
-      mcAddress.value = (d.address ?? '').trim()
-      mcPhase.value = 'direct'
-      pushLog('[连接:direct] 直连探测成功，目标地址见「连接成功」区块')
-    } else {
-      const m = /127\.0\.0\.1:\d+/.exec(`${d.detail ?? ''} ${d.address ?? ''}`)
-      mcAddress.value = m ? m[0] : ''
-      mcPhase.value = d.phase ?? ''
-      pushLog(`[连接:${d.phase}] 数据隧道建立成功${mcAddress.value ? '，本地地址已生成' : ''}`)
-    }
-    return
-  }
-  if (d?.status === 'trying') {
-    if (d.phase === 'direct') { directTried.value = true; pushLog('[连接:direct] 正在尝试直连探测…') }
-    if (d.phase === 'prelay') relayTried.value = true
-    return
-  }
-  if (d?.status === 'failed') {
-    // 只清掉同一 phase 建立的地址：直连失败不能推翻已建好的 p2p 隧道
-    if (mcPhase.value === d.phase) { mcAddress.value = ''; mcPhase.value = '' }
-    pushLog(`[连接:${d.phase ?? '?'}] 失败 ${d.detail ?? ''}`)
-  }
+  mcAddress.value = d.status === 'success' ? (d.address || '').trim() : ''
+  mcPhase.value = d.status === 'success' ? d.phase || '' : ''
+  if (d.status === 'trying') { directTried.value = d.phase === 'direct'; relayTried.value = d.phase === 'prelay' }
+  if (d.status === 'failed') pushLog(d.detail || '连接未完成', 'error', d.phase || '连接')
+
 }
 
 function onEvent(payload: { type: string; data: unknown }): void {
@@ -235,7 +238,7 @@ function onEvent(payload: { type: string; data: unknown }): void {
   }
   if (payload.type === 'log') {
     const d = payload.data as { level: string; msg: string }
-    if (d?.msg) pushLog(`[${d.level}] ${d.msg}`)
+    if (d?.msg) pushLog(d.msg, d.level)
     return
   }
   if (payload.type === 'stage') { onStage(payload.data as StageEvent); return }
@@ -261,8 +264,8 @@ async function startHost(): Promise<void> {
   busy.value = true
   const operation=++uiOperation
   try {
-    const r = await window.kamucl.invoke('voxlink:start', { mode: 'host', roomName: name, isPublic: isPublic.value, target: selectedTarget.value }) as { ok: boolean }
-    if (r?.ok) await status()
+    const r = await window.kamucl.invoke('voxlink:start', { mode: 'host', roomName: name, isPublic: isPublic.value, target: selectedTarget.value, hostPort: manualPort.value.trim() ? Number(manualPort.value) : undefined }) as { ok: boolean }
+    if (r?.ok) { resetConn(); await status() }
   } catch (e) {
     if(operation!==uiOperation)return
     if (isVoxlinkContentBlocked(e)) {
@@ -307,8 +310,9 @@ function applySnapshot(s:Snapshot) {
   state.value=s
   if(s.state==='idle'||s.state==='closed'){resetConn();return}
   if(s.joinedAt)punchStartTs.value=s.joinedAt
-  if(s.stages)stageMap.value=s.stages
   if(s.connection)onConnState(s.connection)
+  else { mcAddress.value=''; mcPhase.value=''; conn.value=null }
+  stageMap.value=s.stages || {}
 }
 async function status(): Promise<void> {
   const s = await call<Snapshot>('voxlink:status')
@@ -360,192 +364,70 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
 
 <template>
   <div class="voxlink-page">
-    <VoxLinkModSync v-if="pendingJoin" :code="pendingJoin" :target="selectedTarget" @join="joinAfterMods" @dismiss="pendingJoin = ''" />
-    <!-- 状态区：会话状态 + 房间码 + 连接过程阶段条 -->
-    <ConnectionPanel title="连接状态" subtitle="房间与打洞全程由引擎真实事件驱动，这里只反映真实进度">
+    <header class="vox-toolbar">
+      <p class="connection-muted">{{ inFlow ? '保持本页开启，即可随时查看连接状态。' : '先选择游戏实例，再创建房间或寻找好友。' }}</p>
+      <VoxLinkRelatedLinks />
+    </header>
+    <p v-if="error" class="connection-error vox-alert" role="alert">{{ error }}</p>
+    <p v-if="sessionClosed" class="connection-error vox-alert">房间已结束，请重新创建或加入。</p>
+
+    <ConnectionPanel v-if="inFlow" :title="connected ? '连接成功' : conn?.status === 'failed' ? '连接尚未完成' : isHost ? '房间已准备好' : '正在连接好友'" :subtitle="nextStep">
       <template #action><ConnectionStatus :tone="overallTone" :label="overallLabel" /></template>
-
-      <div v-if="joined && state?.session.code" class="room-card" :class="{ ok: connected }">
-        <p class="room-label">{{ isHost ? '你的房间码（发给好友）' : '已加入的房间码' }}</p>
-        <p class="room-code"><code>{{ state.session.code.slice(0, 3) + ' ' + state.session.code.slice(3) }}</code><button class="btn btn-ghost copy-mini" @click="copy(state?.session.code)">复制</button></p>
-        <p class="connection-muted">把 6 位房间码发给好友。好友输入房间码后会自动开始打洞；打通后好友仍需在自己游戏的「多人游戏 → 直接连接」手动填入地址完成加入。</p>
-        <p class="connection-muted">房间心跳有效期 300 秒：双方必须同时在线，房间失效后需重新创建。</p>
-        <p v-if="state?.room" class="connection-muted">房间：{{ state.room.name }} · {{ state.room.currentPlayers }}/{{ state.room.maxPlayers }} 人</p>
+      <div v-if="connected && !isHost" class="address-hero" aria-live="polite">
+        <span class="connection-eyebrow">在游戏中粘贴此地址</span>
+        <div class="address-line"><code>{{ mcAddress }}</code><button class="btn btn-gold" @click="copy(mcAddress)">复制地址</button></div>
+        <p>进入游戏 → <strong>多人游戏</strong> → <strong>直接连接</strong></p>
+        <small>粘贴地址后，点击「加入服务器」。保持启动器和房间开启。</small>
       </div>
-
-      <ol v-if="steps.length" class="stage-bar" aria-label="连接过程">
-        <li v-for="s in steps" :key="s.key" class="stage-item" :class="s.state">
-          <span class="stage-dot" aria-hidden="true">{{ s.state === 'done' ? '✓' : s.state === 'fail' ? '×' : '' }}</span>
-          <span class="stage-copy"><strong>{{ s.label }}</strong><small v-if="s.detail">{{ s.detail }}</small><small v-else-if="s.seconds !== undefined">耗时 {{ s.seconds }} 秒</small></span>
-        </li>
+      <div v-if="state?.session.code" class="room-strip">
+        <div><small>{{ isHost ? '把房间码发给好友' : '当前房间' }}</small><strong>{{ state?.room?.name }}</strong></div>
+        <div class="room-code"><code>{{ state.session.code }}</code><button class="btn btn-ghost" @click="copy(state.session.code)">复制房间码</button></div>
+      </div>
+      <ol v-if="steps.length && !connected" class="stage-bar" aria-label="连接进度">
+        <li v-for="(step, i) in steps" :key="step.key" class="stage-item" :class="step.state"><span class="stage-dot">{{ step.state === 'done' ? '✓' : i + 1 }}</span><span class="stage-copy"><strong>{{ step.label }}</strong><small>{{ step.detail || '等待前一步完成' }}</small></span></li>
       </ol>
-      <p v-else class="connection-muted">当前没有进行中的连接。在下方选择「创建房间」「加入房间」或去「公共大厅」，这里会逐步展示 NAT 探测 → UDP 打洞 → 隧道建立的真实进度。</p>
-
-      <div v-if="joined || busy || state?.pending" class="connection-actions session-actions">
-        <button class="btn btn-ghost" :disabled="leaving" @click="stop">{{ leaving ? '正在退出…' : joined ? (isHost ? '关闭房间' : '退出房间') : '取消连接' }}</button>
-        <button v-if="fallbackVisible" class="btn btn-gold" :disabled="turnBusy || stageMap.turn?.status === 'active'" @click="useTurn">{{ turnBusy || stageMap.turn?.status === 'active' ? 'TURN 连接中…' : stageMap.turn?.status === 'fail' ? '重试 TURN 中继' : '使用 TURN 中继' }}</button>
+      <div v-if="busy && !joined" class="flow-wait" role="status">{{ tab === 'host' ? '正在检测游戏并创建房间…' : '正在加入房间…' }}</div>
+      <p v-if="conn?.detail && !connected" class="connection-muted" role="status">{{ conn.detail }}</p>
+      <div v-if="fallbackVisible" class="manual-relay">
+        <div><strong>也可以选择中继连接</strong><p class="connection-muted">直连已尝试 {{ punchElapsed }} 秒。是否使用中继，由你决定。</p></div>
+        <button class="btn btn-gold" :disabled="turnBusy || stageMap.turn?.status === 'active'" @click="useTurn">{{ turnBusy || stageMap.turn?.status === 'active' ? '正在建立中继…' : conn?.phase === 'turn' && conn?.status === 'failed' ? '重试 TURN 中继' : '使用 TURN 中继' }}</button>
+        <button class="btn btn-ghost" :disabled="relayTried || turnBusy || stageMap.turn?.status === 'active'" @click="useRelay">使用玩家中继</button>
       </div>
-      <p v-if="fallbackVisible" class="connection-muted">连接已尝试 {{ punchElapsed }} 秒。可使用 TURN 中继；开启中继后，持续重试会自动尝试可用节点。</p>
-      <p v-if="sessionClosed" class="connection-error" role="alert">会话已结束（房间可能过期或网络中断）。房间码 300 秒无心跳即失效，请双方同时在线后重新加入。</p>
-      <p v-if="error" class="connection-error" role="alert">{{ error }}</p>
+      <div class="connection-actions"><button class="btn btn-ghost" :disabled="leaving" @click="stop">{{ leaving ? '正在退出…' : joined ? isHost ? '关闭房间' : '退出房间' : '取消连接' }}</button></div>
     </ConnectionPanel>
 
-    <!-- 主操作区：创建 / 加入 / 大厅 用页内 Tab 分开 -->
-    <ConnectionPanel title="开始联机" subtitle="三种入口分 Tab 展示，同一时间只做一件事">
-      <label v-if="!joined" class="connection-field">联机使用的游戏实例
-        <SelectMenu v-model="instanceKey" :options="instanceOptions" :disabled="busy || !!pendingJoin" placeholder="选择游戏实例" />
-        <small>房主将共享此实例的模组清单；房客下载的模组也只放入所选实例。</small>
-      </label>
-      <div class="connect-tabs" role="tablist" aria-label="联机入口">
-        <button class="connect-tab" :class="{ active: tab === 'host' }" role="tab" :aria-selected="tab === 'host'" @click="switchTab('host')">创建房间</button>
-        <button class="connect-tab" :class="{ active: tab === 'join' }" role="tab" :aria-selected="tab === 'join'" @click="switchTab('join')">加入房间</button>
-        <button class="connect-tab" :class="{ active: tab === 'lobby' }" role="tab" :aria-selected="tab === 'lobby'" @click="switchTab('lobby')">公共大厅</button>
-      </div>
-
-      <!-- 创建房间 -->
+    <ConnectionPanel v-else title="开始联机" subtitle="选择要一起游玩的实例，再创建或加入房间">
+      <label class="connection-field">游戏实例<SelectMenu v-model="instanceKey" :options="instanceOptions" :disabled="!!pendingJoin" placeholder="选择游戏实例" /><small>共享和下载的模组均使用此实例。</small></label>
+      <div class="connect-tabs" role="tablist" aria-label="联机入口"><button v-for="item in (['host','join','lobby'] as const)" :key="item" class="connect-tab" :class="{active:tab===item}" role="tab" :aria-selected="tab===item" @click="switchTab(item)">{{ item === 'host' ? '创建房间' : item === 'join' ? '加入房间' : '公共大厅' }}</button></div>
       <div v-if="tab === 'host'" class="tab-body">
-        <template v-if="!joined">
-          <label class="connection-field">房间名
-            <input ref="roomNameInput" v-model="roomName" class="input" :maxlength="VOXLINK_ROOM_NAME_MAX" placeholder="大厅里显示的名字" :disabled="busy" :aria-invalid="!!roomNameError" :aria-describedby="roomNameError ? 'voxlink-room-name-error' : undefined" />
-            <small v-if="roomNameError" id="voxlink-room-name-error" role="alert">{{ roomNameError }}</small>
-          </label>
-          <label class="connection-toggle"><span>公开房间<small>出现在大厅列表，任何人可通过房间码加入</small></span><input v-model="isPublic" type="checkbox" :disabled="busy" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
-          <p class="connection-muted">先启动游戏并对局域网开放世界，VoxLink 会自动探测端口。创建后你会得到 6 位房间码（不含 I、L、O、0、1），显示在上方「连接状态」里。</p>
-          <div class="connection-actions"><button class="btn btn-gold" :disabled="busy" @click="startHost">{{ busy ? '创建中…' : '创建房间' }}</button></div>
-        </template>
-        <template v-else>
-          <div class="connection-result" aria-live="polite">
-            <p>房间进行中，实时进度见上方「连接状态」。</p>
-          </div>
-        </template>
+        <div class="entry-tip"><span>01</span><p>先启动游戏，进入世界，选择<strong>「对局域网开放」</strong>。</p></div>
+        <label class="connection-field">房间名<input ref="roomNameInput" v-model="roomName" class="input" :maxlength="VOXLINK_ROOM_NAME_MAX" placeholder="给这次冒险起个名字" :aria-invalid="!!roomNameError" /><small v-if="roomNameError" class="connection-error" role="alert">{{ roomNameError }}</small></label>
+        <label class="connection-toggle"><span>在公共大厅显示<small>关闭后，好友仍可凭房间码加入。</small></span><input v-model="isPublic" type="checkbox" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
+        <details class="connection-details"><summary>没有检测到游戏？手动填写端口</summary><label class="connection-field">局域网游戏端口<input v-model="manualPort" class="input" type="number" min="1" max="65535" placeholder="留空自动检测" /><small>在游戏「对局域网开放」后的聊天提示中查看。</small></label></details>
+        <div class="connection-actions"><button class="btn btn-gold" @click="startHost">创建房间 →</button></div>
       </div>
-
-      <!-- 加入房间 -->
       <div v-else-if="tab === 'join'" class="tab-body">
-        <template v-if="!joined">
-          <label class="connection-field">房间码<input v-model="joinCode" class="input room-input" maxlength="7" placeholder="例如 ABC123" :disabled="busy" @keydown.enter="startJoin(joinCode)" /></label>
-          <div class="connection-actions"><button class="btn btn-gold" :disabled="busy || joinCode.trim().length < 6" @click="startJoin(joinCode)">{{ busy ? '连接中…' : '加入房间' }}</button></div>
-          <p class="connection-muted">主路径是 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器。输入房间码后会自动开始打洞，全程进度见上方「连接状态」。</p>
-          <p class="connection-muted">双对称 NAT、校园网、手机热点下成功率较低；连接约 20 秒未成功会在上方出现「使用 TURN 中继」，也可尝试直连或玩家中继，也可让双方重启游戏刷新 NAT 后再试。</p>
-        </template>
-        <template v-else-if="connected">
-          <!-- 只有隧道真正建立、本地地址可用后才算「已连接」 -->
-          <div class="connection-result success" aria-live="polite">
-            <ConnectionStatus tone="success" label="已连接 · 数据隧道建立" />
-            <p class="mc-address"><code>{{ mcAddress }}</code><button class="btn btn-ghost copy-mini" @click="copy(mcAddress)">复制地址</button></p>
-            <ol class="join-guide">
-              <li>打开 Minecraft（与房主相同的实例与版本）</li>
-              <li>进入「多人游戏」→「直接连接」</li>
-              <li>粘贴上方地址</li>
-              <li>点击「加入服务器」</li>
-            </ol>
-            <p class="connection-muted">连接方式 <code>{{ mcPhase === 'turn' ? 'TURN 中继' : mcPhase === 'prelay' ? '玩家中继' : mcPhase === 'direct' ? '直连' : 'P2P 打洞' }}</code>；地址{{ mcPhase === 'direct' ? '为房主公网地址' : '为本机隧道入口（127.0.0.1）' }}。</p>
-          </div>
-        </template>
-        <template v-else-if="!isHost">
-          <!-- 打洞进行中：绝不显示「已连接」 -->
-          <div class="connection-result" aria-live="polite">
-            <ConnectionStatus tone="pending" label="房间已加入，正在建立 P2P 连接…" />
-            <p v-if="conn?.phase" class="connection-muted">当前阶段：{{ conn.phase === 'turn' ? 'TURN 中继' : conn.phase === 'prelay' ? '玩家中继' : conn.phase === 'direct' ? '直连探测' : 'P2P 打洞' }}{{ punching ? ` · 已进行 ${punchElapsed} 秒` : '' }}</p>
-            <p v-if="fallbackVisible" class="connection-muted">打洞已持续约 {{ punchElapsed }} 秒仍未命中。双对称 NAT / 校园网 / 手机热点成功率较低，可尝试手动后备，或让双方重启游戏刷新 NAT。</p>
-            <div v-if="fallbackVisible" class="connection-actions">
-              <button class="btn" :disabled="directTried" @click="tryDirect">{{ directTried ? '直连探测中/已探测' : '尝试直连' }}</button>
-              <button class="btn" :disabled="relayTried || turnBusy || stageMap.turn?.status === 'active'" @click="useRelay">{{ relayTried ? '中继请求中/已请求' : '使用玩家中继' }}</button>
-            </div>
-          </div>
-        </template>
-        <template v-else>
-          <div class="connection-result" aria-live="polite">
-            <p>你是房主，等待房客加入即可；进度见上方「连接状态」。</p>
-          </div>
-        </template>
+        <label class="connection-field">好友的房间码<input v-model="joinCode" class="input room-input" maxlength="6" placeholder="输入 6 位房间码" @keydown.enter="startJoin(joinCode)" /></label>
+        <p class="connection-muted">加入前可检查所需模组。连接成功后，这里会显示游戏地址和加入指引。</p>
+        <div class="connection-actions"><button class="btn btn-gold" :disabled="joinCode.trim().length !== 6" @click="startJoin(joinCode)">加入房间 →</button></div>
       </div>
-
-      <!-- 公共大厅 -->
-      <div v-else class="tab-body">
-        <div class="lobby-bar">
-          <label class="connection-field lobby-search">搜索<input v-model="search" class="input" placeholder="按房间名搜索" @keydown.enter="loadLobby" /></label>
-          <button class="btn btn-ghost" :disabled="loadingLobby" @click="loadLobby">{{ loadingLobby ? '刷新中…' : '刷新' }}</button>
-        </div>
-        <p v-if="!rooms.length && !loadingLobby" class="connection-muted">大厅暂时没有公开房间。</p>
-        <ul v-else class="lobby-list">
-          <li v-for="room in rooms" :key="room.code" class="lobby-item">
-            <div class="lobby-main">
-              <strong>{{ room.name }}</strong>
-              <span v-if="room.clientTag === 'kamucl'" class="kamucl-badge" title="此房间由 KAMUCL 启动器创建">KAMUCL 启动器创建</span>
-              <small>{{ [room.gameVersion, room.loader, room.category].filter(Boolean).join(' · ') }}</small>
-            </div>
-            <div class="lobby-side">
-              <span class="connection-muted">{{ room.currentPlayers ?? '?' }}/{{ room.maxPlayers ?? '?' }} 人</span>
-              <button class="btn btn-gold" :disabled="busy || joined" @click="startJoin(room.code)">加入</button>
-            </div>
-          </li>
-        </ul>
+      <div v-else-if="tab === 'lobby'" class="tab-body">
+        <div class="lobby-bar"><label class="connection-field lobby-search">发现房间<input v-model="search" class="input" placeholder="搜索房间名…" @keydown.enter="loadLobby" /></label><button class="btn btn-ghost" :disabled="loadingLobby" @click="loadLobby">{{ loadingLobby ? '刷新中…' : '刷新大厅' }}</button></div>
+        <p v-if="!rooms.length" class="connection-muted">{{ loadingLobby ? '正在寻找公开房间…' : '暂时没有公开房间，创建一个邀请好友吧。' }}</p>
+        <ul v-else class="lobby-list"><li v-for="room in rooms" :key="room.code" class="lobby-item"><div class="lobby-main"><span class="connection-eyebrow">{{ room.category || '一起游玩' }}</span><strong>{{ room.name }}</strong><small>{{ [room.gameVersion, room.loader].filter(Boolean).join(' · ') || '版本未标注' }}</small><span v-if="room.clientTag === 'kamucl'" class="kamucl-badge">KAMUCL 房间</span></div><div class="lobby-side"><span class="connection-muted">{{ room.currentPlayers ?? '?' }}/{{ room.maxPlayers ?? '?' }} 人</span><button class="btn btn-gold" @click="startJoin(room.code)">加入 →</button></div></li></ul>
       </div>
     </ConnectionPanel>
-
-    <VoxLinkRelatedLinks />
-    <!-- 参考信息区：默认折叠 -->
-    <details class="connection-details reference-details">
-      <summary>联机说明与中继设置</summary>
-      <div class="connection-detail-content">
-        <label class="connection-toggle"><span>发送联机故障诊断<small>向 VoxLink 服务上传脱敏的联机过程日志，帮助排查早期断线；不包含游戏日志和模组文件。</small></span><input type="checkbox" :checked="state?.settings.uploadDiagnostics ?? false" @change="toggleDiagnostics" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
-        <label class="connection-toggle"><span>允许中继与自动后备连接<small>允许玩家中继；加入 60 秒仍未连通时自动尝试 TURN。20 秒后也可手动选择 TURN</small></span><input type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="!!state && sessionState !== 'idle'" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
-        <p>主路径是 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器；打洞约 20 秒未成功时，可手动选择「尝试直连」或「使用玩家中继」两种后备路径，两者都由引擎真实事件驱动。</p>
-        <p>打通后需要在游戏「多人游戏 → 直接连接」中手动填入本地地址完成加入——启动器不会替你点最后一下。</p>
-      </div>
-    </details>
-
-    <!-- 日志区：窄、默认收起 -->
-    <details class="connection-details log-details">
-      <summary>实时日志（{{ logs.length }} 条）</summary>
-      <div class="log-tools"><button class="btn btn-ghost copy-mini" :disabled="!logs.length" @click="copyLogs">复制日志</button></div>
-      <div ref="logViewport" class="connection-log-viewport" aria-live="polite" tabindex="0">
-        <p v-for="(l, i) in logs" :key="i" class="connection-log-line"><span class="log-ts">{{ l.ts }}</span>{{ l.text }}</p>
-        <p v-if="!logs.length" class="connection-muted">暂无日志。</p>
-      </div>
-    </details>
+    <VoxLinkModSync v-if="pendingJoin" :code="pendingJoin" :target="selectedTarget" @join="joinAfterMods" @dismiss="pendingJoin = ''" />
+    <details class="connection-details reference-details"><summary>联机设置</summary><div class="connection-detail-content"><label class="connection-toggle"><span>协助其他玩家中继<small>允许使用玩家中继。TURN 始终由你主动点击，不会自动启用。</small></span><input type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="joined" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label><label class="connection-toggle"><span>发送联机故障诊断<small>向 VoxLink 上传脱敏的联机日志，帮助排查连接问题。</small></span><input type="checkbox" :checked="state?.settings.uploadDiagnostics ?? false" @change="toggleDiagnostics" /><span class="connection-toggle-track" aria-hidden="true"></span></label></div></details>
+    <details class="connection-details log-details"><summary>连接记录 · {{ logs.length }} 条</summary><div class="log-tools"><button class="btn btn-ghost" @click="logLevel = logLevel === 'all' ? 'important' : 'all'">{{ logLevel === 'all' ? '只看阶段与异常' : '显示详细记录' }}</button><button class="btn btn-ghost" :disabled="!logs.length" @click="copyLogs">复制日志</button></div><details v-for="group in logGroups" :key="group.label" class="log-group"><summary>{{ ({stun:'网络检测',host_stun:'房主网络检测',punch:'建立直连',host_punch:'好友连接',p2p:'直连',turn:'TURN 中继',relay:'玩家中继'} as Record<string,string>)[group.label] || group.label }} · {{ group.rows.length }} 条</summary><div class="connection-log-viewport"><p v-for="(log,i) in group.rows" :key="i" class="connection-log-line" :class="log.level"><span class="log-ts">{{ log.ts }}</span><span class="log-level">{{ log.level === 'error' ? '错误' : log.level === 'warn' ? '提醒' : log.level === 'stage' ? '阶段' : '详细' }}</span>{{ log.text }}</p></div></details><p v-if="!logGroups.length" class="connection-muted">暂无阶段或异常记录。</p></details>
   </div>
 </template>
 <style scoped>
-.voxlink-page { display: flex; flex-direction: column; gap: var(--sec-gap); min-width: 0; }
-.room-card {
-  display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--card-pad); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card-2);
-}
-.room-card.ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
-.room-label { font-size: var(--text-xs); font-weight: 600; color: var(--text-dim); }
-.room-code { display: inline-flex; align-items: center; gap: var(--space-3); font-size: var(--text-2xl); letter-spacing: 0.12em; margin: var(--space-1) 0; min-height: var(--row-h); }
-.room-code code { font-weight: 700; }
-.room-input { text-transform: uppercase; letter-spacing: 0.2em; font-weight: 600; }
-.copy-mini { padding: var(--space-1) var(--space-3); font-size: var(--text-xs); min-height: 28px; }
-.mc-address { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); font-size: var(--text-lg); min-height: var(--row-h); }
-.mc-address code { font-weight: 700; overflow-wrap: anywhere; }
-.join-guide { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-dim); line-height: 1.8; }
-.stage-bar { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.stage-item { display: flex; align-items: center; gap: var(--space-2); min-height: var(--row-h); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card-2); }
-.stage-item.active { border-color: color-mix(in srgb, var(--accent-2) 55%, var(--border)); }
-.stage-item.fail { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
-.stage-item.done { border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
-.stage-dot { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700; background: var(--card); border: 1px solid var(--border-strong); flex: none; }
-.stage-item.done .stage-dot { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
-.stage-item.active .stage-dot { background: var(--accent-soft); color: var(--accent-2); border-color: transparent; }
-.stage-item.degraded .stage-dot { background: var(--accent-soft); color: var(--accent-2); border-color: transparent; }
-.stage-item.fail .stage-dot { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
-.stage-copy { display: flex; flex-direction: column; min-width: 0; }
-.stage-copy strong { font-size: var(--text-xs); font-weight: 600; }
-.stage-copy small { color: var(--text-dim); font-size: var(--text-xs); }
-.tab-body { display: flex; flex-direction: column; gap: var(--card-gap); }
-.lobby-bar { display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap; }
-.lobby-search { max-width: 320px; }
-.lobby-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
-.lobby-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--row-h); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--card-2); }
-.lobby-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.lobby-main strong { font-size: var(--text-sm); }
-.lobby-main small { color: var(--text-dim); font-size: var(--text-xs); }
-.lobby-side { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
-.kamucl-badge { display: inline-block; padding: 1px var(--space-2); border-radius: 999px; font-size: var(--text-xs); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent); }
-.reference-details, .log-details { padding: var(--space-3) var(--space-4); }
-.log-tools { display: flex; justify-content: flex-end; margin-top: var(--space-3); }
-.log-ts { color: color-mix(in srgb, var(--text-dim) 70%, transparent); margin-right: var(--space-2); }
+.voxlink-page{display:grid;gap: var(--sec-gap);min-width:0}.vox-toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px}.vox-toolbar h2{font-size:22px;margin:7px 0}.vox-toolbar p{margin:0}.vox-alert{padding:14px 18px;border-radius:12px;background:var(--danger-soft)}
+.tab-body{display:grid;gap:20px}.entry-tip{display:flex;align-items:center;gap:15px;border-radius:14px;padding:14px 18px;background:var(--accent-soft)}.entry-tip>span{color:var(--accent);font-size:22px;font-weight:700}.entry-tip p{margin:0}.room-input{letter-spacing:.18em;text-transform:uppercase;max-width:420px;font-size:22px}.room-strip{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:18px 22px;background:var(--card-2);border-radius:16px}.room-strip>div:first-child{display:grid;gap:6px}.room-strip small{color:var(--text-dim)}.room-code{display:flex;align-items:center;gap:14px}.room-code code{font-size:26px;font-weight:700;letter-spacing:.12em}
+.address-hero{display:grid;gap:14px;padding:28px;border-radius:18px;background:linear-gradient(125deg,var(--accent-soft),var(--card-2));box-shadow:inset 3px 0 var(--accent)}.address-line{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}.address-line code{font-size:clamp(24px,3vw,38px);font-weight:750;overflow-wrap:anywhere}.address-hero p{margin:0;font-size:17px}.address-hero small{color:var(--text-dim)}
+.stage-bar{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:8px 0;padding:0}.stage-item{display:flex;align-items:flex-start;gap:12px;padding:17px 14px;background:var(--card-2);border-radius:14px}.stage-dot{display:grid;place-items:center;width:28px;height:28px;flex:none;border-radius:50%;background:var(--card);color:var(--text-dim);font-size:13px}.stage-copy{display:grid;gap:6px;min-width:0}.stage-copy strong{font-size:14px}.stage-copy small{color:var(--text-dim);font-size:12px;line-height:1.6}.stage-item.active{background:var(--accent-soft)}.stage-item.active .stage-dot{background:var(--accent);color:var(--on-accent)}.stage-item.done .stage-dot{color:var(--ok);background:var(--ok-soft)}.stage-item.fail .stage-dot{color:var(--danger);background:var(--danger-soft)}.manual-relay{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:18px;border-radius:14px;background:var(--card-2)}.manual-relay>div{flex:1;min-width:220px}.manual-relay p{margin:5px 0 0}.flow-wait{padding:24px;color:var(--text-dim)}
+.lobby-bar{display:flex;align-items:flex-end;gap:14px}.lobby-search{flex:1;max-width:420px}.lobby-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;list-style:none;margin:0;padding:0}.lobby-item{display:flex;flex-direction:column;justify-content:space-between;gap:22px;padding:22px;border-radius:18px;background:var(--card-2);box-shadow:var(--shadow);transition:background .2s,transform .2s}.lobby-item:hover{background:color-mix(in srgb,var(--accent) 8%,var(--card-2));transform:translateY(-2px)}.lobby-main{display:grid;gap:9px;overflow-wrap:anywhere}.lobby-main strong{font-size:19px}.lobby-main small{color:var(--text-dim)}.lobby-side{display:flex;align-items:center;justify-content:space-between;gap:12px}.kamucl-badge{font-size:11px;color:var(--accent)}
+.reference-details,.log-details{padding:16px 20px}.log-tools{display:flex;gap:10px;justify-content:flex-end;padding:12px 0}.log-group{margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--card-2)}.log-group summary{cursor:pointer;font-size:13px}.log-ts{color:var(--text-dim);margin-right:10px}.log-level{font-size:11px;margin-right:8px;color:var(--text-dim)}.connection-log-line.error,.connection-log-line.error .log-level{color:var(--danger)}.connection-log-line.warn .log-level{color:var(--accent)}
+@media(max-width:900px){.vox-toolbar,.room-strip{align-items:flex-start;flex-direction:column}.stage-bar{grid-template-columns:1fr 1fr}.room-code code{font-size:22px}}@media(prefers-reduced-motion:reduce){.lobby-item{transition:none}.lobby-item:hover{transform:none}}
 </style>

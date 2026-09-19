@@ -21,7 +21,7 @@ test('VoxLink ACK 不形成响应热循环，取消后 wait 立即结束且不�
     peer.send(punchBuildControl(2, 17), socket.address().port, '127.0.0.1')
     assert.equal((await punch.wait()).port, peer.address().port)
     await new Promise(r => setTimeout(r, 60))
-    assert.equal(responses, 0, 'ACK is not answered with another ACK')
+    assert.equal(responses, 1, 'upstream sends one final ACK, then hands off the socket without a response loop')
   } finally { punch.stop(); socket.close(); peer.close() }
   assert.equal(socket.listenerCount('message'), 0)
   const cancelled = new Puncher({ conn: dgram.createSocket('udp4') })

@@ -115,3 +115,4 @@ import './recordings-1087.test'
 import './bound-folders-1088.test'
 
 import './voxlink-integration-1091.test'
+import './voxlink-upstream-1094.test'

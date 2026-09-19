@@ -25,8 +25,8 @@ const methodCards: Array<{ key: Exclude<ConnectPage, 'choose'>; name: string; ta
     key: 'voxlink',
     name: 'VoxLink 联机',
     tag: '6 位房间码 · 免公网 IP',
-    scene: '适合双方网络尚可、想输个房间码就开玩',
-    desc: '创建房间得到 6 位房间码，好友输码后自动进行 UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器；20 秒未连通可选择 TURN 中继，开启中继时 60 秒自动尝试。打通后仍需在游戏内「直接连接」填入地址。',
+    scene: '适合所有普通玩家的连接方式',
+    desc: '创建房间，把 6 位房间码发给好友即可开始连接。直连尝试 20 秒后，可由玩家主动选择 TURN 中继；连接成功后，按页面指引在游戏内输入地址。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="5"/><path d="M8 12h2m4 0h2"/><circle cx="9" cy="12" r="0.8" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="0.8" fill="currentColor" stroke="none"/></svg>'
   },
   {

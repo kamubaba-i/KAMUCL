@@ -24,11 +24,11 @@ test('联机文案纠错：多页全部文件不得出现「一点即连/一键�
   }
   const view = read('src/renderer/src/views/FriendConnectView.vue')
   // 方式选择页卡片：准确介绍 + 适用场景标签
-  for (const text of ['注册樱花穿透（natfrp.com）并创建隧道', '公网隧道 · 最稳', 'UDP 打洞 + STUN 的 P2P 直连，游戏数据不经服务器', '6 位房间码 · 免公网 IP', '打通后仍需在游戏内「直接连接」填入地址', '独立开源联机项目', 'burningtnt/Terracotta', '独立开源 · 开箱即用']) {
+  for (const text of ['注册樱花穿透（natfrp.com）并创建隧道', '公网隧道 · 最稳', '可由玩家主动选择 TURN 中继', '6 位房间码 · 免公网 IP', '连接成功后，按页面指引在游戏内输入地址', '独立开源联机项目', 'burningtnt/Terracotta', '独立开源 · 开箱即用']) {
     assert.ok(view.includes(text), `方式选择页缺少：${text}`)
   }
   // 横向卡片各配一句适用场景（含还原的玩家直连）
-  for (const scene of ['适合追求稳定', '适合双方网络尚可', '适合不想配置任何参数']) {
+  for (const scene of ['适合追求稳定', '适合所有普通玩家的连接方式', '适合不想配置任何参数']) {
     assert.ok(view.includes(scene), `方式选择页缺少场景标签：${scene}`)
   }
   // 方式选择页恰好三张卡片（玩家直连属冗余已移除，1.0.25）
@@ -126,7 +126,7 @@ test('VoxLink 集成补全：后备 IPC、阶段事件、已连接判定、消�
 
   // Engine events and connectivity are exercised by voxlink-replacement.test.ts.
   const panel = read('src/renderer/src/components/connection/VoxLinkPanel.vue')
-  for (const text of ['尝试直连', '使用玩家中继', '房间已加入，正在建立 P2P 连接…', '多人游戏', '直接连接', '复制地址', 'sanitizeLog', "'stage'", "'conn:state'", '阶段', '复制日志', '300 秒', '不含 I、L、O、0、1']) {
+  for (const text of ['尝试直连', '使用玩家中继', '正在连接好友', '多人游戏', '直接连接', '复制地址', 'sanitizeLog', "'stage'", "'conn:state'", '阶段', '复制日志', '20_000', '不含 I、L、O、0、1']) {
     assert.ok(panel.includes(text), `VoxLinkPanel 缺少：${text}`)
   }
   assert.ok(!panel.includes('已连接到房主'), '不得保留过早的「已连接到房主」')
@@ -134,21 +134,15 @@ test('VoxLink 集成补全：后备 IPC、阶段事件、已连接判定、消�
   for (const text of ['connect-tab', "tab === 'host'", "tab === 'join'", "tab === 'lobby'", '公共大厅']) {
     assert.ok(panel.includes(text), `VoxLinkPanel 应使用页内 Tab 分开入口，缺少：${text}`)
   }
-  // 分区结构：状态区 → 主操作区 → 参考折叠 → 日志窄区
-  const statusAt = panel.indexOf('title="连接状态"')
-  const opsAt = panel.indexOf('title="开始联机"')
-  const refAt = panel.indexOf('reference-details')
-  const logAt = panel.indexOf('log-details')
-  assert.ok(statusAt > -1 && opsAt > statusAt && refAt > opsAt && logAt > refAt, 'VoxLink 页应按 状态→主操作→参考→日志 顺序向下分区')
-  // 「已连接」只允许出现在 connected 分支内（静态断言）
+  // Entry, progress and result are mutually exclusive; links remain above them.
   const template = panel.slice(panel.indexOf('<template>'))
-  const connectedStart = template.indexOf('v-else-if="connected"')
-  const connectedEnd = template.indexOf('<template v-else>', connectedStart)
-  assert.ok(connectedStart > -1 && connectedEnd > connectedStart, '模板必须保留 connected 分支结构')
-  const before = template.slice(0, connectedStart)
-  const branch = template.slice(connectedStart, connectedEnd)
-  assert.ok(!before.includes('已连接'), 'connected 之前的模板不得出现「已连接」')
-  assert.ok(branch.includes('已连接'), 'connected 分支内应有「已连接」状态')
+  assert.ok(template.indexOf('<VoxLinkRelatedLinks') < template.indexOf('v-if="inFlow"'))
+  assert.ok(template.includes('v-if="connected && !isHost"'))
+  assert.ok(template.includes('v-else title="开始联机"'))
+  assert.ok(template.includes('aria-label="连接进度"'))
+  assert.ok(template.includes('class="address-hero"'))
+  assert.ok(template.includes('logGroups'))
+
 })
 
 test('重排后的联机组件可编译且遵守配色铁律（无十六进制/rgb 字面量）', () => {

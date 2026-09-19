@@ -7,7 +7,8 @@ copyright, license and trademark rights remain with their respective holders.
 
 Upstream: https://github.com/AUGUHDAR/VoxLink
 Revisions: 6b11d930fe4fe568dacc8c47fa0e46e08fa4b110 (original protocol replacement),
-721c7fae05851971996e49a3ad0e595d5aa9a053 (main, launcher-integration contract / 1.1.7 behaviors).
+721c7fae05851971996e49a3ad0e595d5aa9a053 (launcher-integration contract / 1.1.7 behaviors),
+924845e897d8fb36dca2474ade30e675278559d0 (1.0.94 strict punching policy audit).
 Authors: AUGUHDAR / VoxLink contributors.
 
 The adaptations of PunchAuth.java and TurnRelayClient.java are in
@@ -17,6 +18,9 @@ ReliableUdpTransport, SignalingClient, SignalingWsTransport and ConnectionManage
 protocols. The 1.0.91 adaptations additionally include modsync.ts, modsyncService.ts,
 tcpPunch.ts, turnTcp.ts and connectionLog.ts, based on the Java modsync package,
 TcpHolePuncher, P2PBridge, TurnTcpChannel, PunchProfile/PunchTuner and LogUploadManager.
+The 1.0.94 port additionally includes punchProfiles.ts, punchPolicy.ts, punchRounds.ts
+and the StunProbe sequential sampling/resend portions of stun.ts. Unmodified Java
+parameter fixtures under tests/fixtures/voxlink-924845e retain the same LGPL license.
 The authoritative integration contract is docs/launcher-integration.md at that revision.
 These files are distributed under LGPL-3.0-only. Node lifecycle,
 cancellation, HTTP fallback and UI reporting are KAMUCL changes.

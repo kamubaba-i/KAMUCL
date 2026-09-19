@@ -10,6 +10,7 @@ export interface TurnRelayDeps {
   api:ApiClient; baseURL:()=>string; room:()=>RoomRef|null
   directConnected:(peer?:string)=>boolean
   connected:(peer:string, address:string)=>void
+  disconnected?:(peer:string)=>void
   stage:(status:'active'|'ok'|'fail', detail:string)=>void
   state:(status:'trying'|'success'|'failed', address:string, detail:string)=>void
   signal:(type:string,data:Record<string,unknown>,to:string)=>Promise<void>
@@ -31,8 +32,8 @@ export class TurnRelay {
   }
   private close(link:RelayLink) {
     // Remove ownership before callbacks, preventing recursive teardown.
-    if(this.guest===link)this.guest=null
-    for(const [peer,owned] of this.hosts)if(owned===link)this.hosts.delete(peer)
+    if(this.guest===link){this.guest=null;this.deps.disconnected?.('host')}
+    for(const [peer,owned] of this.hosts)if(owned===link){this.hosts.delete(peer);this.deps.disconnected?.(peer)}
     const bridge=link.bridge, rudp=link.rudp, session=link.session
     link.bridge=undefined;link.rudp=undefined;link.session=undefined
     session?.close();link.controller.abort();bridge?.stop();rudp?.close();this.release(link)
