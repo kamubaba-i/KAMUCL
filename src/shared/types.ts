@@ -874,6 +874,7 @@ export const IPC = {
 
   // 文件/目录（rel 为相对游戏目录的子目录：'mods' | 'resourcepacks' | 'shaderpacks' | ''）
   appOpenDir: 'app:openDir', // (rel?: string) => void  用系统资源管理器打开目录
+  appOpenExternal: 'app:openExternal', // (url: string) => void 用系统浏览器打开安全外链
   fsImportResources: 'fs:importResources',
   fsList: 'fs:list', // (rel: string) => FsEntry[]
   fsRemove: 'fs:remove', // (rel: string, name: string) => FsEntry[]
