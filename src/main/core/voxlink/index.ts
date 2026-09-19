@@ -10,7 +10,7 @@
  *   push   'voxlink:event'   {type, data}  → state/log/phase/code/room
  */
 import { ipcMain, BrowserWindow, type IpcMain } from 'electron'
-import { VoxlinkApp, type CreateRoomParams, type LobbyRoom } from './engine'
+import { publicRoomInfo, VoxlinkApp, type CreateRoomParams, type LobbyRoom } from './engine'
 import type { VoxlinkSettings } from './settings'
 import { DEFAULT_VOXLINK_ROOM_NAME, normalizeVoxlinkRoomName } from '../../../shared/voxlinkRoom'
 
@@ -35,7 +35,10 @@ function forwardEvent(ev: string, data: unknown): void {
   if (ev === 'stage') connectionLog.record('stage', `${(data as any).key}: ${(data as any).detail}`)
   if (ev === 'mods:request') { void modSync.answer(data as Record<string, unknown>); return }
   if (ev === 'session:state' && (data as any)?.state === 'closed') { modSync.stop(); connectionLog.state('failed', String((data as any).message || '信令会话已结束')); void connectionLog.stop() }
-  push(ev, data)
+  const safeData = ev === 'session:state' && data && typeof data === 'object'
+    ? { ...(data as Record<string, unknown>), room: publicRoomInfo((data as { room?: unknown }).room as ReturnType<typeof vapp>['room']) }
+    : data
+  push(ev, safeData)
   if (ev === 'session:state') push('state', snapshot())
 }
 
@@ -50,7 +53,7 @@ function snapshot(): unknown {
   const a = vapp()
   return {
     state: a.state,
-    room: a.room,
+    room: publicRoomInfo(a.room),
     session: a.getSessionStateJSON(),
     settings: a.settings,
     pending: requestPending, joinedAt:a.engine.joinedAt, connection:a.engine.lastConnection, stages:a.engine.stages
@@ -70,7 +73,7 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
       const r = await a.joinRoom({ code: String(payload.code ?? '').trim() })
       connectionLog.start(r.room.code, false)
       push('state', snapshot())
-      return { ok: true, ...r }
+      return { ok: true }
     }
     if (!payload.target) throw new Error('请先选择房主正在使用的游戏实例')
     const context = await modSync.context(payload.target)
@@ -94,7 +97,7 @@ export function registerVoxlinkIpc(ipcMain: IpcMain): void {
     connectionLog.start(r.code, true)
     modSync.startHost(context, r.code, r.hostToken)
     push('state', snapshot())
-    return { ok: true, ...r }
+    return { ok: true }
     } finally {if(generation===requestGeneration)requestPending=false}
   })
 
