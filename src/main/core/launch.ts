@@ -26,6 +26,7 @@ import { getValidAccount, selectedAccount } from './accounts'
 import { validateJavaRuntime } from './javaRuntimeHealth'
 import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable, selectHealthyJava, probeJavaAsync } from './java'
 import { macJavaArchitecture } from './javaArchitecture'
+import { isArchiveSymlink, resolveArchiveEntryPath } from './security'
 import {
   assetsDir,
   allFolders,
@@ -485,8 +486,11 @@ async function launchOwned(
         try {
           const zip = new AdmZip(jar)
           for (const entry of zip.getEntries()) {
+            if (isArchiveSymlink(entry.attr)) throw new Error(`natives 包含不允许的符号链接：${entry.entryName}`)
             if (entry.isDirectory || entry.entryName.startsWith('META-INF/')) continue
-            zip.extractEntryTo(entry, nativesPath, true, true)
+            const output = resolveArchiveEntryPath(nativesPath, entry.entryName)
+            fs.mkdirSync(path.dirname(output), { recursive: true })
+            fs.writeFileSync(output, entry.getData())
           }
         } catch {
           // 单个 natives 解压失败不阻断启动
