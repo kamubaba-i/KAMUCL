@@ -10,8 +10,9 @@ const drifting = ref(false)
 let hovering = false, focused = false, epoch = 0, frame = 0
 let hideTimer: ReturnType<typeof setTimeout> | undefined
 let motion: MediaQueryList | undefined
-let readyAt = 0, lastTime = 0
-interface Bubble { el: HTMLElement; x: number; y: number; width: number; height: number; vx: number; vy: number; tx: number; ty: number; speed: number }
+const revealStep = 90
+let revealAt = 0, lastTime = 0
+interface Bubble { el: HTMLElement; x: number; y: number; width: number; height: number; vx: number; vy: number; tx: number; ty: number; speed: number; delay: number; phase: number }
 let bubbles: Bubble[] = []
 const margin = 16
 const topEdge = () => Math.min(96, innerHeight * .16)
@@ -26,7 +27,25 @@ function layout() {
   const anchor = card.value.getBoundingClientRect()
   const width = Math.min(440, innerWidth - margin * 2)
   const rows: { items: Bubble[]; width: number; height: number }[] = []
-  bubbles = Array.from(layer.value.querySelectorAll<HTMLElement>('.creator-bubble')).map(el => ({ el, x: 0, y: 0, width: el.offsetWidth, height: el.offsetHeight, vx: 0, vy: 0, tx: 0, ty: 0, speed: 32 + Math.random() * 22 }))
+  bubbles = Array.from(layer.value.querySelectorAll<HTMLElement>('.creator-bubble')).map((el, i) => ({ el, x: 0, y: 0, width: el.offsetWidth, height: el.offsetHeight, vx: 0, vy: 0, tx: 0, ty: 0, speed: 48 + Math.random() * 22, delay: i * revealStep, phase: Math.random() * Math.PI * 2 }))
+  if (!motion?.matches) {
+    // Loose, spaced origins above the card: no stationary grid before departure.
+    const placed: Bubble[] = []
+    for (const b of bubbles) {
+      let best = -Infinity
+      for (let attempt = 0; attempt < 24; attempt++) {
+        const x = clamp(anchor.left - 180 + Math.random() * (anchor.width + 200), margin, innerWidth - b.width - margin)
+        const y = clamp(anchor.top - 36 - Math.random() * 250, topEdge(), innerHeight - b.height - margin)
+        const distance = placed.reduce((min, other) => Math.min(min, Math.hypot((x - other.x) / ((b.width + other.width) / 2 + 12), (y - other.y) / ((b.height + other.height) / 2 + 12))), Infinity)
+        if (distance > best) { best = distance; b.x = x; b.y = y }
+      }
+      destination(b)
+      const dx = b.tx - b.x, dy = b.ty - b.y, length = Math.hypot(dx, dy) || 1
+      b.vx = dx / length * b.speed; b.vy = dy / length * b.speed
+      placed.push(b); paint(b)
+    }
+    return
+  }
   for (const b of bubbles) {
     let row = rows[rows.length - 1]
     if (!row || row.width + 8 + b.width > width) { row = { items: [], width: 0, height: 0 }; rows.push(row) }
@@ -45,15 +64,19 @@ function animate(now: number) {
   frame = 0
   if (!visible.value || !revealed.value || document.hidden || motion?.matches) return
   const dt = Math.min(.04, Math.max(0, (now - lastTime) / 1000)); lastTime = now
-  if (now >= readyAt) {
+  const age = now - revealAt
+  if (age >= 0) {
     drifting.value = true
     for (const b of bubbles) {
+      if (age < b.delay) continue
       let dx = b.tx - b.x, dy = b.ty - b.y, distance = Math.hypot(dx, dy)
       if (distance < 28) { destination(b); dx = b.tx - b.x; dy = b.ty - b.y; distance = Math.hypot(dx, dy) }
-      let desiredX = dx / Math.max(1, distance) * b.speed, desiredY = dy / Math.max(1, distance) * b.speed
+      const breeze = Math.sin(now / 1900 + b.phase) * 9
+      let desiredX = dx / Math.max(1, distance) * b.speed - dy / Math.max(1, distance) * breeze
+      let desiredY = dy / Math.max(1, distance) * b.speed + dx / Math.max(1, distance) * breeze
       // Soft separation keeps nearby names readable while retaining individual paths.
       for (const other of bubbles) {
-        if (other === b) continue
+        if (other === b || age < other.delay) continue
         const cx = b.x + b.width / 2 - other.x - other.width / 2
         const cy = b.y + b.height / 2 - other.y - other.height / 2
         const rx = (b.width + other.width) / 2 + 12, ry = (b.height + other.height) / 2 + 12
@@ -86,7 +109,7 @@ async function show() {
   void layer.value?.offsetHeight
   frame = requestAnimationFrame(now => {
     if (current !== epoch) return
-    revealed.value = true; lastTime = now; readyAt = now + (names.length - 1) * 55 + 440
+    revealed.value = true; lastTime = now; revealAt = now
     if (!motion?.matches) frame = requestAnimationFrame(animate)
   })
 }
@@ -135,7 +158,7 @@ onBeforeUnmount(() => {
     <span class="creator-accessible-names">{{ names.join('、') }}</span>
   <Teleport to="body">
     <div v-if="visible" ref="layer" class="creator-name-layer" :class="{ revealed }" :data-phase="drifting ? 'drifting' : 'revealing'" data-ui="home:creator-names" aria-hidden="true">
-      <span v-for="(name, i) in names" :key="name" class="creator-bubble"><span :style="{ '--reveal-delay': i * 55 + 'ms' }">{{ name }}</span></span>
+      <span v-for="(name, i) in names" :key="name" class="creator-bubble"><span :style="{ '--reveal-delay': i * revealStep + 'ms' }">{{ name }}</span></span>
     </div>
   </Teleport>
   </a>
@@ -154,7 +177,7 @@ onBeforeUnmount(() => {
 .creator-accessible-names { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .creator-name-layer { position:fixed; inset:0; z-index:80; overflow:hidden; pointer-events:none; contain:layout style; }
 .creator-bubble { position:absolute; top:0; left:0; pointer-events:none; will-change:transform; }
-.creator-bubble > span { display:block; padding:7px 13px; border:1px solid var(--border); border-radius:999px; background:color-mix(in srgb,var(--card-solid,var(--card)) 94%,transparent); color:var(--text); box-shadow:var(--shadow); font-size:var(--text-xs); font-weight:500; white-space:nowrap; opacity:0; transform:translateY(12px) scale(.94); transition:opacity 220ms ease,transform 420ms cubic-bezier(.2,.8,.2,1); }
+.creator-bubble > span { display:block; padding:7px 14px; border:1px solid color-mix(in srgb,var(--border) 65%,transparent); border-radius:999px; background:linear-gradient(125deg,var(--accent-soft),transparent 70%),color-mix(in srgb,var(--card-solid,var(--card)) 94%,transparent); color:var(--text); box-shadow:var(--shadow); font-size:var(--text-xs); font-weight:500; white-space:nowrap; opacity:0; transform:translateY(8px) scale(.96); transition:opacity 240ms ease,transform 340ms cubic-bezier(.2,.8,.2,1); }
 .revealed .creator-bubble > span { opacity:1; transform:translateY(0) scale(1); transition-delay:var(--reveal-delay); }
 @media(prefers-reduced-motion:reduce) { .creator-card,.creator-arrow,.creator-bubble > span { transition:none; } .creator-bubble { will-change:auto; } }
 </style>
