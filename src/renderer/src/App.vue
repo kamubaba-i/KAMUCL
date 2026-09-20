@@ -187,7 +187,8 @@ const resourceSubItems: Array<{ key: ViewName; label: string; icon: string }> = 
 ]
 
 /** 资源管理组是否展开（默认折叠；当前在其中任一子页时强制展开高亮） */
-const resourceExpanded = ref(false)
+const resourceExpanded = ref(localStorage.getItem('kamucl.resourceExpanded') === 'true')
+watch(resourceExpanded, value => localStorage.setItem('kamucl.resourceExpanded', String(value)))
 const inResourceGroup = computed(() =>
   ['mods', 'packs', 'shaders', 'bridge', 'servers', 'recordings'].includes(store.currentView)
 )
@@ -1929,7 +1930,7 @@ onUnmounted(() => {
   position: relative;
 }
 .nav-sub-item::before {
-  content: '';
+  content: none;
   position: absolute;
   left: 17px;
   top: 50%;
@@ -2054,6 +2055,12 @@ onUnmounted(() => {
 }
 
 .topbar-spacer { flex: 1; min-width: 0; align-self: stretch; }
+@media (max-width: 1050px) {
+  .topbar-spacer { overflow: hidden; }
+  .topbar-spacer > * { visibility: hidden; }
+  .top-actions { flex-shrink: 0; }
+  .top-actions .top-btn { white-space: nowrap; flex-shrink: 0; padding-inline: 6px; gap: 4px; }
+}
 
 .top-actions {
   display: flex;

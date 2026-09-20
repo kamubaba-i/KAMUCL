@@ -17,6 +17,8 @@ defineEmits<{ select: []; toggle: []; connect: []; favorite: [] }>()
 </template>
 
 <style scoped>
-.server-favorite { align-self:center; flex-shrink:0; padding:8px; font-size:21px; }
+.server-favorite { align-self:center; flex:0 0 32px; width:32px; height:32px; min-height:32px; margin-left:12px; padding:0; font-size:22px; border:0; background:transparent; box-shadow:none; }
+.server-favorite:hover, .server-favorite:focus-visible { background:var(--accent-soft); color:var(--accent); }
+.server-favorite:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .server-favorite.starred { color:var(--accent); }
 </style>

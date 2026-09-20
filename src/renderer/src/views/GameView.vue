@@ -58,16 +58,21 @@ import type {
 const allInstalled = ref<InstalledVersion[]>([])
 const installedFolder = ref('')
 const installedError = ref('')
+const installedLoading = ref(false)
+const folderToolsOpen = ref(false)
+const installedSearch = ref('')
 let installedGeneration = 0
 async function refreshAllInstalled() {
   const generation = ++installedGeneration
+  installedLoading.value = true
   try { const next = await getInstalled(true); if (generation === installedGeneration) { allInstalled.value = next; installedError.value = '' } }
   catch (e) { if (generation === installedGeneration) installedError.value = errText(e) }
+  finally { if (generation === installedGeneration) installedLoading.value = false }
 }
 watch(() => store.installed, () => { void refreshAllInstalled() })
 watch(() => JSON.stringify(store.settings?.folders), () => { void refreshAllInstalled() })
 const folderKey = (p: string) => p.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
-const installedFolderOptions = computed(() => [{ value: '', label: `全部已绑定文件夹（${allInstalled.value.length}）` }, ...(store.settings?.folders ?? []).map(f => ({ value: f.path, label: `${f.name}（${allInstalled.value.filter(v => folderKey(v.folder) === folderKey(f.path)).length}） · ${f.path}` }))])
+const installedFolderOptions = computed(() => [{ value: '', label: '全部文件夹' }, { value: '@current', label: '当前文件夹' }, ...(store.settings?.folders ?? []).map(f => ({ value: f.path, label: `${f.name} · ${f.path}` }))])
 watch(installedFolderOptions, options => { if (!options.some(o => o.value === installedFolder.value)) installedFolder.value = '' })
 // ---------------- 清单加载 ----------------
 const manifest = ref<RemoteVersion[]>([])
@@ -82,9 +87,7 @@ let catalogTimer: ReturnType<typeof setInterval> | undefined
 /** 顶部 Tab：版本下载 / 已安装（消灭内层嵌套滚动，localStorage 记忆） */
 const TAB_KEY = 'kamucl.gameTab'
 const tab = ref<'download' | 'installed'>(
-  (localStorage.getItem(TAB_KEY) as 'download' | 'installed') === 'installed'
-    ? 'installed'
-    : 'download'
+  localStorage.getItem(TAB_KEY) === 'download' ? 'download' : 'installed'
 )
 watch(tab, (t) => localStorage.setItem(TAB_KEY, t))
 
@@ -621,6 +624,16 @@ function closeIsolationModal() {
 
 // ---------------- 管理快捷菜单 ----------------
 const manageMenu = reactive({ id: '', folder: '', top: 0, left: 0 })
+const menuVersion = computed(() => allInstalled.value.find(v => v.id === manageMenu.id && v.folder === manageMenu.folder))
+const loaderLabel = (v: InstalledVersion) => v.loader ? `${({fabric:'Fabric',forge:'Forge',neoforge:'NeoForge',quilt:'Quilt'} as Record<string,string>)[v.loader] || v.loader} ${v.loaderVersion || ''}`.trim() : '原版'
+let menuTrigger: HTMLElement | null = null
+function closeManageMenu() { manageMenu.id = ''; menuTrigger?.focus() }
+function trapMenuFocus(event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const items = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]')]
+  const edge = event.shiftKey ? items[0] : items[items.length - 1]
+  if (document.activeElement === edge) { event.preventDefault(); (event.shiftKey ? items[items.length - 1] : items[0])?.focus() }
+}
 
 /** 下载源切换（镜像 ⇄ 官方），持久化并刷新版本清单 */
 async function onToggleMirror() {
@@ -659,7 +672,7 @@ const folderShortName = (p: string): string => {
 }
 
 /** 收藏置顶 + 组内最近游玩倒序 */
-const sortedInstalled = computed(() => sortWithFavorite(allInstalled.value.filter(v => !installedFolder.value || folderKey(v.folder) === folderKey(installedFolder.value))))
+const sortedInstalled = computed(() => sortWithFavorite(allInstalled.value.filter(v => !installedFolder.value || folderKey(v.folder) === folderKey(installedFolder.value === '@current' ? activeFolder.value : installedFolder.value)).filter(v => `${displayVersionName(v)} ${v.mcVersion || ''} ${v.loader || ''} ${folderShortName(v.folder)}`.toLowerCase().includes(installedSearch.value.trim().toLowerCase()))))
 /** 已收藏分组（不含残缺/失败版本） */
 const favoriteInstalled = computed(() =>
   store.installed.filter((v) => isFavorite(v.id, v.folder) && !v.incomplete && !v.failed)
@@ -671,10 +684,12 @@ function openManageMenu(e: MouseEvent, id: string, folder: string) {
     return
   }
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  manageMenu.top = r.bottom + 6
-  manageMenu.left = Math.max(8, r.right - 140)
+  menuTrigger = e.currentTarget as HTMLElement
+  manageMenu.top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 520))
+  manageMenu.left = Math.max(8, r.right - 290)
   manageMenu.id = id
   manageMenu.folder = folder
+  void nextTick(() => document.querySelector<HTMLElement>('.instance-more-menu button')?.focus())
 }
 
 /** 跳转资源管理对应子页，并把上下文版本切到该版本 */
@@ -915,12 +930,22 @@ async function confirmIsolation() {
       <p class="page-sub">浏览、安装与管理 Minecraft 版本</p>
     </div>
 
+      <div class="game-tabs" ref="gameTabs">
+        <span class="game-tabs-blob" :style="tabBlobStyle" aria-hidden="true"></span>
+        <button class="game-tab" data-tab="download" :class="{ active: tab === 'download' }" @click="tab = 'download'">
+          版本下载
+        </button>
+        <button class="game-tab" data-tab="installed" :class="{ active: tab === 'installed' }" @click="tab = 'installed'">
+          已安装<template v-if="allInstalled.length">（{{ allInstalled.length }}）</template>
+        </button>
+      </div>
+
+
     <!-- 安装目标与下方列表筛选独立。 -->
     <section class="card folder-manager" data-ui="games:folders" @contextmenu.prevent="showFolderContextMenu(activeFolder)">
-      <div class="folder-summary"><strong>已绑定的游戏文件夹 <span class="tag">{{ folders.length }}</span></strong><span class="muted">已安装列表与录像默认汇总全部绑定目录</span></div>
       <div class="folder-manager-main">
         <div class="folder-select-wrap">
-          <span class="folder-caption">当前游戏文件夹 · 新版本安装位置</span>
+          <span class="folder-caption">新版本安装位置</span>
           <SelectMenu
             class="folder-select"
             :model-value="activeFolder"
@@ -930,8 +955,10 @@ async function confirmIsolation() {
           />
           <span class="muted folder-current-path" :title="activeFolder">{{ activeFolder }}</span>
         </div>
-        <div class="folder-manager-actions">
-          <button class="btn btn-gold btn-sm" :disabled="folderBusy" @click="addGameFolder">
+        <button class="btn btn-ghost btn-sm folder-tools-trigger" :aria-expanded="folderToolsOpen" @click="folderToolsOpen = !folderToolsOpen">管理文件夹 <span class="muted">{{ folders.length }}</span></button>
+      </div>
+        <div v-if="folderToolsOpen" class="folder-manager-actions" @keydown.esc="folderToolsOpen = false">
+          <button class="btn btn-ghost btn-sm" :disabled="folderBusy" @click="addGameFolder">
             + 添加新的绑定游戏文件夹
           </button>
           <button class="btn btn-ghost btn-sm" :disabled="folderBusy" @click="refreshFolderScan()">
@@ -961,7 +988,6 @@ async function confirmIsolation() {
             解除绑定
           </button>
         </div>
-      </div>
       <div v-if="folderMissing && currentFolder" class="folder-missing-card" role="alert">
         <div class="folder-missing-text">
           <strong>检测不到该文件夹</strong>
@@ -976,17 +1002,7 @@ async function confirmIsolation() {
     </section>
 
     <!-- 控制行：Tab + 搜索/筛选/刷新/下载源（同一行横向排布，窄窗口自动换行） -->
-    <div class="game-controls">
-      <div class="game-tabs" ref="gameTabs">
-        <span class="game-tabs-blob" :style="tabBlobStyle" aria-hidden="true"></span>
-        <button class="game-tab" data-tab="download" :class="{ active: tab === 'download' }" @click="tab = 'download'">
-          版本下载
-        </button>
-        <button class="game-tab" data-tab="installed" :class="{ active: tab === 'installed' }" @click="tab = 'installed'">
-          已安装<template v-if="allInstalled.length">（{{ allInstalled.length }}）</template>
-        </button>
-      </div>
-
+    <div v-if="tab === 'download'" class="game-controls">
       <div v-if="tab === 'download'" class="toolbar">
       <div class="tool-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1115,14 +1131,15 @@ async function confirmIsolation() {
       </div>
 
       <div class="installed-scope" data-ui="games:installed-scope">
-        <div><strong>已安装的游戏版本</strong><p class="muted">{{ sortedInstalled.length }} 个版本 · 按所属游戏文件夹筛选，不改变安装位置</p></div>
-        <SelectMenu v-model="installedFolder" :options="installedFolderOptions" />
-        <button class="btn btn-ghost btn-sm" @click="installedFolder = activeFolder">只看当前文件夹</button>
-        <button class="btn btn-ghost btn-sm" @click="refreshAllInstalled">刷新列表</button>
+        <span class="muted">显示范围</span>
+        <SelectMenu v-model="installedFolder" :options="installedFolderOptions" aria-label="已安装实例显示范围" />
+        <label class="installed-search"><input v-model="installedSearch" class="input" aria-label="搜索已安装实例" placeholder="搜索实例名称、版本…" /></label>
+        <span class="muted scope-count">{{ sortedInstalled.length }} 个实例</span>
+        <button class="btn btn-ghost btn-sm" :disabled="installedLoading" @click="refreshAllInstalled">{{ installedLoading ? '刷新中…' : '刷新列表' }}</button>
       </div>
       <p v-if="installedError" class="error" role="alert">{{ installedError }}</p>
       <div v-if="!sortedInstalled.length && !installingVersions.length" class="empty installed-empty">
-        <span>当前范围没有已安装版本</span>
+        <span>{{ installedLoading ? '正在读取已安装实例…' : installedSearch ? '没有匹配的实例，请调整搜索条件' : '当前范围没有已安装版本' }}</span>
         <button class="btn btn-gold btn-sm" @click="tab = 'download'">去版本下载看看</button>
       </div>
       <div v-else class="installed-list">
@@ -1133,6 +1150,7 @@ async function confirmIsolation() {
             class="fav-btn"
             :class="{ on: isFavorite(v.id, v.folder) }"
             :title="isFavorite(v.id, v.folder) ? '取消收藏' : '收藏'"
+            :aria-label="(isFavorite(v.id, v.folder) ? '取消收藏 ' : '收藏 ') + displayVersionName(v)" :aria-pressed="isFavorite(v.id, v.folder)"
             @click="toggleFavorite(v.id, v.folder)"
           >
             <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01Z" /></svg>
@@ -1142,107 +1160,24 @@ async function confirmIsolation() {
             <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>
           </button>
           <div class="inst-names">
-            <span class="version-id editable" :title="`点击改名（目录名：${v.id}）`" @click="openRenameFor(v.id, v.folder)">{{ displayVersionName(v) }}</span>
-            <span v-if="displayVersionSub(v) !== displayVersionName(v)" class="muted inst-sub">
-              {{ displayVersionSub(v) }}
-            </span>
-            <span class="muted inst-path" :title="v.folder">{{ v.folder }}</span>
-          </div>
-          <!-- 下载未完成的残缺版本：继续下载 / 删除 -->
-          <template v-if="v.incomplete">
-            <span class="tag tag-danger">下载未完成</span>
-            <div class="row-actions">
-              <button
-                class="btn btn-gold btn-sm installed-folder"
-                :disabled="store.installing.has(v.id)"
-                @click="onRetry(v.id, v.folder)"
-              >
-                继续下载
-              </button>
-              <button
-                class="btn btn-danger btn-sm installed-remove"
-                @click="removeModal.open = true; removeModal.target = v"
-              >
-                删除残留
-              </button>
+            <button class="version-id instance-name" :title="displayVersionName(v) + '（点击改名）'" @click="openRenameFor(v.id, v.folder)">{{ displayVersionName(v) }}</button>
+            <div class="instance-meta">
+              <span>{{ v.mcVersion || '版本未知' }}</span><span>{{ loaderLabel(v) }}</span>
+              <span class="instance-directory" :title="v.folder">{{ folderShortName(v.folder) }}</span>
+              <span :title="v.gameDirectory || v.folder">{{ v.isolated ? '已隔离' : '共享目录' }}</span>
+              <span v-if="v.incomplete" class="error">下载未完成</span><span v-else-if="v.failed" class="error">安装失败</span>
+              <span v-else-if="v.modpackName" :title="v.modpackName">整合包</span>
             </div>
-          </template>
-          <!-- 安装事务失败：清理残留 -->
-          <template v-else-if="v.failed">
-            <span class="tag tag-danger">安装失败</span>
-            <div class="row-actions">
-              <button
-                class="btn btn-danger btn-sm installed-remove"
-                @click="onCleanup(v.id, v.folder)"
-              >
-                清理残留
-              </button>
-            </div>
-          </template>
-          <template v-else>
-          <span v-if="v.modpackName" class="tag tag-accent">整合包 · {{ v.modpackName }}</span>
-          <span v-else-if="!v.loader" class="tag">纯净版</span>
-          <span
-            v-if="v.isolated && v.modpackName"
-            class="tag"
-            :title="`实际游戏目录：${v.gameDirectory || '版本独立目录'}（${v.isolationReason || '已配置'}）`"
-          >已隔离</span>
-          <span class="tag tag-cyan" :title="v.folder">{{ folderShortName(v.folder) }}</span>
-          <span class="muted played-text">最近游玩：{{ fmtLastPlayed(store.lastPlayed[v.id]) }}</span>
-          <div class="row-actions">
-          <label
-            v-if="!v.modpackName"
-            class="iso-switch"
-            :title="v.isolated ? `版本隔离已开启：${v.gameDirectory || '使用独立游戏目录'}。点击关闭` : '版本隔离已关闭：与全局共享游戏目录。点击开启前会展示迁移范围'"
-          >
-            <span class="muted iso-label">隔离</span>
-            <span class="switch">
-              <input
-                type="checkbox"
-                :checked="!!v.isolated"
-                :disabled="isoBusy === v.id"
-                @change="onToggleIsolation(v, $event)"
-              />
-              <span class="switch-ui"></span>
-            </span>
-          </label>
-          <button class="btn btn-ghost btn-sm" @click="openInstanceCenter(v)">管理实例</button>
-          <button
-            class="icon-btn installed-folder"
-            :title="`打开 ${v.id} 的版本文件夹`"
-            @click="openVersionFolder(v)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-            </svg>
-          </button>
-          <button
-            class="icon-btn installed-folder"
-            :title="`管理 ${v.id} 的模组/资源包/光影包`"
-            @click="openManageMenu($event, v.id, v.folder)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1.82.33l.06.06a2 2 0 1 1 2.83 2.83l.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-          <button
-            class="btn btn-gold btn-sm installed-launch"
-            :disabled="instanceLaunchBusy(store.launchStates, v.id, v.folder ?? store.settings?.activeFolder ?? store.settings?.gameDir)"
-            :title="`启动 ${v.id}`"
-            @click="launchVersion(v)"
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="margin-right:4px;vertical-align:-1px"><path d="M8 5.5v13l11-6.5Z" /></svg>
-            启动
-          </button>
-          <button
-            class="btn btn-danger btn-sm installed-remove"
-            @click="removeModal.open = true; removeModal.target = v"
-          >
-            删除
-          </button>
           </div>
-          </template>
+          <div class="instance-commands">
+            <div class="row-actions">
+              <button class="btn btn-ghost btn-sm" @click="openInstanceCenter(v)">管理</button>
+              <button v-if="v.incomplete" class="btn btn-ghost btn-sm installed-launch" :disabled="store.installing.has(v.id)" @click="onRetry(v.id, v.folder)">继续下载</button>
+              <button v-else class="btn btn-ghost btn-sm installed-launch" :disabled="v.failed || instanceLaunchBusy(store.launchStates, v.id, v.folder ?? store.settings?.activeFolder ?? store.settings?.gameDir)" :title="v.failed ? '安装失败，请从更多菜单清理残留后重新安装' : '启动 ' + displayVersionName(v)" @click="launchVersion(v)">{{ instanceLaunchBusy(store.launchStates, v.id, v.folder) ? '启动中…' : '▶ 启动' }}</button>
+              <button class="btn btn-ghost btn-sm instance-more" :aria-label="displayVersionName(v) + '的更多操作'" :aria-expanded="manageMenu.id === v.id && manageMenu.folder === v.folder" @click="openManageMenu($event, v.id, v.folder)">⋯</button>
+            </div>
+            <span class="muted played-text">最近游玩：{{ fmtLastPlayed(store.lastPlayed[v.id]) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1252,9 +1187,13 @@ async function confirmIsolation() {
       <div v-if="manageMenu.id" class="menu-overlay" @click="manageMenu.id = ''"></div>
       <div
         v-if="manageMenu.id"
-        class="float-menu"
-        :style="{ top: manageMenu.top + 'px', left: manageMenu.left + 'px' }"
+        class="float-menu instance-more-menu" role="dialog" aria-modal="true" aria-label="实例更多操作" @keydown.esc.stop="closeManageMenu" @keydown="trapMenuFocus"
+        :style="{ top: manageMenu.top + 'px', left: manageMenu.left + 'px', maxHeight: `calc(100vh - ${manageMenu.top + 12}px)` }"
       >
+        <div v-if="menuVersion" class="instance-technical" tabindex="0"><strong>{{ displayVersionName(menuVersion) }}</strong><span>实例 ID：{{ menuVersion.id }}</span><span>绑定目录：{{ menuVersion.folder }}</span><span>游戏目录：{{ menuVersion.gameDirectory || menuVersion.folder }}</span></div>
+        <button v-if="menuVersion" class="menu-item" @click="openVersionFolder(menuVersion); closeManageMenu()">打开实例文件夹</button>
+        <button v-if="menuVersion" class="menu-item" @click="openInstanceCenter(menuVersion); closeManageMenu()">实例设置与详情</button>
+        <label v-if="menuVersion && !menuVersion.modpackName && !menuVersion.incomplete && !menuVersion.failed" class="menu-item"><input type="checkbox" :checked="!!menuVersion.isolated" :disabled="isoBusy === menuVersion.id" @change="onToggleIsolation(menuVersion, $event)" />实例隔离</label>
         <button class="menu-item" @click="goManage('mods')">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>
           模组
@@ -1287,6 +1226,10 @@ async function confirmIsolation() {
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
           窗口设置
         </button>
+        <div class="menu-danger-zone" v-if="menuVersion">
+          <button v-if="menuVersion.failed" class="menu-item error" @click="onCleanup(menuVersion.id, menuVersion.folder); closeManageMenu()">清理安装残留</button>
+          <button v-else class="menu-item error" @click="removeModal.target = menuVersion; removeModal.open = true; closeManageMenu()">删除实例</button>
+        </div>
       </div>
     </Teleport>
 
@@ -2222,4 +2165,66 @@ async function confirmIsolation() {
 .isolation-item .muted {
   font-size: var(--text-xs);
 }
+
+/* Compact instance management, using the existing theme and spacing system. */
+.page { max-width: 1240px; gap: 16px; }
+.page-head { margin-bottom: 0; }
+.page-sub { margin-bottom: 0; }
+.game-tabs { align-self:flex-start; border:0; border-radius:var(--radius-sm); background:var(--hover); }
+.game-tabs-blob { border-radius:var(--radius-sm); background:var(--accent-soft); box-shadow:inset 0 -2px var(--accent); }
+.game-tab { height:36px; padding:0 20px; border-radius:var(--radius-sm); }
+.game-tab.active { color:var(--text); }
+.folder-manager { padding:12px 16px; gap:8px; border:0; box-shadow:none; background:color-mix(in srgb, var(--card-solid, var(--card)) 75%, transparent); }
+.folder-manager-main { flex-direction:row; align-items:center; gap:16px; }
+.folder-select-wrap { display:grid; flex:1; grid-template-columns:auto minmax(160px, 320px) minmax(60px, 1fr); align-items:center; gap:12px; }
+.folder-current-path { max-width:100%; }
+.folder-tools-trigger { flex-shrink:0; }
+.folder-manager-actions { flex:initial; justify-content:flex-start; padding-top:8px; border-top:1px solid var(--border); }
+.folder-scan-error { margin:0; white-space:normal; overflow-wrap:anywhere; font-size:12px; }
+.installed-card { padding:0 16px; border:0; box-shadow:none; background:color-mix(in srgb, var(--card-solid, var(--card)) 92%, transparent); border-radius:var(--radius-md); }
+.installed-scope { padding:12px 0; margin:0; gap:12px; flex-wrap:wrap; }
+.installed-scope>div:first-child { flex:initial; min-width:0; }
+.installed-scope :deep(.select-menu-btn) { min-width:160px; max-width:260px; }
+.installed-search { flex:1; min-width:160px; }
+.installed-search input { width:100%; }
+.scope-count { font-size:12px; white-space:nowrap; }
+.installed-row { flex-wrap:nowrap; gap:12px; padding:12px 0; border-radius:0; min-height:80px; }
+.installed-row:hover, .installed-row:focus-within { background:var(--hover); }
+.inst-names { flex:1 1 auto; gap:8px; }
+.inst-names .instance-name { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; white-space:normal; word-break:normal; overflow-wrap:normal; text-align:left; font:inherit; font-weight:650; line-height:1.4; padding:0; border:0; border-radius:4px; background:none; color:var(--text); cursor:pointer; }
+.instance-name:hover { color:var(--accent); }
+.inst-names .instance-name:focus-visible { -webkit-line-clamp:unset; }
+.instance-meta { display:flex; flex-wrap:wrap; gap:4px 10px; color:var(--text-dim); font-size:12px; line-height:1.4; }
+.instance-meta>span { white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+.instance-meta>span.error { color:var(--danger); font-weight:600; }
+.instance-meta>span+span::before { content:'·'; margin-right:10px; opacity:.5; }
+.instance-commands { flex:none; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+.instance-commands .row-actions { gap:8px; }
+.instance-more { min-width:32px; padding:0 8px; font-size:20px; }
+.installed-launch { min-width:78px; }
+.installed-row:hover .installed-launch:not(:disabled), .installed-row:focus-within .installed-launch:not(:disabled) { color:var(--on-accent); background:var(--accent-grad); border-color:transparent; }
+.page button:focus-visible, .instance-more-menu :is(button,input):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.fav-btn.on { color:var(--accent); }
+.instance-more-menu { width:290px; max-width:calc(100vw - 16px); max-height:calc(100vh - 24px); overflow-y:auto; background:var(--card-solid, var(--card)); }
+.instance-technical { display:flex; flex-direction:column; gap:6px; padding:12px; font-size:12px; color:var(--text-dim); overflow-wrap:anywhere; border-bottom:1px solid var(--border); }
+.instance-technical strong { color:var(--text); }
+.menu-danger-zone { border-top:1px solid var(--border); margin-top:6px; padding-top:6px; }
+.menu-danger-zone .menu-item { color:var(--danger); }
+@media (max-width:1100px) {
+ .folder-select-wrap { grid-template-columns:auto minmax(160px, 1fr); }
+ .folder-current-path { grid-column:1 / -1; }
+ .installed-scope :deep(.select-menu-btn) { max-width:220px; }
+}
+@media (max-width:850px) {
+ .folder-manager-main { align-items:flex-start; gap:8px; }
+ .folder-select-wrap { grid-template-columns:minmax(0,1fr); }
+ .folder-current-path { grid-column:auto; }
+ .installed-row { display:grid; grid-template-columns:28px 36px minmax(0,1fr); gap:8px; }
+ .instance-commands { grid-column:3; align-items:flex-start; flex-direction:row; flex-wrap:wrap; }
+ .instance-commands .row-actions { margin-left:0; }
+ .installed-card { padding:0 12px; }
+ .scope-count { display:none; }
+ .installed-search { flex-basis:100%; order:1; }
+}
+
 </style>

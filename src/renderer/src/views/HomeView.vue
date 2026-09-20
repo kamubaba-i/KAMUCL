@@ -50,9 +50,10 @@ import { managedImageUrl } from '../managedAssets'
 import banner1 from '../assets/banner1.webp'
 import banner2 from '../assets/banner2.webp'
 import banner3 from '../assets/banner3.webp'
+import banner4 from '../assets/banner4.png'
 
 const LAST_VERSION_KEY = 'kamucl.lastVersion'
-const builtInBanners = [banner1, banner2, banner3]
+const builtInBanners = [banner1, banner2, banner3, banner4]
 
 // ---------------- 当前实例与展示图 ----------------
 const selectedId = computed({get: () => store.resourceVersionId, set: id => { store.resourceVersionId = id }})
