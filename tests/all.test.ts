@@ -116,3 +116,4 @@ import './bound-folders-1088.test'
 
 import './voxlink-integration-1091.test'
 import './voxlink-upstream-1094.test'
+import './download-speed-1096.test'

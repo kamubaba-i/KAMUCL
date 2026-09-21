@@ -34,6 +34,7 @@ import { applyIsolation, instanceDirectoryState, setNewInstanceIsolation } from 
 import { assertValidResolution, normalizeStoredResolution } from './gameWindow'
 import {
   allVersionsDirs,
+  allFolders,
   assetIndexPath,
   assetObjectPath,
   baseVersionDir,
@@ -44,6 +45,7 @@ import {
   installMarkPath,
   instanceIconsDir,
   libraryPath,
+  librariesDir,
   registerVersionFolder,
   versionDir,
   versionJarPath,
@@ -280,9 +282,15 @@ function collectLibraries(vj: VersionJson): LibEntry[] {
 
 /** 依赖库下载任务（供 installVersion 与 loaders 复用） */
 export function libraryTasks(vj: VersionJson): DownloadTask[] {
+  const folders = allFolders()
   return collectLibraries(vj)
     .filter((e) => e.url)
-    .map((e) => ({ url: e.url as string, dest: e.path, sha1: e.sha1, size: e.size }))
+    .map((e) => {
+      const relative = path.relative(librariesDir(), e.path)
+      return { url: e.url as string, dest: e.path, sha1: e.sha1, size: e.size,
+        reuseFiles: !relative.startsWith('..') && !path.isAbsolute(relative)
+          ? folders.map(folder => path.join(folder, 'libraries', relative)) : [] }
+    })
 }
 
 /** 启动用：classpath 中的 artifact 路径与 natives jar 路径 */
@@ -411,7 +419,7 @@ async function installVanillaUnlocked(
             mirror,
             signal,
             [],
-            { size: vj.assetIndex.size }
+            { size: vj.assetIndex.size, reuseFiles: allFolders().map(folder => path.join(folder, 'assets', 'indexes', `${vj.assetIndex!.id}.json`)) }
           )
 
           const idx = JSON.parse(fs.readFileSync(idxPath, 'utf-8')) as {
@@ -424,6 +432,7 @@ async function installVanillaUnlocked(
           // 按 hash 去重生成下载任务
           const seen = new Set<string>()
           const tasks: DownloadTask[] = []
+          const resourceFolders = allFolders()
           for (const o of Object.values(objects)) {
             if (!o?.hash || seen.has(o.hash)) continue
             seen.add(o.hash)
@@ -431,7 +440,8 @@ async function installVanillaUnlocked(
               url: `https://resources.download.minecraft.net/${o.hash.slice(0, 2)}/${o.hash}`,
               dest: assetObjectPath(o.hash),
               sha1: o.hash,
-              size: o.size
+              size: o.size,
+              reuseFiles: resourceFolders.map(folder => path.join(folder, 'assets', 'objects', o.hash.slice(0, 2), o.hash))
             })
           }
           await downloadAll(
