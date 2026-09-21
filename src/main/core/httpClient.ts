@@ -46,6 +46,7 @@ export function httpFetch(
   // the desktop app. Node fetch/undici do not inherit macOS system proxy settings.
   if (init.systemProxy && process.versions.electron) {
     const { systemProxy, bodyTimeoutMs, separateConnection, ...request } = init
+    if (request.redirect === 'manual') return import('./systemDownload').then(({ systemDownload }) => systemDownload(url, request))
     return import('electron').then(({ net }) => net.fetch(url, request)) as Promise<Response>
   }
   if (init.separateConnection) {

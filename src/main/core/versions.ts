@@ -327,7 +327,8 @@ async function installVanillaUnlocked(
   dest: 'versions' | 'base' = 'versions',
   instanceName?: string,
   signal?: AbortSignal,
-  finalEvent = true
+  finalEvent = true,
+  runtimeReady?: (signal: AbortSignal) => Promise<void>
 ): Promise<string> {
   const finalId = dest === 'versions' ? instanceName?.trim() || versionId : versionId
   const dir = dest === 'base' ? baseVersionDir(versionId) : versionDir(finalId)
@@ -357,53 +358,59 @@ async function installVanillaUnlocked(
       { id: 'assets', label: '资源文件', weight: 0.27 }
     ], emit, '同步下载游戏本体、依赖库与资源', [0.04, 0.82])
     await runParallelTasks([
-      async (signal) => {
-        const emit: ProgressEmit = event => parallel.update('libraries', event)
-        // 1. 依赖库（含 natives classifiers）
-        const libTasks = libraryTasks(vj)
-        await downloadAll(
-          libTasks,
-          (d, t, speed, detail) =>
-            emit({
-              stage: 'libraries',
-              progress: detail.fraction ?? 0,
-              text: `下载依赖库 ${d}/${t}`,
-              speed,
-              etaSeconds: detail.etaSeconds ?? undefined,
-              bytesDone: detail.bytesDone,
-              bytesTotal: detail.bytesTotal ?? undefined,
-              indeterminate: detail.indeterminate,
-              source: sourceText
-            }),
-          downloadLimiter.maxConcurrent,
-          mirror,
-          signal
-        )
+      async signal => {
+        await runParallelTasks([
+          async (signal) => {
+            const emit: ProgressEmit = event => parallel.update('libraries', event)
+            // 1. 依赖库（含 natives classifiers）
+            const libTasks = libraryTasks(vj)
+            await downloadAll(
+              libTasks,
+              (d, t, speed, detail) =>
+                emit({
+                  stage: 'libraries',
+                  progress: detail.fraction ?? 0,
+                  text: `下载依赖库 ${d}/${t}`,
+                  speed,
+                  etaSeconds: detail.etaSeconds ?? undefined,
+                  bytesDone: detail.bytesDone,
+                  bytesTotal: detail.bytesTotal ?? undefined,
+                  indeterminate: detail.indeterminate,
+                  source: sourceText
+                }),
+              downloadLimiter.maxConcurrent,
+              mirror,
+              signal
+            )
 
-        parallel.done('libraries')
-      },
-      async (signal) => {
-        const emit: ProgressEmit = event => parallel.update('client', event)
-        // 2. 客户端 jar
-        const client = vj.downloads?.client
-        if (client?.url) {
-          // PCL2 本地复用优化：客户端 jar 优先从其他游戏文件夹的 versions 与 .kamucl/base
-          // 里按 大小+sha1 查找相同文件直接复制（多文件夹/加载器依赖原版间不再重复下载）
-          const versionDirs = allVersionsDirs()
-          const reuseDirs = versionDirs
-            .map((v) => v.dir)
-            .concat(versionDirs.map((v) => path.join(v.folder, '.kamucl', 'base')))
-            .filter((dir) => path.resolve(dir) !== path.resolve(path.dirname(jarPath)))
-          await downloadAll(
-            [{ url: client.url, dest: jarPath, sha1: client.sha1, size: client.size, reuseDirs }],
-            (_done, _total, speed, detail) => emit({stage:'client', progress:detail.fraction ?? 0,
-              bytesDone:detail.bytesDone, bytesTotal:detail.bytesTotal ?? undefined, indeterminate:detail.indeterminate,
-              speed, etaSeconds:detail.etaSeconds ?? undefined, text:'下载游戏本体 '+fmtMB(detail.bytesDone), source:sourceText}),
-            getSettings().downloadThreads, mirror, signal
-          )
-      }
+            parallel.done('libraries')
+          },
+          async (signal) => {
+            const emit: ProgressEmit = event => parallel.update('client', event)
+            // 2. 客户端 jar
+            const client = vj.downloads?.client
+            if (client?.url) {
+              // PCL2 本地复用优化：客户端 jar 优先从其他游戏文件夹的 versions 与 .kamucl/base
+              // 里按 大小+sha1 查找相同文件直接复制（多文件夹/加载器依赖原版间不再重复下载）
+              const versionDirs = allVersionsDirs()
+              const reuseDirs = versionDirs
+                .map((v) => v.dir)
+                .concat(versionDirs.map((v) => path.join(v.folder, '.kamucl', 'base')))
+                .filter((dir) => path.resolve(dir) !== path.resolve(path.dirname(jarPath)))
+              await downloadAll(
+                [{ url: client.url, dest: jarPath, sha1: client.sha1, size: client.size, reuseDirs }],
+                (_done, _total, speed, detail) => emit({stage:'client', progress:detail.fraction ?? 0,
+                  bytesDone:detail.bytesDone, bytesTotal:detail.bytesTotal ?? undefined, indeterminate:detail.indeterminate,
+                  speed, etaSeconds:detail.etaSeconds ?? undefined, text:'下载游戏本体 '+fmtMB(detail.bytesDone), source:sourceText}),
+                getSettings().downloadThreads, mirror, signal
+              )
+          }
 
-        parallel.done('client')
+            parallel.done('client')
+          }
+            ], signal)
+        // Installer processors only need client/libraries; assets keep downloading.
+        await runtimeReady?.(signal)
       },
       async (signal) => {
         const emit: ProgressEmit = event => parallel.update('assets', event)
