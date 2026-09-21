@@ -90,7 +90,7 @@ for (const outcome of ['included', 'mismatch', 'missing', 'supplied'] as const) 
   try {
     runtime = await versionInstallHarness(root,
       async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01' }] }),
-      url => /\/mods\/\d+\/files\/\d+|\/version_file\//.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
+      url => /\/mods\/\d+\/files\/\d+|\/version_file\/|cursemaven\.com/.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
     Object.assign(runtime.getSettings(), { gameDir: game, activeFolder: game, folders: [{ path: game, name: 'fixture', isDefault: true }], defaultIsolation: true, mirror: 'bmclapi' })
     const zip = new AdmZip()
     zip.addFile('manifest.json', Buffer.from(JSON.stringify({ name: id, manifestVersion: 1, minecraft: { version: '1.20.1' }, overrides: 'overrides',

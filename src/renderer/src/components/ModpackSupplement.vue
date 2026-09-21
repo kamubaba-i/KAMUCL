@@ -18,7 +18,7 @@ async function open(fileID: number) {
 <template>
   <section class="pack-supplement" data-ui="download.modpack-supplement">
     <strong>需要补充 {{ request.files.length }} 个文件</strong>
-    <p>这些文件未开放自动下载。打开文件页面下载后，选择文件即可继续安装；其他下载仍会进行。</p>
+    <p>已检查包内文件、本地游戏目录与可用下载来源，仍未找到以下文件的对应版本。可选择已有文件继续安装；其他下载仍会进行。</p>
     <div class="supplement-list">
       <div v-for="file in request.files" :key="file.fileID" class="supplement-row">
         <span :title="file.fileName">{{ file.fileName }}</span>

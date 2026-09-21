@@ -22,12 +22,14 @@ import type { DownloadTask } from './download'
 import { prepareModpackFiles } from './modpackDownloads'
 import { runParallelTasks } from './parallelTasks'
 import { ParallelProgress } from './parallelProgress'
-import { resolveCurseForgeMetadata, exactModrinthDownload } from './curseforgeDownload'
+import { resolveCurseForgeMetadata, resolveCurseForgeFileUrl, curseForgeInstallDir, exactModrinthDownload } from './curseforgeDownload'
 import { BundledModpackFiles } from './modpackBundledFiles'
+import { LocalModpackFiles } from './modpackLocalFiles'
+import { prepareCurseMavenFile } from './modpackAlternateDownload'
 import { waitForModpackFiles } from './modpackManualFiles'
 import { getSettings } from './settings'
 import { registerVersionFolder, versionDir, versionJsonPath, versionsDir } from './paths'
-import { gameDir, withGameFolder } from './paths'
+import { allFolders, gameDir, withGameFolder } from './paths'
 import { installVersion, listAllInstalled, readVersionJson, flattenInstance } from './versions'
 import { packRuntimeProfile } from './packRuntime'
 import { throwIfCancelled } from './tasks'
@@ -92,6 +94,7 @@ interface PendingFile {
   rel: string
   url: string
   urls?: string[]
+  reuseFiles?: string[]
   sha1?: string
   sha512?: string
   size: number
@@ -664,13 +667,13 @@ async function installFullpack(
 
 const MCIM_CF = 'https://mod.mcimirror.top/curseforge/v1'
 
-async function resolveCfFile(projectID: number, fileID: number, signal?: AbortSignal) {
+async function cfSources() {
   const { cfChannel } = await import('./community')
   const channel = cfChannel()
   const official = { base: channel.base, headers: channel.official ? { 'x-api-key': channel.key } : undefined }
   const mirror = { base: MCIM_CF }
   const sources = channel.official ? (getSettings().mirror === 'bmclapi' ? [mirror, official] : [official, mirror]) : [mirror]
-  return resolveCurseForgeMetadata(projectID, fileID, sources, signal)
+  return sources
 }
 
 /** 简单并发池（保序写入结果数组） */
@@ -988,34 +991,50 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
         if (parsed.kind === 'mrpack') {
           pending = parsed.files
         } else {
-          // Match immutable file identity before requiring a network URL: restricted files
-          // can already be included by the pack author in overrides/mods.
+          // Match immutable identity before requesting a URL. Preserve bundled paths;
+          // otherwise copy verified local files or download the exact manifest version.
           const cfFiles = parsed.files
           const bundled = new BundledModpackFiles(zip, meta.overridesPrefix)
-          let resolved = 0, reused = 0
+          const localFiles = new LocalModpackFiles([...allFolders(), targetFolder])
+          const sources = await cfSources()
+          let resolved = 0, reused = 0, reusedLocal = 0, alternate = 0
           const infos = await mapPool(
             cfFiles,
             8,
             async (f, _index, signal) => {
-              const info = await resolveCfFile(f.projectID, f.fileID, signal)
+              const info = await resolveCurseForgeMetadata(f.projectID, f.fileID, sources, signal)
               const local = await bundled.find(info, signal)
+              let existing: string | null = null
               if (local) reused++
               else if (!info.isAvailable || !info.url) {
-                info.url = await exactModrinthDownload(info, signal)
-                if (!info.url) manual.push({ ...f, fileName: info.fileName, size: info.size, sha1: info.sha1 })
+                existing = await localFiles.find(info, signal)
+                if (existing) reusedLocal++
+                else {
+                  info.url = info.isAvailable ? await resolveCurseForgeFileUrl(f.projectID, f.fileID, sources, signal) : null
+                  info.url ??= await exactModrinthDownload(info, signal)
+                  if (!info.url) {
+                    existing = await prepareCurseMavenFile(f.projectID, f.fileID, info, getSettings().mirror, signal)
+                    if (existing) alternate++
+                    else manual.push({ ...f, fileName: info.fileName, size: info.size, sha1: info.sha1 })
+                  }
+                }
               }
               resolved++
               parallel.update('pack', {
                 stage: 'modpack',
                 progress: cfFiles.length ? (resolved / cfFiles.length) * 0.04 : 0,
-                text: `校验整合包文件 ${resolved}/${cfFiles.length} · 已复用包内 ${reused} 个`
+                text: `校验整合包文件 ${resolved}/${cfFiles.length} · 包内 ${reused} 个 · 本地 ${reusedLocal} 个 · 自动补全 ${alternate} 个`
               })
-              return local ? null : { rel: `mods/${info.fileName}`, url: info.url ?? '', size: info.size, sha1: info.sha1 }
+              return local ? null : {
+                rel: `${await curseForgeInstallDir(f.projectID, info.fileName, sources, signal)}/${info.fileName}`,
+                url: info.url ?? '', size: info.size, sha1: info.sha1,
+                reuseFiles: existing ? [existing] : undefined
+              }
             },
             signal
           )
           pending = infos.filter((info): info is NonNullable<typeof info> => info !== null)
-          packLog.info(`CurseForge 清单 ${cfFiles.length} 个文件：校验复用包内 ${reused} 个，自动下载 ${pending.length - manual.length} 个，需手动补充 ${manual.length} 个`)
+          packLog.info(`CurseForge 清单 ${cfFiles.length} 个文件：复用包内 ${reused} 个、本地 ${reusedLocal} 个，备用源补全 ${alternate} 个，自动下载 ${pending.length - manual.length - reusedLocal - alternate} 个，待补充 ${manual.length} 个`)
         }
 
         const tasks: DownloadTask[] = []
@@ -1026,6 +1045,7 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
             label: f.rel,
             url: f.url,
             urls: f.urls,
+            reuseFiles: f.reuseFiles,
             dest,
             sha1: f.sha1,
             sha512: f.sha512,
@@ -1034,7 +1054,8 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
         }
 
         try {
-          const automatic = tasks.filter(task => !!task.url), localTasks = tasks.filter(task => !task.url)
+          const automatic = tasks.filter(task => !!task.url || !!task.reuseFiles?.length)
+          const localTasks = tasks.filter(task => !task.url && !task.reuseFiles?.length)
           const downloadProgress: Parameters<typeof prepareModpackFiles>[1] = (d, t, speed, detail) => {
             const doneBytes = detail.bytesDone
             const ratio = detail.fraction ?? 0

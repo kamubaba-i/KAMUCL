@@ -4,6 +4,56 @@ export interface CfMetadataSource { base: string; headers?: Record<string, strin
 export interface ResolvedCfDownload { url: string; fileName: string; sha1: string; size: number }
 export interface ResolvedCfFile extends Omit<ResolvedCfDownload, 'url'> { url: string | null; isAvailable: boolean }
 
+function downloadUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null
+  } catch { return null }
+}
+
+/** CurseForge REST: GET /v1/mods/{modId}/files/{fileId}/download-url.
+ * A missing metadata URL is not proof of an author restriction. Only use a URL
+ * actually returned by the service, with the original size/hash still required.
+ */
+export async function resolveCurseForgeFileUrl(projectID: number, fileID: number, sources: CfMetadataSource[], signal?: AbortSignal): Promise<string | null> {
+  if (![projectID, fileID].every(n => Number.isSafeInteger(n) && n > 0)) throw new Error('CurseForge 文件标识无效')
+  for (const source of sources) {
+    signal?.throwIfAborted()
+    try {
+      const timeout = AbortSignal.timeout(6000)
+      const res = await httpFetch(`${source.base}/mods/${projectID}/files/${fileID}/download-url`, {
+        headers: source.headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+      })
+      if (!res.ok) { await res.body?.cancel(); continue }
+      const data = await res.json() as { data?: unknown }
+      const url = downloadUrl(data.data)
+      if (url) return url
+    } catch { signal?.throwIfAborted() }
+  }
+  return null
+}
+
+/** JARs are mods; ZIPs must use the project's declared class, not the mods folder. */
+export async function curseForgeInstallDir(projectID: number, fileName: string, sources: CfMetadataSource[], signal?: AbortSignal): Promise<string> {
+  if (/\.jar$/i.test(fileName)) return 'mods'
+  for (const source of sources) {
+    signal?.throwIfAborted()
+    try {
+      const timeout = AbortSignal.timeout(6000)
+      const res = await httpFetch(`${source.base}/mods/${projectID}`, {
+        headers: source.headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+      })
+      if (!res.ok) { await res.body?.cancel(); continue }
+      const { data } = await res.json() as { data?: { id?: number; classId?: number } }
+      if (data?.id !== projectID) continue
+      const dir = ({ 6: 'mods', 12: 'resourcepacks', 6552: 'shaderpacks', 6945: 'datapacks' } as Record<number, string>)[data.classId ?? 0]
+      if (dir) return dir
+    } catch { signal?.throwIfAborted() }
+  }
+  throw new Error(`无法确定 ${fileName} 的资源类型，请稍后重试获取 CurseForge 项目信息`)
+}
+
 /** File identity remains useful when a pack bundles a file without an automatic download URL. */
 export async function resolveCurseForgeMetadata(projectID: number, fileID: number, sources: CfMetadataSource[], signal?: AbortSignal): Promise<ResolvedCfFile> {
   if (![projectID, fileID].every(n => Number.isSafeInteger(n) && n > 0)) throw new Error('CurseForge 文件标识无效')
