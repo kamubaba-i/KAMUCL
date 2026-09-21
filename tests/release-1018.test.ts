@@ -49,7 +49,7 @@ test('keys page: sync switch integrated into card header, no standalone empty ca
 
 test('view switch transition has explicit duration fallback (遮挡时 transitionend 不触发导致卡死的修复)', () => {
   const app = read('src/renderer/src/App.vue')
-  assert.match(app, /name="fade" mode="out-in" :duration="routeDuration"/)
+  assert.match(app, /name="fade" :duration="routeDuration"/)
   assert.match(app, /routeDuration = computed\(\(\) => reducedMotion.value \? 0 : \{ enter: \d+, leave: \d+ \}/)
 })
 

@@ -35,15 +35,21 @@ const capes = computed(() => profile.value?.capes ?? [])
 /** 使用中的披风直接传给 3D 人偶渲染 */
 const activeCape = computed(() => capes.value.find((c) => c.active)?.dataUrl ?? '')
 
+let profileRequest = 0, historyRequest = 0
+const profileError = ref(''), historyError = ref('')
+onUnmounted(() => { profileRequest++; historyRequest++ })
 async function loadProfile() {
+  const request = ++profileRequest; profileError.value = ''
   loadingProfile.value = true
   try {
-    profile.value = await getSkinProfile()
+    const next = await getSkinProfile()
+    if (request !== profileRequest) return
+    profile.value = next
     void renderCapes()
   } catch (e) {
-    toast('获取皮肤档案失败：' + errText(e), 'error')
+    if (request === profileRequest) profileError.value = errText(e)
   } finally {
-    loadingProfile.value = false
+    if (request === profileRequest) loadingProfile.value = false
   }
 }
 
@@ -85,11 +91,12 @@ const capeRenders = ref<Record<string, string>>({})
 const capeBusy = ref<string | null>(null)
 
 async function renderCapes() {
+  const request = profileRequest
   const map: Record<string, string> = {}
   for (const c of capes.value) {
     if (c.dataUrl) map[c.id] = await renderCape(c.dataUrl, 100, 160)
   }
-  capeRenders.value = map
+  if (request === profileRequest) capeRenders.value = map
 }
 
 /** 点击披风：使用中 → 卸下；其他 → 激活 */
@@ -157,18 +164,21 @@ function historyDisplayName(item: SkinHistoryEntry): string {
 }
 
 async function loadHistory() {
+  const request = ++historyRequest; historyError.value = ''
   loadingHistory.value = true
   try {
-    historyList.value = await getSkinHistory()
+    const next = await getSkinHistory()
+    if (request !== historyRequest) return
+    historyList.value = next
     const map: Record<string, string> = {}
     for (const item of historyList.value) {
       map[item.id] = await renderSkinFront(item.dataUrl, 6)
     }
-    historyRenders.value = map
+    if (request === historyRequest) historyRenders.value = map
   } catch (e) {
-    toast('读取历史皮肤失败：' + errText(e), 'error')
+    if (request === historyRequest) historyError.value = errText(e)
   } finally {
-    loadingHistory.value = false
+    if (request === historyRequest) loadingHistory.value = false
   }
 }
 
@@ -318,6 +328,7 @@ onMounted(() => {
 watch(
   () => store.selectedAccount?.id,
   () => {
+    profileRequest++; historyRequest++; loadingProfile.value = false; loadingHistory.value = false; profileError.value = ''; historyError.value = ''
     profile.value = null
     historyList.value = []
     historyRenders.value = {}
@@ -414,6 +425,7 @@ watch(
 
         <!-- 右：当前皮肤信息与上传 -->
         <section class="card pane pane-info">
+          <div v-if="profileError" class="status-strip error" role="alert">读取皮肤失败：{{ profileError }}<button class="btn btn-ghost" @click="loadProfile">重试</button></div>
           <header class="pane-head">
             <h3 class="pane-title">当前皮肤</h3>
             <span class="tag" :class="currentVariant === 'slim' ? 'tag-cyan' : 'tag-gold'">
@@ -481,7 +493,7 @@ watch(
       </div>
 
       <!-- ============ 第二行：披风 + 历史皮肤 ============ -->
-      <div class="row-sub">
+      <div class="row-sub" :class="{ 'no-history': !historyList.length }">
         <section class="card pane pane-capes">
           <header class="pane-head">
             <h3 class="pane-title">披风（{{ capes.length }}）</h3>
@@ -524,7 +536,8 @@ watch(
               title="按文件名即时筛选历史皮肤"
             />
           </header>
-          <div v-if="loadingHistory" class="empty pane-empty"><span class="spin"></span></div>
+          <div v-if="historyError" class="status-strip error">读取历史失败：{{ historyError }}<button class="btn btn-ghost" @click="loadHistory">重试</button></div>
+          <div v-else-if="loadingHistory && !historyList.length" class="empty pane-empty"><span class="spin"></span></div>
           <div v-else-if="!historyList.length" class="empty pane-empty">
             <span>暂无历史皮肤，上传皮肤后会自动保存到这里，方便随时换回</span>
           </div>
@@ -589,6 +602,11 @@ watch(
 </template>
 
 <style scoped>
+.row-sub { align-items:flex-start !important; }
+.no-history .pane-history .pane-empty { min-height:0; padding:20px 0; }
+.pane-preview,.pane-info,.pane-capes,.pane-history { min-width:min(100%,280px) !important; }
+@media(max-width:1050px) { .pane-preview,.pane-capes { max-width:100% !important; } }
+
 /* ================= 页面骨架：区块排「行」，行内横向分栏，窄窗换行 ================= */
 .skins-page {
   display: flex;
@@ -1059,5 +1077,22 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+</style>
+
+<style scoped>
+/* Preview owns the left column; account, capes and history size to their content. */
+.skins-page { display:grid; grid-template-columns:minmax(280px,1fr) minmax(300px,1.35fr); align-items:start; }
+.skins-page > :is(.page-head,.status-strip,.need-ms) { grid-column:1/-1; }
+.skins-page .row-main,.skins-page .row-sub { display:contents; }
+.skins-page .pane-preview { grid-column:1; grid-row:2/span 3; width:100%; max-width:100%; }
+.skins-page .pane-info { grid-column:2; grid-row:2; }
+.skins-page .pane-capes { grid-column:2; grid-row:3; max-width:100%; }
+.skins-page .pane-history { grid-column:2; grid-row:4; }
+.skins-page .pane-empty { min-height:0; padding:20px 0; }
+.row-main.drag-over .pane { outline:2px solid var(--accent); }
+@media(max-width:1050px) {
+  .skins-page { grid-template-columns:minmax(0,1fr); }
+  .skins-page :is(.pane-preview,.pane-info,.pane-capes,.pane-history) { grid-column:1; grid-row:auto; }
 }
 </style>

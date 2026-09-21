@@ -3,6 +3,7 @@ import { openInstanceCenter } from '../instanceCenter'
 import { appearancePreview } from '../visualDesign'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { carouselImages, carouselDuration } from '@shared/appearancePolicy'
+import { useMotion } from '../motion'
 import { CarouselPlayback } from '@shared/carouselPlayback'
 import {
   errText,
@@ -94,6 +95,8 @@ const banners = computed(() => {
     path: src
   }))
 })
+const { decorativeActive } = useMotion()
+watch(decorativeActive, active => active ? startBannerTimer() : stopBannerTimer())
 const bannerIndex = ref(0)
 let bannerTimer: ReturnType<typeof setInterval> | null = null
 let playback: CarouselPlayback | null = null
@@ -127,7 +130,7 @@ function startBannerTimer() {
   bannerIndex.value = playback.index
   // 预加载全部轮播图：避免切到下一张时因图片未加载而短暂露出第一张
   for (const item of banners.value) preloadBanner(item.src)
-  if (banners.value.length < 2) return
+  if (banners.value.length < 2 || !decorativeActive.value) return
   bannerTimer = setInterval(() => {
     if (document.hidden || !playback) return
     const nextIdx = playback.peekNext(Date.now())
@@ -165,7 +168,7 @@ const percent = computed(() =>
 )
 const launchText = computed(() => {
   if (launching.value) return store.progress?.text || '正在启动…'
-  return '开始游戏'
+  return running.value ? '再次启动' : launchFailed.value ? '重新启动' : '开始游戏'
 })
 // ---------------- 快捷行悬浮浮块（跟随指针在三格间平滑滑动） ----------------
 const runtimeHover = ref(-1)
@@ -706,7 +709,7 @@ onUnmounted(() => {
 
     <Teleport to="body">
       <div v-if="logOpen" class="log-mask" @pointerdown.self="logOpen = false">
-        <section class="log-dialog">
+        <section class="log-dialog" role="dialog" aria-modal="true" aria-label="游戏日志">
           <header>
             <div><h3>启动日志</h3><span>{{ store.logs.length }} 行 · {{ heroStatus.text }}</span></div>
             <button class="log-close" title="关闭" @click="logOpen = false">×</button>
@@ -760,6 +763,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.recent-grid, .instance-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)) !important; }
+.recent-card { min-height:140px; height:auto !important; }
+.hero-content h1 { overflow-wrap:break-word; word-break:normal; }
+.runtime-strip { background:var(--surface-content) !important; }
+.home-side { align-self:start; }
+
 .java-picker { width: min(580px, calc(100vw - 40px)); }
 .java-picker .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
 .java-picker-description { color: var(--text-dim); font-size: 12px; margin-bottom: 16px; overflow-wrap: anywhere; }
@@ -798,7 +807,7 @@ onUnmounted(() => {
   background: #17231f;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
 }
-.hero-image { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 0.8s ease; }
+.hero-image { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity var(--motion-carousel) ease; }
 .hero-image.active { opacity: 1; }
 .hero-shade {
   position: absolute;
@@ -904,8 +913,8 @@ onUnmounted(() => {
 .empty-instances { width: 100%; min-height: 110px; border: 1px dashed var(--border-strong); border-radius: 13px; background: var(--card); color: var(--text-dim); cursor: pointer; }
 
 .home-side { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
-.home-creator { margin-top: auto; border-color: color-mix(in srgb, var(--accent) 26%, var(--border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent), var(--shadow); }
-.account-panel, .skin-panel { border: 1px solid var(--border); border-radius: 15px; background: color-mix(in srgb, var(--card) 78%, transparent); box-shadow: var(--shadow); }
+.home-creator { margin-top: 0; border-color: color-mix(in srgb, var(--accent) 26%, var(--border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent), var(--shadow); }
+.account-panel, .skin-panel { border: 1px solid var(--border); border-radius: 15px; background: var(--surface-content); box-shadow: var(--shadow); }
 .account-panel { min-height: 146px; padding: 18px; }
 .account-head { display: flex; align-items: center; gap: 13px; }
 .account-head :deep(.mc-avatar) { border-radius: 12px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--text) 8%, transparent); }

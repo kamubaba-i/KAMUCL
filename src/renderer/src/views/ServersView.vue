@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { withDeadline } from '@shared/deadline'
 // 服务器页：服务器列表管理 + SLP 实时状态 + 一键进服
+import ContentSkeleton from '../components/ContentSkeleton.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   addServer,
@@ -64,7 +65,7 @@ async function syncNow() {
     toast(`游戏内服务器同步完成：${detail}`, r.errors?.length ? 'error' : 'success')
     if (r.errors?.length) toast(r.errors[0], 'error')
   } catch (e) {
-    toast('同步失败：' + errText(e), 'error')
+    loadError.value = '同步失败：' + errText(e)
   } finally {
     loading.value = false
   }
@@ -365,12 +366,12 @@ async function copyAddress(s: ServerEntry) {
     <p v-if="loadError" class="connection-error" role="alert">{{ loadError }} <button class="btn btn-ghost" @click="load">重试</button></p>
     <div class="server-collection-head"><div><strong>我的服务器 <span>{{ servers.length }}</span></strong><ConnectionStatus :tone="refreshing ? 'pending' : 'neutral'" :label="refreshing ? '检测状态中' : onlineCount + ' 个在线'" /></div><button class="btn btn-ghost" :disabled="!servers.length || loading" @click="toggleSelectMode">{{ selectMode ? '退出多选' : '批量管理' }}</button></div>
     <div v-if="selectMode" class="server-batch"><label class="check-all"><input type="checkbox" :checked="allChecked" @change="toggleAll" /> 全选搜索结果</label><span>已选 {{ selectedCount }} 项</span><button class="btn btn-danger" :disabled="!selectedCount" @click="openBatchDelete">删除所选</button></div>
-    <div v-if="loading" class="connection-panel connection-empty" role="status"><span class="spin"></span><h3>正在整理服务器列表</h3><p>同步各实例中的收藏，不会覆盖游戏文件。</p></div>
-    <div v-else-if="!servers.length" class="connection-panel connection-empty">
+    <ContentSkeleton v-if="loading && !servers.length" class="connection-panel" label="正在整理服务器列表…"/>
+    <div v-else-if="!servers.length && !loadError" class="connection-panel connection-empty">
       <span class="connection-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h2m-2 10h2"/></svg></span><h3>下一站，去哪个世界？</h3><p>添加好友的服务器地址，或同步游戏内的收藏。关联实例后即可快速进入。</p><button class="btn btn-gold" @click="openAdd()">添加第一个服务器</button>
     </div>
-    <div v-else-if="!filteredServers.length" class="connection-panel connection-empty"><h3>没有找到匹配的服务器</h3><p>试试其他名称、地址或关键词。</p><button class="btn btn-ghost" @click="store.searchKeyword = ''">清除搜索</button></div>
-    <div v-else class="server-workspace">
+    <div v-else-if="!filteredServers.length && !loadError" class="connection-panel connection-empty"><h3>没有找到匹配的服务器</h3><p>试试其他名称、地址或关键词。</p><button class="btn btn-ghost" @click="store.searchKeyword = ''">清除搜索</button></div>
+    <div v-else-if="servers.length" class="server-workspace" :inert="loading || !!loadError">
       <section class="server-list" aria-label="服务器列表">
         <ServerListItem v-for="s in filteredServers" :key="s.id" :server="s" :ping="pingOf(s)" :pending="pings[s.id] === 'loading'" :active="activeServer?.id === s.id" :select-mode="selectMode" :checked="selected.has(s.id)" @favorite="toggleFavorite(s)" @select="activeId = s.id" @toggle="toggleSelect(s.id)" @connect="onCardDblClick(s)" />
         <p class="connection-muted server-list-hint">选择查看详情 · 双击快速连接</p>

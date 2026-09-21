@@ -16,12 +16,12 @@ const emit = defineEmits<{
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="modal-mask" @pointerdown.self="emit('cancel')">
+    <div v-if="open" class="modal-mask" @pointerdown.self="!busy && emit('cancel')">
       <div class="modal">
         <h3 class="modal-title">{{ title }}</h3>
         <p class="confirm-text">{{ message }}</p>
         <div class="modal-actions">
-          <button class="btn btn-ghost" @click="emit('cancel')">取消</button>
+          <button class="btn btn-ghost" :disabled="busy" @click="emit('cancel')">取消</button>
           <button class="btn btn-danger" :disabled="busy" @click="emit('confirm')">
             {{ busy ? '处理中…' : (confirmText ?? '确认删除') }}
           </button>

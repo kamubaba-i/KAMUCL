@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ContentSkeleton from '../components/ContentSkeleton.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { communityDownload, communityFiles, communitySearch, errText, getManifest, getModTargets } from '../api'
 import { store, toast, selectedInstance, selectInstance } from '../store'
@@ -197,7 +198,6 @@ async function doSearch(reset: boolean, page = currentPage.value) {
     offset.value = 0
     currentPage.value = 1
     totalResults.value = 0
-    results.value = []
     searchWarnings.value = []
   }
   const paged = usesPagination.value
@@ -264,7 +264,7 @@ onMounted(() => {
     if (el) moreObserver?.observe(el)
   }, { immediate: true })
 })
-onUnmounted(() => moreObserver?.disconnect())
+onUnmounted(() => { moreObserver?.disconnect(); searchGeneration++; fileGeneration++; if (topSearchTimer) clearTimeout(topSearchTimer) })
 function useCurrentInstance() {
   query.mcVersion = currentInstance.value?.mcVersion === '未知' ? '' : currentInstance.value?.mcVersion ?? ''
   query.loader = currentInstance.value?.loader ?? ''
@@ -540,14 +540,12 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
 
     <!-- 结果列表 -->
     <div ref="listCard" class="card list-card">
+      <div v-if="results.length && (loading || loadError)" class="status-strip" role="status">{{ loading ? '正在更新条件，暂时显示上次结果…' : '更新失败，以下为上次结果：' + loadError }}<button v-if="loadError" class="btn btn-ghost btn-sm" @click="doSearch(true)">重试</button></div>
       <p v-for="warning in searchWarnings" :key="warning" class="search-warning">{{ warning }}</p>
       <!-- 加载中 -->
-      <div v-if="loading" class="empty">
-        <span class="spin"></span>
-        <span>正在搜索社区资源…</span>
-      </div>
+<ContentSkeleton v-if="loading && !results.length" label="正在搜索社区资源…" :rows="6" retry @retry="doSearch(true)"/>
       <!-- 错误态 -->
-      <div v-else-if="loadError" class="empty">
+      <div v-else-if="loadError && !results.length" class="empty">
         <span>搜索失败：{{ loadError }}</span>
         <button class="btn btn-ghost btn-sm" @click="usesPagination ? doSearch(false) : onSearch()">重试</button>
       </div>
@@ -563,7 +561,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
       </div>
       <!-- 列表 -->
       <template v-else>
-        <div class="result-list">
+        <div class="result-list" :inert="loading || !!loadError" :aria-busy="loading">
           <div v-for="r in results" :key="itemKey(r)" class="result-card">
             <div class="result-top">
               <div class="result-icon">
@@ -619,7 +617,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
           </div>
         </div>
         <!-- 无限滚动哨兵：进入视口自动加载更多（按钮保留作兜底） -->
-        <div v-if="!usesPagination && hasMore" ref="moreSentinel" class="more-sentinel"></div>
+        <div v-if="!usesPagination && hasMore && !loading && !loadError" ref="moreSentinel" class="more-sentinel"></div>
         <!-- 加载更多 -->
         <div v-if="!usesPagination && hasMore" class="more-row">
           <button class="btn btn-ghost" :disabled="loadingMore" @click="onLoadMore">
@@ -628,7 +626,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
           </button>
         </div>
       </template>
-      <nav v-if="usesPagination && searched" class="pagination" aria-label="资源分页">
+      <nav v-if="usesPagination && searched && totalPages > 1" class="pagination" aria-label="资源分页">
         <span class="muted">共 {{ totalResults }} 项 · 第 {{ currentPage }} / {{ totalPages }} 页</span>
         <button class="btn btn-ghost btn-sm" :disabled="loading || currentPage <= 1" @click="goToPage(currentPage - 1)">上一页</button>
         <button v-for="page in visiblePages" :key="page" class="btn btn-sm" :class="page === currentPage ? 'btn-gold' : 'btn-ghost'" :aria-current="page === currentPage ? 'page' : undefined" :disabled="loading" @click="goToPage(page)">{{ page }}</button>

@@ -51,6 +51,7 @@ function defaults(): Settings {
     mirror: 'bmclapi',
     ...DEFAULT_DOWNLOAD_LIMITS,
     defaultIsolation: true,
+    reduceMotion: false,
     msClientId: DEFAULT_MS_CLIENT_ID,
     theme: 'transparent',
     custom: structuredClone(DEFAULT_CUSTOM_THEME),

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 
+import { useMotion } from '../motion'
+const { decorativeActive } = useMotion()
+watch(decorativeActive, reset)
 const props = defineProps<{ disabled?: boolean }>()
 const sentence = '尝试打造一个方便UP主高频使用的启动器'
 const host = ref<HTMLElement>()
@@ -18,7 +21,7 @@ function reset() {
   for (const glyph of glyphs) glyph.style.transform = ''
 }
 function move(event: PointerEvent) {
-  if (props.disabled || reduced?.matches || event.pointerType === 'touch') return
+  if (props.disabled || !decorativeActive.value || reduced?.matches || event.pointerType === 'touch') return
   pointer = { x: event.clientX, y: event.clientY }
   if (frame) return
   frame = requestAnimationFrame(() => {

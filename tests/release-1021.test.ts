@@ -41,7 +41,7 @@ test('community download modal: file list redesigned as breathing card rows (指
 
 test('friend connect: sub-page transition on method switch (指令2)', () => {
   const fc = read('src/renderer/src/views/FriendConnectView.vue')
-  assert.match(fc, /<Transition name="method-slide" mode="out-in" :duration="280">/)
+  assert.match(fc, /<Transition name="method-slide"\s+:duration="180">/)
   assert.match(fc, /\.method-slide-enter-from \{ opacity: 0; transform: translateX\(22px\)/)
   assert.match(fc, /prefers-reduced-motion/)
 })

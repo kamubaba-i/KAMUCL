@@ -32,21 +32,41 @@ import { autoMemoryMB } from '@shared/memory'
 import type { LocalUpdateCheck, PluginInfo, ReleaseInfo, Settings, ThemeName, UpdateStateInfo } from '@shared/types'
 import { QQ_GROUP_NUMBER } from '@shared/branding'
 import HomeLayoutEditor from '../components/HomeLayoutEditor.vue'
+import { settingsCatalog, settingsCategories, searchSettings, type SettingsCategory } from '@shared/settingsCatalog'
 import { updateSettings } from '../settingsUpdates'
 
 const page = ref<HTMLElement | null>(null)
 /** 精确输入框自动聚焦 */
 const vFocus = { mounted: (el: HTMLElement) => el.focus() }
-async function revealSection() {
+const settingsQuery = ref('')
+const searchMatches = computed(() => searchSettings(settingsQuery.value))
+const savedCategory = sessionStorage.getItem('kamucl.settings.category')
+const category = ref<SettingsCategory>(settingsCategories.find(c => c.id === savedCategory)?.id ?? 'appearance')
+const positions = new Map<string, number>()
+let navigation = 0
+function scroller() { return page.value?.closest<HTMLElement>('.content') }
+async function selectCategory(id: SettingsCategory) {
+  const ticket = ++navigation
+  const scroll = scroller(); positions.set(category.value, scroll?.scrollTop ?? 0)
+  category.value = id; settingsQuery.value = ''; sessionStorage.setItem('kamucl.settings.category', id)
   await nextTick()
-  if (!store.settingsSection) return
-  const target = page.value?.querySelector<HTMLElement>(`[data-section="${store.settingsSection}"]`)
+  if (ticket === navigation && scroll) scroll.scrollTop = positions.get(id) ?? 0
+}
+async function jumpSetting(id: string) {
+  const item = settingsCatalog.find(item => item.id === id)
+  if (!item) return
+  await selectCategory(item.category)
+  const target = page.value?.querySelector<HTMLElement>('[data-section="' + id + '"]')
   if (!target) return
-  // 目标分区是折叠卡片时先展开再滚动，保证滚动定位有效
   if (target.tagName === 'DETAILS') (target as HTMLDetailsElement).open = true
-  target.scrollIntoView({ block: 'start', behavior: 'instant' })
-  target.focus({ preventScroll: true })
-  store.settingsSection = ''
+  target.querySelectorAll<HTMLDetailsElement>('details').forEach(details => { details.open = true })
+  target.setAttribute('tabindex', '-1')
+  target.scrollIntoView({ block: 'start', behavior: 'instant' }); target.focus({ preventScroll: true })
+}
+async function revealSection() {
+  if (!store.settings || !store.settingsSection) return
+  const id = store.settingsSection; store.settingsSection = ''
+  await jumpSetting(id)
 }
 onMounted(revealSection)
 watch([() => store.settingsSection, () => !!store.settings], revealSection, { flush: 'post' })
@@ -82,7 +102,7 @@ async function onCheckUpdate() {
       store.updatePrompt = { release: r.release, rollback: false }
     } else if (r.ok) {
       updateCheckState.value = 'latest'
-      toast('当前版本已是最新！', 'success')
+      // Result remains visible beside the check button; no duplicate success toast.
     } else {
       // 仅真实失败（断网/更新源不可达）才走这里，已记日志
       updateCheckState.value = 'failed'
@@ -239,9 +259,8 @@ const themeOptions = computed(() => {
   ]
 })
 
-function chooseTheme(theme: ThemeName, label: string) {
+function chooseTheme(theme: ThemeName, _label: string) {
   void save({ theme })
-  toast(`已切换到「${label}」主题`, 'success')
 }
 
 function themePreviewBackground(theme: ThemeName, fallback: string): string {
@@ -567,12 +586,18 @@ async function onRemovePlugin(p: PluginInfo) {
 </script>
 
 <template>
-  <div ref="page" class="page">
+  <div ref="page" class="page settings-page">
     <div class="page-head">
       <h1 class="page-title">设置</h1>
-      <p class="page-sub">游戏目录、内存、Java 与启动行为</p>
+      <p class="page-sub">按分类查找，或搜索设置名称与关键词</p>
     </div>
 
+<div class="settings-navigation">
+      <label class="settings-search"><span>查找设置</span><input v-model="settingsQuery" class="input" type="search" placeholder="搜索：内存、Java、动画、下载…" aria-label="搜索设置" @keydown.esc="settingsQuery = ''" /></label>
+      <nav class="settings-categories" aria-label="设置分类"><button v-for="item in settingsCategories" :key="item.id" class="btn btn-ghost" :aria-current="category === item.id ? 'page' : undefined" @click="selectCategory(item.id)">{{ item.label }}</button></nav>
+      <div v-if="settingsQuery.trim()" class="settings-search-results" role="region" aria-label="设置搜索结果"><p v-if="!searchMatches.length" class="muted">没有找到相关设置，试试“主题”“内存”或“下载”。</p><button v-for="item in searchMatches" :key="item.id" class="btn btn-ghost" @click="jumpSetting(item.id)"><strong>{{ item.name }}</strong><span class="muted">{{ settingsCategories.find(c => c.id === item.category)?.label }} →</span></button></div>
+    </div>
+    <div v-if="store.settings && category === 'appearance'" class="card group group-inline setting-target" data-section="motion" tabindex="-1"><div><h3 class="group-title">减少动态效果</h3><p class="muted">停止装饰动画与自动轮播，缩短过渡。系统开启减少动态效果时也会自动生效。</p></div><label class="switch"><input type="checkbox" aria-label="减少动态效果" :checked="store.settings.reduceMotion === true" @change="save({ reduceMotion: ($event.target as HTMLInputElement).checked })"/><span class="switch-ui"/></label></div>
     <div v-if="!store.settings" class="card empty">
       <span class="spin"></span>
       <span>正在加载设置…</span>
@@ -580,7 +605,7 @@ async function onRemovePlugin(p: PluginInfo) {
 
     <template v-else>
       <!-- 外观主题（PCL 式折叠卡片：标题行 + 箭头，展开内容统一内边距） -->
-      <details class="card group collapse" open>
+      <details v-show="category === 'appearance'" data-section="theme" class="card group collapse" open>
         <summary class="collapse-head">
           <h3 class="group-title">主题</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -656,7 +681,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- 功能管理 -->
-      <details class="card group collapse" open>
+      <details v-show="category === 'features'" data-section="features" class="card group collapse" open>
         <summary class="collapse-head">
           <h3 class="group-title">功能管理</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -680,10 +705,10 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- 个性化背景与启动卡图片；首页结构固定为图一布局。 -->
-      <HomeLayoutEditor />
+      <div data-section="background" v-show="category === 'appearance'"><HomeLayoutEditor /></div>
 
       <!-- 下载 + 下载目标文件夹：同一行横向排布，窄窗口自动换行 -->
-      <div class="settings-grid">
+      <div v-show="category === 'downloads'" class="settings-grid">
         <!-- 游戏文件夹统一在版本页管理，设置页只显示当前状态，避免双入口冲突。 -->
         <details class="card group collapse setting-target" data-section="downloads" tabindex="-1" open>
           <summary class="collapse-head">
@@ -698,7 +723,7 @@ async function onRemovePlugin(p: PluginInfo) {
               <input class="input" type="number" min="0" max="1048576" :value="store.settings.downloadSpeedKBps" @change="save({ downloadSpeedKBps: Number(($event.target as HTMLInputElement).value) })" />
             </label>
             <p class="muted group-hint">0 表示不限速。限制对全部下载任务合计生效；减少线程数后，已有连接完成时释放名额。</p>
-            <label class="download-setting download-setting-col">
+            <details class="advanced-setting"><summary>高级 · CurseForge API Key</summary><label class="download-setting download-setting-col">
               <span>CurseForge API Key<small class="muted">（选填，官方 api.curseforge.com 通道）</small></span>
               <input
                 class="input mono"
@@ -708,7 +733,7 @@ async function onRemovePlugin(p: PluginInfo) {
                 @change="save({ curseforgeApiKey: ($event.target as HTMLInputElement).value.trim() })"
               />
             </label>
-            <p class="muted group-hint">CurseForge 官方 API 需要免费注册申请：<a class="upd-link" href="https://console.curseforge.com/" target="_blank" rel="noreferrer">console.curseforge.com</a>（注册 → 创建应用 → 复制 API Key 粘贴到上方）。填入后社区资源的 CurseForge 搜索与下载走官方通道，不受镜像波动影响。</p>
+            <p class="muted group-hint">CurseForge 官方 API 需要免费注册申请：<a class="upd-link" href="https://console.curseforge.com/" target="_blank" rel="noreferrer">console.curseforge.com</a>（注册 → 创建应用 → 复制 API Key 粘贴到上方）。填入后社区资源的 CurseForge 搜索与下载走官方通道，不受镜像波动影响。</p></details>
           </div>
         </details>
         <div class="card group">
@@ -726,7 +751,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </div>
 
       <!-- 默认版本隔离 -->
-      <div class="card group group-inline">
+      <div v-show="category === 'game'" data-section="isolation" class="card group group-inline">
         <div>
           <h3 class="group-title">新版本默认开启版本隔离（推荐）</h3>
           <p class="muted group-hint">
@@ -744,7 +769,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </div>
 
       <!-- 内存 -->
-      <details class="card group collapse setting-target" data-section="memory" tabindex="-1" open>
+      <details v-show="category === 'game'" class="card group collapse setting-target" data-section="memory" tabindex="-1" open>
         <summary class="collapse-head">
           <h3 class="group-title">内存分配</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -808,7 +833,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- Java -->
-      <details class="card group collapse setting-target" data-section="java" tabindex="-1" open>
+      <details v-show="category === 'game'" class="card group collapse setting-target" data-section="java" tabindex="-1" open>
         <summary class="collapse-head">
           <h3 class="group-title">Java 运行时</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -907,8 +932,8 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- 分辨率 + JVM 参数：同一行横向排布 -->
-      <div class="settings-grid">
-        <div class="card group">
+      <div v-show="category === 'game'" class="settings-grid">
+        <div class="card group" data-section="resolution">
           <h3 class="group-title">游戏窗口分辨率</h3>
           <div class="resolution-row">
             <div class="res-field">
@@ -951,8 +976,7 @@ async function onRemovePlugin(p: PluginInfo) {
           </p>
         </div>
 
-        <div class="card group">
-          <h3 class="group-title">JVM 参数</h3>
+        <details class="card group" data-section="jvm"><summary class="group-title">高级 · JVM 参数</summary>
           <input
             v-model="store.settings.jvmArgs"
             class="input mono"
@@ -960,11 +984,11 @@ async function onRemovePlugin(p: PluginInfo) {
             @change="save({ jvmArgs: store.settings!.jvmArgs })"
           />
           <p class="muted group-hint">高级选项，留空则使用默认参数</p>
-        </div>
+        </details>
       </div>
 
       <!-- 下载镜像（微软登录 Client ID 按隐私要求不在界面展示，登录固定使用内置默认应用） -->
-      <div class="settings-grid">
+      <div v-show="category === 'downloads'" data-section="mirror" class="settings-grid">
         <div class="card group">
           <h3 class="group-title">下载镜像</h3>
           <div class="mirror-options">
@@ -981,7 +1005,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </div>
 
       <!-- 正版代理 + 启动后关闭：同一行横向排布 -->
-      <div class="settings-grid">
+      <div v-show="category === 'game'" data-section="launch" class="settings-grid">
         <div class="card group group-inline">
           <div>
             <h3 class="group-title">正版登录使用系统代理</h3>
@@ -1014,7 +1038,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </div>
 
       <!-- 关于与更新 -->
-      <details class="card group collapse" open data-section="update">
+      <details v-show="category === 'about'" class="card group collapse" open data-section="update">
         <summary class="collapse-head">
           <h3 class="group-title">关于与更新</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -1083,7 +1107,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- 插件系统 -->
-      <details class="card group collapse" open>
+      <details v-show="category === 'features'" data-section="plugins" class="card group collapse" open>
         <summary class="collapse-head">
           <h3 class="group-title">插件</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -1191,6 +1215,19 @@ async function onRemovePlugin(p: PluginInfo) {
 </template>
 
 <style scoped>
+.settings-navigation { position:sticky; top:0; z-index:15; padding:12px; margin-bottom:16px; border:1px solid var(--border); border-radius:var(--radius-lg); background:var(--surface-solid); }
+.settings-search { display:flex; align-items:center; gap:12px; }
+.settings-search > span { white-space:nowrap; font-weight:600; }
+.settings-search input { flex:1; min-width:0; }
+.settings-categories { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.settings-categories [aria-current] { background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+.settings-search-results { display:grid; max-height:40vh; overflow:auto; gap:8px; padding-top:12px; }
+.settings-search-results button { justify-content:space-between; white-space:normal; text-align:left; }
+.settings-page [data-section] { scroll-margin-top:150px; }
+.settings-page [data-section]:focus { outline:2px solid var(--accent); outline-offset:3px; }
+.settings-page .group { margin-bottom:16px; }
+@media(max-width:800px) { .settings-navigation { position:relative; } .settings-search { align-items:stretch; flex-direction:column; } .settings-page [data-section] { scroll-margin-top:16px; } }
+
 /* 关于与更新 */
 .upd-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; flex-wrap: wrap; }
 .upd-label { width: 84px; flex-shrink: 0; font-size: var(--text-sm); color: var(--text-dim); }

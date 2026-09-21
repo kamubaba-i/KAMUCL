@@ -3,11 +3,14 @@
 // KAMUCL preview lifecycle and interaction; geometry is skinview3d v3.4.2 (MIT).
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { AmbientLight, DirectionalLight, NearestFilter, PerspectiveCamera, Scene, SRGBColorSpace, Texture, WebGLRenderer } from 'three'
+import { useMotion } from '../motion'
 import { PreviewPlayer } from '../skinModel'
 import { loadImage, migrateLegacySkin, detectSkinVariant } from '../skin-render'
 import { beginBootTask } from '../bootTasks'
 import { createFallbackSkin } from '../fallbackSkin'
 const props = withDefaults(defineProps<{ src?: string; cape?: string; variant?: 'classic' | 'slim'; animation?: 'walk' | 'idle'; paused?: boolean }>(), { src:'', cape:'', variant:'classic', animation:'walk', paused:false })
+const { decorativeActive } = useMotion()
+watch(decorativeActive, wake)
 const container = ref<HTMLDivElement | null>(null), supported = ref(true), dragging = ref(false)
 let gl: WebGLRenderer | undefined, world: Scene, camera: PerspectiveCamera, player: PreviewPlayer
 let resize: ResizeObserver | undefined, frame = 0, closed = false, skinRequest = 0, capeRequest = 0
@@ -60,13 +63,13 @@ function render(now:number): void {
   if (closed || !gl) return
   const dt = clamp((now-previous)/1000,0,.05), k = 1-Math.exp(-14*dt)
   previous = now
-  if (!props.paused && !document.hidden) { seconds += dt; blend += ((props.animation === 'walk' ? 1 : 0)-blend)*Math.min(1,dt*6) }
+  if (!props.paused && decorativeActive.value) { seconds += dt; blend += ((props.animation === 'walk' ? 1 : 0)-blend)*Math.min(1,dt*6) }
   yaw += (targetYaw-yaw)*k; pitch += (targetPitch-pitch)*k; zoom += (targetZoom-zoom)*k
   player.pose(seconds,blend,yaw)
   const d=distance/zoom
   camera.position.set(0,16+Math.sin(pitch)*d,Math.cos(pitch)*d); camera.lookAt(0,16,0)
   gl.render(world,camera)
-  if (!props.paused || dragging.value || Math.abs(targetYaw-yaw)+Math.abs(targetPitch-pitch)+Math.abs(targetZoom-zoom)>.0001) frame=requestAnimationFrame(render)
+  if ((!props.paused && decorativeActive.value) || dragging.value || Math.abs(targetYaw-yaw)+Math.abs(targetPitch-pitch)+Math.abs(targetZoom-zoom)>.0001) frame=requestAnimationFrame(render)
 }
 function down(event:PointerEvent):void {
   if (event.pointerType==='mouse' && event.button!==0) return

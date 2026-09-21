@@ -18,7 +18,9 @@ test('fix-1: update check failure never misreports as latest; failed state has G
   assert.match(fn, /else if \(r\.ok\)/)
   assert.match(fn, /store\.updatePrompt = \{ release: r\.release, rollback: false \}/)
   assert.doesNotMatch(fn, /toast\(`发现新版本/)
-  assert.match(fn, /当前版本已是最新！/)
+  assert.match(fn, /else if \(r\.ok\) \{\s*updateCheckState\.value = 'latest'/)
+  assert.doesNotMatch(fn, /toast\('当前版本已是最新/)
+  assert.match(sv, /class="upd-latest">已是最新/)
 })
 
 test('fix-2: choosing a missing folder auto-removes its binding instead of error-loop (修复2)', () => {

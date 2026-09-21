@@ -205,6 +205,7 @@ function isModified(p: BridgeParam): boolean {
       <button v-if="status?.connected && params.length" class="btn btn-ghost btn-sm" @click="resetAll">全部恢复默认</button>
     </div>
 
+    <div v-if="!status?.connected" class="card bridge-next"><h3 class="group-title">下一步</h3><p class="muted">{{ !currentVersion ? '先选择一个已安装模组加载器的游戏实例。' : !bridgePresent ? '为当前实例安装桥接 MOD，然后启动游戏；此页面会自动检测连接。' : !gameRunning ? '启动当前实例，进入游戏后即可在这里调整支持的 MOD 参数。' : '等待游戏完成加载；若仍未连接，可刷新状态或检查游戏日志。' }}</p><button class="btn btn-ghost" @click="store.currentView = currentVersion ? 'home' : 'game'">{{ currentVersion ? '前往首页' : '选择游戏实例' }}</button></div>
     <!-- 参数区 -->
     <template v-if="status?.connected">
       <div v-if="params.length" class="bridge-toolbar">

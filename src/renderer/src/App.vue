@@ -195,8 +195,11 @@ const inResourceGroup = computed(() =>
 
 // Route timings also respect the OS preference when Vue uses explicit timeout fallback.
 const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
-const reducedMotion = ref(motionQuery.matches)
-const onMotionChange = () => { reducedMotion.value = motionQuery.matches }
+const systemMotion = ref(motionQuery.matches)
+const reducedMotion = computed(() => systemMotion.value || store.settings?.reduceMotion === true)
+watch(reducedMotion, value => { document.documentElement.dataset.motion = value ? 'reduced' : 'full' }, { immediate: true })
+document.addEventListener('visibilitychange', () => { document.documentElement.dataset.visibility = document.hidden ? 'hidden' : 'visible' })
+const onMotionChange = () => { systemMotion.value = motionQuery.matches }
 const routeDuration = computed(() => reducedMotion.value ? 0 : { enter: 180, leave: 80 })
 const { navEl, bubbleStyle, selectionStyle, retarget: retargetNav, reset: resetNav, focusOut: navFocusOut, measure: measureNav } = useNavigationBubble(
   computed(() => store.currentView),
@@ -960,8 +963,8 @@ function applyCustomVars(custom: CustomTheme, theme: ThemeName) {
   const accent = colors.accent
   const dark = hexLuminance(colors.bg) < 0.46
   const transparent = theme === 'transparent'
-  const cardOpacity = dark ? 44 : 62
-  const raisedOpacity = dark ? 36 : 52
+  const cardOpacity = dark ? 88 : 94
+  const raisedOpacity = dark ? 82 : 91
   const sideOpacity = dark ? 26 : 38
   const accent2 = `color-mix(in srgb, ${accent} ${dark ? 72 : 84}%, ${dark ? 'white' : 'black'})`
   const accentDeep = `color-mix(in srgb, ${accent} 78%, black)`
@@ -1496,7 +1499,7 @@ onUnmounted(() => {
 
       <!-- 内容区（:duration 显式给出过渡时长：窗口被遮挡/最小化时 transitionend 不会触发，setTimeout 兜底防切换卡死） -->
       <main data-ui="App:4f03b68b3168" class="content">
-        <Transition name="fade" mode="out-in" :duration="routeDuration">
+        <Transition name="fade" :duration="routeDuration">
           <div data-ui="App:ece4739a5266" :key="store.currentView" class="route-view">
             <component :is="currentComponent" />
           </div>

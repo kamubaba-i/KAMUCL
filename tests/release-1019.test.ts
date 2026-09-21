@@ -47,7 +47,7 @@ test('home redesign: presence + rhythm (指令2)', () => {
   // 皮肤卡加高（角色更具存在感）
   assert.match(home, /\.skin-panel \{ min-height: 400px/)
   // 创作者卡主题色描边
-  assert.match(home, /\.home-creator \{ margin-top: auto; border-color: color-mix/)
+  assert.match(home, /\.home-creator \{ margin-top: 0; border-color: color-mix/)
 })
 
 test('1.0.19 changed SFCs compile', () => {

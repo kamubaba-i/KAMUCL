@@ -259,17 +259,22 @@ export function dismissTask(taskId: string) {
 // ---------------- toast ----------------
 let toastSeq = 0
 
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
+export function dismissToast(id: number) {
+  clearTimeout(toastTimers.get(id)); toastTimers.delete(id)
+  const i = store.toasts.findIndex(t => t.id === id); if (i >= 0) store.toasts.splice(i, 1)
+}
 export function toast(text: string, type: ToastType = 'info') {
+  // Repeated identical feedback refreshes one notification; unrelated completions stay in history.
+  const previous = store.toasts.find(t => t.text === text && t.type === type)
+  if (previous) { clearTimeout(toastTimers.get(previous.id)); toastTimers.set(previous.id, setTimeout(() => dismissToast(previous.id), type === 'error' ? 8000 : 3000)); return }
   const id = ++toastSeq
   store.toasts.push({ id, text, type })
-  // 同步记录到通知中心（新→旧，上限 30 条，标记未读）
+  while (store.toasts.length > 3) dismissToast(store.toasts[0].id)
   store.notices.unshift({ id, text, type, time: Date.now() })
   if (store.notices.length > 30) store.notices.length = 30
   store.noticesUnread = true
-  setTimeout(() => {
-    const i = store.toasts.findIndex((t) => t.id === id)
-    if (i >= 0) store.toasts.splice(i, 1)
-  }, 3000)
+  toastTimers.set(id, setTimeout(() => dismissToast(id), type === 'error' ? 8000 : 3000))
 }
 
 /** 打开通知中心时调用：清除未读标记 */
@@ -313,7 +318,7 @@ export async function toggleFavorite(id: string, folder?: string) {
   const next = { ...store.settings?.favoriteInstanceOverrides, [favoriteKey(id, folder)]: !isFavorite(id, folder) }
   try {
     store.settings = await saveSettings({ favoriteInstanceOverrides: next })
-    toast(isFavorite(id, folder) ? '已收藏' : '已取消收藏', 'success')
+    // The star and ordering provide immediate local feedback.
   } catch (e) { toast('收藏失败：' + errText(e), 'error') }
 }
 

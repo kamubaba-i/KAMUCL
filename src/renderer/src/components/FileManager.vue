@@ -6,6 +6,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { getModIcons, importResources, applyModUpdates, checkModUpdates, copyText, errText, listFs, openDir, removeFs, toggleDisableFs } from '../api'
 import { activeInstalled, selectedInstance, refreshInstalled, store, toast } from '../store'
+import ContentSkeleton from './ContentSkeleton.vue'
 import ModMigrationModal from './ModMigrationModal.vue'
 import ModVersionModal from './ModVersionModal.vue'
 import type { ManagedMod, ModOperationResult } from '@shared/modManagement'
@@ -57,17 +58,20 @@ const effectiveRel = computed(() => {
 })
 
 /** 目录不存在时视为空列表（隔离版本刚开启、尚未产生该子目录） */
+let loadedContext = ''
 let loadGeneration = 0
 let updateOperation = 0
 async function load() {
   const generation = ++loadGeneration
   const v = currentVersion.value
-  entries.value = []; loadError.value = ''; page.value = 1
+  const context = JSON.stringify([effectiveRel.value, v?.folder || activeFolder.value])
+  if (context !== loadedContext) { entries.value = []; selection.value = new Set(); page.value = 1 }
+  loadedContext = context; loadError.value = ''
   if (!v) { loading.value = false; return }
   loading.value = true
   try {
     const result = await listFs(effectiveRel.value, v.folder || activeFolder.value)
-    if (generation === loadGeneration) { entries.value = result; void loadCatalog(generation) }
+    if (generation === loadGeneration) { entries.value = result; page.value = Math.min(page.value, pageCount.value); selection.value = new Set([...selection.value].filter(name => result.some(e => e.name === name))); void loadCatalog(generation) }
   } catch (e) { if (generation === loadGeneration) loadError.value = errText(e) }
   finally { if (generation === loadGeneration) loading.value = false }
 }
@@ -133,7 +137,7 @@ const filtered = computed(() => {
 async function loadCatalog(generation:number){if(props.rel!=='mods')return;const v=currentVersion.value;if(!v)return;try{const list=await window.kamucl.invoke('mods:catalog',v.id,v.folder||activeFolder.value) as ManagedMod[];if(generation===loadGeneration){catalog.value=Object.fromEntries(list.map(m=>[m.fileName,m]));catalogError.value=''}}catch(e){if(generation===loadGeneration){catalog.value={};catalogError.value=errText(e)}}}
 function selectMod(name:string,checked:boolean){const s=new Set(selection.value);checked?s.add(name):s.delete(name);selection.value=s}
 function selectAll(all=false){const s=new Set(selection.value);for(const e of (all?filtered.value:visibleEntries.value).filter(isModEntry))s.add(e.name);selection.value=s}
-async function batch(action:'enable'|'disable'|'lock'|'unlock',names=[...selection.value]){const v=currentVersion.value;if(!v||batchBusy.value)return;const generation=loadGeneration;batchBusy.value=true;try{const results=await window.kamucl.invoke(action==='lock'||action==='unlock'?'mods:setLocked':'mods:setEnabled',v.id,v.folder||activeFolder.value,names,action==='lock'||action==='enable') as ModOperationResult[];const failed=results.filter(r=>!r.ok);toast('已处理 '+(results.length-failed.length)+' 项'+(failed.length?'；'+failed.length+' 项失败：'+failed[0].error:''),failed.length?'error':'success');if(generation===loadGeneration){batchResults.value=results;const remaining=new Set(selection.value);for(const r of results)r.ok?remaining.delete(r.fileName):remaining.add(r.fileName);selection.value=remaining;await load()}}catch(e){toast(errText(e),'error')}finally{batchBusy.value=false}}
+async function batch(action:'enable'|'disable'|'lock'|'unlock',names=[...selection.value]){const v=currentVersion.value;if(!v||batchBusy.value||loading.value||loadError.value)return;const generation=loadGeneration;batchBusy.value=true;try{const results=await window.kamucl.invoke(action==='lock'||action==='unlock'?'mods:setLocked':'mods:setEnabled',v.id,v.folder||activeFolder.value,names,action==='lock'||action==='enable') as ModOperationResult[];const failed=results.filter(r=>!r.ok);toast('已处理 '+(results.length-failed.length)+' 项'+(failed.length?'；'+failed.length+' 项失败：'+failed[0].error:''),failed.length?'error':'success');if(generation===loadGeneration){batchResults.value=results;const remaining=new Set(selection.value);for(const r of results)r.ok?remaining.delete(r.fileName):remaining.add(r.fileName);selection.value=remaining;await load()}}catch(e){toast(errText(e),'error')}finally{batchBusy.value=false}}
 watch([effectiveRel,activeFolder],()=>{selection.value=new Set();batchResults.value=[];catalog.value={};catalogError.value='';localSearch.value='';modFilter.value='all';switchFile.value=''})
 watch([localSearch,modFilter,sortBy],()=>page.value=1)
 
@@ -369,7 +373,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
           </svg>
           清理重复
         </button>
-        <button class="btn btn-gold" :disabled="opening || !currentVersion" @click="onOpenDir">
+        <button class="btn btn-ghost" :disabled="opening || !currentVersion" @click="onOpenDir">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
           </svg>
@@ -442,12 +446,10 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
     <p v-if="catalogError" class="muted" role="alert">模组识别或锁定记录读取失败：{{catalogError}}。可刷新重试，写入操作仍会由后端校验。</p>
     <details v-if="batchResults.length" class="fm-results card" :open="batchResults.some(r=>!r.ok)"><summary>上次批量操作：{{batchResults.filter(r=>r.ok).length}} 项成功 · {{batchResults.filter(r=>!r.ok).length}} 项失败</summary><div class="fm-result-list"><p v-for="r in batchResults" :key="r.fileName" :class="{failed:!r.ok}"><strong>{{r.fileName}}</strong><span>{{r.ok?'已完成':r.error}}</span></p></div></details>
     <!-- 文件列表 -->
-    <div v-if="currentVersion" class="card fm-card">
-      <div v-if="loading" class="empty">
-        <span class="spin"></span>
-        <span>正在读取文件列表…</span>
-      </div>
-      <div v-else-if="loadError" class="empty">
+    <div v-if="currentVersion" class="card fm-card" :aria-busy="loading">
+      <div v-if="entries.length && (loading || loadError)" class="status-strip" role="status">{{ loading ? '正在刷新，暂时保留上次的文件列表…' : '刷新失败：' + loadError }}<button v-if="loadError" class="btn btn-ghost btn-sm" @click="load">重试</button></div>
+      <ContentSkeleton v-if="loading && !entries.length" label="正在读取文件列表…" retry @retry="load"/>
+      <div v-else-if="loadError && !entries.length" class="empty">
         <span>读取失败：{{ loadError }}</span>
         <button class="btn btn-ghost btn-sm" @click="load">重试</button>
       </div>
@@ -459,7 +461,7 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
       <div v-else-if="!filtered.length" class="empty">
         <span>当前搜索或筛选条件没有匹配的文件</span>
       </div>
-      <div v-else class="fm-list">
+      <div v-else class="fm-list" :inert="loading || !!loadError">
         <div v-for="e in visibleEntries" :key="e.name" class="fm-row" :class="{ 'fm-row-disabled': isDisabledMod(e) }">
           <input v-if="isModEntry(e)" type="checkbox" :aria-label="'选择 '+e.name" :checked="selection.has(e.name)" :disabled="batchBusy" @change="selectMod(e.name,($event.target as HTMLInputElement).checked)"/>
           <span class="fm-file-icon" :draggable="!store.editMode && !batchBusy && !loading" @dragstart="dragResource($event, e)">
@@ -472,18 +474,18 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
               <path d="M14 2v6h6" />
             </svg>
           </span>
-          <span class="fm-name" :title="e.name + ' · 按住拖到桌面或文件夹'" :draggable="!store.editMode && !batchBusy && !loading" @dragstart="dragResource($event, e)">{{ e.name }}<small v-if="catalog[e.name]?.name && catalog[e.name].name!==e.name" class="fm-internal">{{catalog[e.name].name}}</small></span>
+          <span class="fm-name" tabindex="0" :title="e.name + ' · 按住拖到桌面或文件夹'" :draggable="!store.editMode && !batchBusy && !loading" @dragstart="dragResource($event, e)">{{ e.name }}<small v-if="catalog[e.name]?.name && catalog[e.name].name!==e.name" class="fm-internal">{{catalog[e.name].name}}</small></span>
           <span v-if="isDisabledMod(e)" class="tag fm-disabled-tag">已禁用</span>
           <span class="muted fm-meta">{{ e.isDir ? '文件夹' : fmtSize(e.size) }}</span>
           <span class="muted fm-meta fm-date">{{ fmtDate(e.mtime) }}</span>
-          <button v-if="isModEntry(e)" class="btn btn-ghost btn-sm" :disabled="batchBusy" :aria-label="(catalog[e.name]?.locked?'解除锁定 ':'锁定版本 ')+e.name" :title="catalog[e.name]?.locked?'已锁定：不参与自动更新':'锁定此模组版本'" @click="batch(catalog[e.name]?.locked?'unlock':'lock',[e.name])">{{catalog[e.name]?.locked?'已锁定':'锁定'}}</button><button v-if="isModEntry(e)" class="btn btn-ghost btn-sm" :disabled="batchBusy" :aria-label="'切换版本 '+e.name" @click="switchFile=e.name">版本</button>
+          <span v-if="catalog[e.name]?.locked" class="tag">已锁定</span>
           <label v-if="isModEntry(e)" class="switch fm-toggle" :title="isDisabledMod(e)?'启用模组':'禁用模组'"><input type="checkbox" role="switch" :aria-label="(isDisabledMod(e)?'启用 ':'禁用 ')+e.name" :checked="!isDisabledMod(e)" :disabled="!!toggling||batchBusy" @change="onToggleDisable(e, $event)"/><span class="switch-ui"></span></label>
-          <button class="btn btn-danger btn-sm fm-remove" @click="onRemove(e)">删除</button>
+          <details class="file-more" @keydown.esc="($event.currentTarget as HTMLDetailsElement).open=false"><summary class="btn btn-ghost btn-sm" :aria-label="'更多操作 '+e.name">⋯</summary><div class="file-more-actions" @click="($event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')">          <button v-if="isModEntry(e)" class="btn btn-ghost btn-sm" :disabled="batchBusy" :aria-label="(catalog[e.name]?.locked?'解除锁定 ':'锁定版本 ')+e.name" :title="catalog[e.name]?.locked?'已锁定：不参与自动更新':'锁定此模组版本'" @click="batch(catalog[e.name]?.locked?'unlock':'lock',[e.name])">{{catalog[e.name]?.locked?'已锁定':'锁定'}}</button><button v-if="isModEntry(e)" class="btn btn-ghost btn-sm" :disabled="batchBusy" :aria-label="'切换版本 '+e.name" @click="switchFile=e.name">版本</button>          <button class="btn btn-danger btn-sm fm-remove" :disabled="batchBusy" @click="onRemove(e)">删除</button></div></details>
         </div>
       </div>
     </div>
 
-    <nav v-if="currentVersion && filtered.length" class="fm-pagination" aria-label="资源列表分页">
+    <nav v-if="currentVersion && pageCount > 1" class="fm-pagination" aria-label="资源列表分页">
       <span class="muted">共 {{ filtered.length }} 项 · 每页 {{ PAGE_SIZE }} 项</span>
       <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="page--">上一页</button>
       <span>{{ page }} / {{ pageCount }}</span>
@@ -515,6 +517,15 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 </template>
 
 <style scoped>
+.file-more { position:relative; }
+.file-more summary { list-style:none; font-size:18px; min-width:36px; }
+.file-more[open] { z-index:5; }
+.file-more-actions { position:absolute; right:0; top:100%; display:grid; gap:8px; padding:10px; min-width:150px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface-solid); box-shadow:var(--shadow); }
+.file-more-actions .fm-remove { border-top:1px solid var(--border); margin-top:4px; }
+.fm-list { overflow:visible; }
+.fm-batch { position:sticky; top:0; z-index:6; }
+.fm-name { overflow-wrap:break-word; word-break:normal; }
+
 .fm-results{padding:12px 16px!important;margin-bottom:16px}.fm-results summary{cursor:pointer;font-size:12px}.fm-result-list{max-height:180px;overflow:auto;overscroll-behavior:contain}.fm-result-list p{display:flex;gap:12px;justify-content:space-between;font-size:12px;min-height:28px;align-items:center}.fm-result-list p.failed{color:var(--danger)}.fm-result-list strong{overflow-wrap:anywhere}.fm-controls{display:grid;grid-template-columns:minmax(180px,1fr) 160px 140px auto;gap:10px;margin-bottom:16px}.fm-batch{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 16px!important;margin-bottom:16px}.fm-internal{display:block;color:var(--text-dim);font-size:11px;margin-top:4px}.fm-row input[type=checkbox]{accent-color:var(--accent);flex-shrink:0}@media(max-width:1000px){.fm-controls{grid-template-columns:1fr 1fr}.fm-row{flex-wrap:wrap}.fm-name{min-width:180px!important}}
 
 .upd-name {display:flex;flex-direction:column;min-width:0;gap:3px}.upd-name strong{font-weight:600;overflow:hidden;text-overflow:ellipsis}.upd-name small{font-size:12px}.fm-toggle{flex-shrink:0}
@@ -599,12 +610,13 @@ function toggleUpdateSelect(fileName: string, checked: boolean) {
 }
 .fm-file-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: 6px; }
 .fm-name {
+  white-space:normal;
   flex: 1;
   min-width: 0;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
   user-select: text;
 }
 .fm-meta {

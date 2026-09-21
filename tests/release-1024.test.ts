@@ -28,7 +28,8 @@ test('fix-3: manual update check retries once + explicit 3-state feedback (手�
   const sv = read('src/renderer/src/views/SettingsView.vue')
   assert.match(sv, /store\.updatePrompt = \{ release: r\.release, rollback: false \}/)
   assert.doesNotMatch(sv, /toast\(`发现新版本/)
-  assert.match(sv, /当前版本已是最新！/)
+  assert.match(sv, /updateCheckState\.value = 'latest'/)
+  assert.match(sv, /class="upd-latest">已是最新/)
   assert.match(sv, /检查失败：断网或更新源不可达（已记日志）/)
 })
 

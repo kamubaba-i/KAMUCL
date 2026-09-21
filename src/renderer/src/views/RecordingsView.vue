@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { RecordingCatalog, RecordingEntry, RecordingRequest, RecordingResult } from '@shared/recordings'
 import { errText } from '../api'
 import { store, toast } from '../store'
+import ContentSkeleton from '../components/ContentSkeleton.vue'
 import SelectMenu from '../components/SelectMenu.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 const data = ref<RecordingCatalog>({ entries: [], warnings: [], library: '', instances: [] })
@@ -71,21 +72,22 @@ onUnmounted(() => { disposed = true; generation++; clearInterval(refreshTimer); 
       <div v-if="selected.length" class="actions operation-row"><button class="btn btn-gold" :disabled="busy" @click="execute('collect')">收集到当前文件夹收藏</button><button class="btn btn-ghost" :disabled="busy" @click="execute('export')">提取到文件夹…</button><SelectMenu v-model="target" :disabled="busy" :options="targets" placeholder="选择目标实例" /><button class="btn btn-ghost" :disabled="busy || target === ''" @click="confirm = 'dispatch'">复制到实例</button><button class="btn btn-danger" :disabled="busy" @click="confirm = 'trash'">移入回收站</button></div>
       <p class="muted">复制时校验完整性，同名文件自动添加序号。播放与渲染请在对应模组内完成；跨版本复制前请确认游戏和模组兼容性。</p>
     </div>
-    <div v-if="loading" class="card muted">正在读取录像目录…</div>
-    <div v-else-if="!rows.length" class="card empty">暂无匹配的录像。可导入 .mcpr 或 Flashback .zip，或先在游戏中完成录制并保存。</div>
-    <div v-else class="card recording-list" data-ui="recordings:list">
+    <div v-if="loading && data.entries.length" class="status-strip" role="status">正在更新录像列表…</div>
+    <ContentSkeleton v-if="loading && !data.entries.length" class="card" label="正在读取录像目录…"/>
+    <div v-else-if="!rows.length && !error" class="card empty"><span>{{ data.entries.length ? '没有匹配的录像，请调整搜索或筛选。' : '暂无录像。可导入 .mcpr 或 Flashback .zip，或在游戏中完成录制并保存。' }}</span><button v-if="data.entries.length" class="btn btn-ghost" @click="query='';kind='all';source='all';folderFilter=''">清除筛选</button><button v-else class="btn btn-ghost" @click="execute('import')">导入录像…</button></div>
+    <div v-else-if="rows.length" :inert="loading || !!error" class="card recording-list" data-ui="recordings:list">
       <article v-for="entry in rows" :key="entry.id" class="recording-row">
         <input v-model="selected" type="checkbox" :value="entry.id" :aria-label="`选择 ${entry.name}`" :disabled="busy" />
         <div class="recording-info" :draggable="!busy && !loading && !store.editMode" title="按住拖出录像文件" @dragstart="drag($event, entry)"><strong>{{ entry.name }}</strong><div class="muted">{{ entry.kind === 'replaymod' ? 'ReplayMod' : 'Flashback' }} · {{ entry.source }} · {{ size(entry.size) }} · {{ new Date(entry.modified).toLocaleString() }}</div><div class="muted path" :title="entry.directory">{{ entry.directory }}</div></div>
         <button class="btn btn-ghost btn-sm" @click="open(entry)">定位文件</button>
       </article>
     </div>
-    <div class="actions pagination"><button class="btn btn-ghost" :disabled="page <= 1" @click="page--">上一页</button><span>{{ page }} / {{ pages }} · {{ filtered.length }} 个录像</span><button class="btn btn-ghost" :disabled="page >= pages" @click="page++">下一页</button></div>
+    <div v-if="pages > 1" class="actions pagination"><button class="btn btn-ghost" :disabled="page <= 1" @click="page--">上一页</button><span>{{ page }} / {{ pages }} · {{ filtered.length }} 个录像</span><button class="btn btn-ghost" :disabled="page >= pages" @click="page++">下一页</button></div>
     <details v-if="results.length" open class="card recording-results"><summary>上次操作结果</summary><p v-for="result in results" :key="result.id" :class="{ failed: !result.ok }">{{ result.name }}：{{ result.ok ? '已完成' : result.error }}<span v-if="result.path" class="muted path"> → {{ result.path }}</span></p></details>
     <ConfirmModal :open="!!confirm" :title="confirm === 'trash' ? '移入系统回收站' : '复制录像到实例'" :message="confirm === 'trash' ? `将所选 ${selected.length} 个原位置的录像移入系统回收站，可从系统回收站恢复。` : `将 ${selected.length} 个录像复制到所选实例的对应模组目录，保留源文件。请确认目标游戏版本、加载器与录像模组兼容；操作期间目标游戏需关闭。`" :confirm-text="confirm === 'trash' ? '移入回收站' : '确认复制'" @cancel="confirm = ''" @confirm="execute(confirm as 'trash' | 'dispatch')" />
   </section>
 </template>
 
 <style scoped>
-.recordings-page{max-width:1440px;margin:0 auto;display:grid;gap:20px;min-width:0}.page-head h1{margin:0 0 8px}.card{padding:22px}.recording-library{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}.recording-library h3{margin:0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.recording-filters{display:grid;grid-template-columns:minmax(200px,1fr) minmax(180px,1fr) 150px 150px;gap:12px}.recording-controls{display:grid;gap:16px}.recording-controls p{margin:0}.operation-row :deep(.select-menu-btn){max-width:360px}.recording-list{max-height:65vh;overflow:auto;overscroll-behavior:contain}.recording-row{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}.recording-row:last-child{border:0}.recording-info{flex:1;min-width:0;display:grid;gap:6px}.recording-info[draggable="true"]{cursor:grab}.recording-info strong{overflow-wrap:anywhere}.path{overflow-wrap:anywhere;font-size:12px}.recording-info .path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pagination{justify-content:center}.empty{text-align:center;padding:40px}.failed{color:var(--danger,#e76b75)}.recording-results{max-height:300px;overflow:auto}.recording-results p{overflow-wrap:anywhere}@media(max-width:800px){.recording-filters{grid-template-columns:1fr 1fr}.recording-filters input{grid-column:1/-1}.recording-row{gap:10px}.card{padding:16px}}
+.recordings-page{max-width:1440px;margin:0 auto;display:grid;gap:20px;min-width:0}.page-head h1{margin:0 0 8px}.card{padding:22px}.recording-library{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}.recording-library h3{margin:0}.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.recording-filters{display:grid;grid-template-columns:minmax(200px,1fr) minmax(180px,1fr) 150px 150px;gap:12px}.recording-controls{display:grid;gap:16px}.recording-controls p{margin:0}.operation-row :deep(.select-menu-btn){max-width:360px}.recording-list{overflow:visible}.recording-row{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}.recording-row:last-child{border:0}.recording-info{flex:1;min-width:0;display:grid;gap:6px}.recording-info[draggable="true"]{cursor:grab}.recording-info strong{overflow-wrap:anywhere}.path{overflow-wrap:anywhere;font-size:12px}.recording-info .path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pagination{justify-content:center}.empty{text-align:center;padding:40px}.failed{color:var(--danger,#e76b75)}.recording-results{max-height:300px;overflow:auto}.recording-results p{overflow-wrap:anywhere}@media(max-width:800px){.recording-filters{grid-template-columns:1fr 1fr}.recording-filters input{grid-column:1/-1}.recording-row{gap:10px}.card{padding:16px}}
 </style>

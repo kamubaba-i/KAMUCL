@@ -80,7 +80,7 @@ function pick(key: ConnectPage) {
 
       <!-- 各方式独立页面（切换过渡：右滑渐入，与全局面切换同节奏） -->
       <template v-else>
-        <Transition name="method-slide" mode="out-in" :duration="280">
+        <Transition name="method-slide"  :duration="180">
           <div :key="page" class="method-page">
             <header class="connection-header method-header">
               <div class="header-copy">
@@ -116,7 +116,7 @@ function pick(key: ConnectPage) {
 }
 
 /* 方式子页面切换过渡：右滑+淡入（mode out-in） */
-.method-slide-enter-active, .method-slide-leave-active { transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 0.9, 0.32, 1); }
+.method-slide-enter-active, .method-slide-leave-active { transition: opacity var(--motion-normal) ease; }
 .method-slide-enter-from { opacity: 0; transform: translateX(22px); }
 .method-slide-leave-to { opacity: 0; transform: translateX(-14px); }
 @media (prefers-reduced-motion: reduce) {
@@ -132,20 +132,20 @@ function pick(key: ConnectPage) {
   display: flex; align-items: flex-start; gap: var(--space-5);
   padding: var(--card-pad); text-align: left; width: 100%;
   border-radius: var(--radius-lg); border: 1px solid var(--border-strong);
-  background: color-mix(in srgb, var(--card) 82%, transparent);
+  background: var(--surface-content);
   backdrop-filter: blur(24px) saturate(130%); -webkit-backdrop-filter: blur(24px) saturate(130%);
   color: var(--text); cursor: pointer;
   transition: transform .18s ease, border-color .18s ease, box-shadow .22s ease;
   /* 入场：自下而上渐入 + 按序错落 */
-  animation: pick-card-in 0.42s cubic-bezier(0.22, 0.9, 0.32, 1) backwards;
+  animation: pick-card-in var(--motion-enter) var(--ease-out) backwards;
 }
 .pick-card:nth-child(1) { animation-delay: 0ms; }
 .pick-card:nth-child(2) { animation-delay: 60ms; }
 .pick-card:nth-child(3) { animation-delay: 120ms; }
 .pick-card:nth-child(4) { animation-delay: 180ms; }
 @keyframes pick-card-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-.pick-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong)); box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 15%, transparent); }
-.pick-card:active { transform: translateY(-1px) scale(0.995); }
+.pick-card:hover { transform: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong)); box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 15%, transparent); }
+.pick-card:active { transform: none; }
 .pick-card:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
 .pick-card.primary { border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong)); }
 .pick-icon {

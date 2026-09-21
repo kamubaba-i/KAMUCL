@@ -48,7 +48,7 @@ test('community: infinite scroll sentinel auto-loads more (问题5)', () => {
   assert.match(cv, /IntersectionObserver/)
   assert.match(cv, /moreSentinel/)
   assert.match(cv, /onLoadMore\(\)/)
-  assert.match(cv, /onUnmounted\(\(\) => moreObserver/)
+  assert.match(cv, /onUnmounted\(\(\) => \{ moreObserver/)
 })
 
 test('spacing: keys page and MOD panel use design tokens with breathing room (问题6)', () => {

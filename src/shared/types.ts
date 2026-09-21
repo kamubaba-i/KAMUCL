@@ -359,6 +359,8 @@ export function normalizeThemeName(value: unknown): ThemeName {
 }
 
 export interface Settings {
+  /** Explicit reduction is additive to the operating system preference; absent means follow system. */
+  reduceMotion?: boolean
   visualDesign?: import('./visualDesign').VisualDesign
   gameDir: string
   /** 游戏文件夹登记列表（每个文件夹独立 versions/；libraries/assets/runtimes 共享于默认文件夹） */

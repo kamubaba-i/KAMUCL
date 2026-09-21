@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatReleaseTime } from '@shared/releaseTime'
 import { openInstanceCenter } from '../instanceCenter'
+import ContentSkeleton from '../components/ContentSkeleton.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
   addFolder,
@@ -1057,10 +1058,7 @@ async function confirmIsolation() {
     </div>
     <!-- 版本列表 -->
     <div v-if="tab === 'download'" class="card list-card">
-      <div v-if="loading && !manifest.length" class="empty">
-        <span class="spin"></span>
-        <span>正在获取版本列表…</span>
-      </div>
+      <ContentSkeleton v-if="loading && !manifest.length" label="正在获取版本列表…"/>
       <div v-else-if="loadError && !manifest.length" class="empty">
         <span>加载失败：{{ loadError }}</span>
         <button class="btn btn-ghost btn-sm" @click="load(true)">重试</button>
@@ -1089,8 +1087,7 @@ async function confirmIsolation() {
             </div>
             <span v-if="isInstalled(v)" class="tag tag-success">已安装</span>
             <button
-              class="btn btn-sm"
-              :class="isInstalled(v) ? 'btn-ghost' : 'btn-gold'"
+              class="btn btn-sm btn-ghost"
               :disabled="store.installing.has(v.id)"
               @click="openInstall(v)"
             >
