@@ -6,6 +6,15 @@ export interface ComponentDesign {
 export interface PageDesign { width: number; height: number; components: Record<string, ComponentDesign> }
 export interface VisualDesign { version: 1; pages: Record<string, PageDesign> }
 export const emptyDesign = (): VisualDesign => ({ version: 1, pages: {} })
+/** Preserve uniquely identified controls when a layout adds or removes a wrapper.
+ * Ambiguous repeated controls never inherit a different control's customization. */
+export function resolveComponentDesign(components: Record<string, ComponentDesign> | undefined, key: string): ComponentDesign | undefined {
+  if (!components) return
+  if (components[key]) return components[key]
+  const leaf = key.slice(key.lastIndexOf('/') + 1)
+  const matches = Object.keys(components).filter(old => old.slice(old.lastIndexOf('/') + 1) === leaf)
+  return matches.length === 1 ? components[matches[0]] : undefined
+}
 const limits: Record<string, [number, number]> = { x: [-10000,10000], y: [-10000,10000], width: [8,10000], height: [8,10000], opacity: [0,1], radius: [0,300], blur: [0,80], fontSize: [6,200], fontWeight: [100,900], order: [-10000,10000], layer: [0,99], gap:[0,200], padding:[0,200] }
 export function cleanDesign(input: unknown): VisualDesign {
   const out = emptyDesign(), value = input as any

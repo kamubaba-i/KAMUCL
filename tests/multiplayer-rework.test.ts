@@ -24,11 +24,11 @@ test('联机文案纠错：多页全部文件不得出现「一点即连/一键�
   }
   const view = read('src/renderer/src/views/FriendConnectView.vue')
   // 方式选择页卡片：准确介绍 + 适用场景标签
-  for (const text of ['注册樱花穿透（natfrp.com）并创建隧道', '公网隧道 · 最稳', '可由玩家主动选择 TURN 中继', '6 位房间码 · 免公网 IP', '连接成功后，按页面指引在游戏内输入地址', '独立开源联机项目', 'burningtnt/Terracotta', '独立开源 · 开箱即用']) {
+  for (const text of ['注册樱花穿透（natfrp.com）并创建隧道', '公网隧道', '可由玩家主动选择 TURN 中继', '6 位房间码 · 免公网 IP', '连接成功后，按页面指引在游戏内输入地址', '独立开源联机项目', 'burningtnt/Terracotta', '独立开源 · 开箱即用']) {
     assert.ok(view.includes(text), `方式选择页缺少：${text}`)
   }
   // 横向卡片各配一句适用场景（含还原的玩家直连）
-  for (const scene of ['适合追求稳定', '适合所有普通玩家的连接方式', '适合不想配置任何参数']) {
+  for (const scene of ['适合愿意配置隧道的玩家', '适合所有普通玩家的连接方式', '适合使用官方工具和房间码联机的玩家']) {
     assert.ok(view.includes(scene), `方式选择页缺少场景标签：${scene}`)
   }
   // 方式选择页恰好三张卡片（玩家直连属冗余已移除，1.0.25）
@@ -55,9 +55,9 @@ test('FRP 页重排：独立隧道卡片、启停与恢复提示、参考折叠�
     assert.ok(panel.includes(text), `FrpPanel 缺少：${text}`)
   }
   // 节点参考与运行日志默认折叠（details 不带 open 属性）
-  assert.match(panel, /<details class="reference-details"(?:\s[^>]*)?>/ )
-  assert.match(panel, /<details class="frp-card-logs">/)
-  assert.ok(!panel.includes(' open'), '折叠区默认不得展开（不应出现 open 属性）')
+  assert.match(panel, /<details\b[^>]*class="reference-details"[^>]*>/ )
+  assert.match(panel, /<details\b[^>]*class="frp-card-logs"[^>]*>/)
+  assert.ok(!/<details[^>]*class="(?:reference-details|frp-card-logs)"[^>]*\sopen(?:\s|>)/.test(panel), '参考及日志默认折叠')
   // 节点列表：宽松行（自适应高度 + 内边距），行间距 ≥ --space-2，不再固定小行高
   const scoped = panel.slice(panel.indexOf('<style'))
   assert.match(scoped, /\.node-item \{[^}]*align-items: flex-start/)
@@ -108,8 +108,8 @@ test('陶瓦房间码：实现与文案统一为 U/ + 四段（U/XXXX-XXXX-XXXX-
   assert.ok(!re.test('U/AB12-CD34-EF56'))
   assert.ok(!re.test('U/AB12-CD34-EF56-GH78-9'))
   // 分区结构：状态区 → 主操作区 → 参考折叠 → 日志窄区
-  const statusAt = panel.indexOf('title="连接状态"')
-  const opsAt = panel.indexOf('title="开始联机"')
+  const statusAt = panel.indexOf('title="当前连接"')
+  const opsAt = panel.indexOf('class="tc-operations"')
   const refAt = panel.indexOf('reference-details')
   const logAt = panel.indexOf('log-details')
   assert.ok(statusAt > -1 && opsAt > statusAt && refAt > opsAt && logAt > refAt, '陶瓦页应按 状态→主操作→参考→日志 顺序向下分区')
@@ -138,7 +138,7 @@ test('VoxLink 集成补全：后备 IPC、阶段事件、已连接判定、消�
   const template = panel.slice(panel.indexOf('<template>'))
   assert.ok(template.indexOf('<VoxLinkRelatedLinks') < template.indexOf('v-if="inFlow"'))
   assert.ok(template.includes('v-if="connected && !isHost"'))
-  assert.ok(template.includes('v-else title="开始联机"'))
+  assert.match(template, /<ConnectionPanel\b[^>]*v-else[^>]*title="游戏与房间"/)
   assert.ok(template.includes('aria-label="连接进度"'))
   assert.ok(template.includes('class="address-hero"'))
   assert.ok(template.includes('logGroups'))

@@ -373,7 +373,9 @@ export function registerTerracottaIpc(ipcMain: IpcMain): void {
   ipcMain.handle('tc:status', async () => ({
     ...state,
     binaryReady: !!ASSETS[assetKey()] && await verifySha256(binaryPath(), ASSETS[assetKey()].sha256).catch(() => false),
-    running: !!proc
+    running: !!proc,
+    toolVersion: TC_VERSION,
+    binaryPath: binaryPath()
   }))
 }
 

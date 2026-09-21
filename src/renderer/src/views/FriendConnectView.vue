@@ -16,9 +16,9 @@ const methodCards: Array<{ key: Exclude<ConnectPage, 'choose'>; name: string; ta
   {
     key: 'frp',
     name: 'FRP 内网穿透',
-    tag: '公网隧道 · 最稳',
-    scene: '适合追求稳定、任何网络环境都要能开局',
-    desc: '注册樱花穿透（natfrp.com）并创建隧道，用官方 frpc 把本地世界映射到公网。任何网络环境都能稳定开局，填入访问密钥，选择或创建隧道即可运行。',
+    tag: '公网隧道',
+    scene: '适合愿意配置隧道的玩家',
+    desc: '注册樱花穿透（natfrp.com）并创建隧道，用官方 frpc 把本地世界映射到公网。填写访问密钥后选择或创建隧道；可用性取决于节点、账号权限和网络。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9m5 11V5m5 15v-8m5 8V8"/></svg>'
   },
   {
@@ -33,8 +33,8 @@ const methodCards: Array<{ key: Exclude<ConnectPage, 'choose'>; name: string; ta
     key: 'terracotta',
     name: '陶瓦联机',
     tag: '独立开源 · 开箱即用',
-    scene: '适合不想配置任何参数、极端 NAT 环境',
-    desc: '独立开源联机项目（GitHub burningtnt/Terracotta，基于 EasyTier，AGPL-3.0）：手动下载官方工具并校验，创建/加入房间开箱即用，极端 NAT 下成功率较高。',
+    scene: '适合使用官方工具和房间码联机的玩家',
+    desc: '独立开源联机项目（GitHub burningtnt/Terracotta，基于 EasyTier，AGPL-3.0）：手动下载官方工具并校验，创建/加入房间开箱即用，连接效果取决于双方网络。',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg>'
   }
 ]
@@ -46,34 +46,34 @@ function pick(key: ConnectPage) {
 </script>
 
 <template>
-  <div class="page friend-connect-page" :data-design-page="page">
-    <div class="connect-page">
+  <div data-ui="FriendConnectView:69eba3f628bf" class="page friend-connect-page" :data-design-page="page">
+    <div data-ui="FriendConnectView:67caa1fbb509" class="connect-page">
       <!-- 方式选择页（landing） -->
       <template v-if="page === 'choose'">
-        <header class="connection-header pick-head">
-          <div>
-            <span class="connection-eyebrow">PLAY TOGETHER</span>
+        <header data-ui="FriendConnectView:dc6bf3ba90d8" class="connection-header pick-head">
+          <div data-ui="FriendConnectView:2d3d09104fce">
+
             <h1>选择联机方式</h1>
-            <p>三种方式各配一处场景：追求稳定选 FRP，房间码方便选 VoxLink，开箱即用选陶瓦。</p>
+            <p>选择适合自己的方式，按指引与好友一起游玩。</p>
           </div>
         </header>
 
-        <div class="pick-list" role="list" aria-label="联机方式列表">
-          <button
+        <div data-ui="FriendConnectView:d9ae847bc410" class="pick-list" role="list" aria-label="联机方式列表">
+          <button data-ui="FriendConnectView:52b385769542"
             v-for="card in methodCards"
             :key="card.key"
             class="pick-card"
-            :class="{ primary: card.key === 'frp' }"
+
             role="listitem"
             @click="pick(card.key)"
           >
-            <span class="pick-icon" aria-hidden="true" v-html="card.icon"></span>
-            <span class="pick-copy">
-              <span class="pick-name">{{ card.name }}<em>{{ card.tag }}</em></span>
-              <span class="pick-desc">{{ card.desc }}</span>
-              <span class="pick-scene">{{ card.scene }}</span>
+            <span data-ui="FriendConnectView:31825c41753f" class="pick-icon" aria-hidden="true" v-html="card.icon"></span>
+            <span data-ui="FriendConnectView:515ae59ff746" class="pick-copy">
+              <span data-ui="FriendConnectView:5f129609c578" class="pick-name">{{ card.name }}<em data-ui="FriendConnectView:b5849fc40d88">{{ card.tag }}</em></span>
+              <span data-ui="FriendConnectView:848773450d5a" class="pick-desc">{{ card.desc }}</span>
+              <span data-ui="FriendConnectView:cbb6f3a39040" class="pick-scene">{{ card.scene }}</span>
             </span>
-            <span class="pick-go" aria-hidden="true">→</span>
+            <span data-ui="FriendConnectView:3ff11405f5c7" class="pick-go" aria-hidden="true">→</span>
           </button>
         </div>
       </template>
@@ -81,16 +81,15 @@ function pick(key: ConnectPage) {
       <!-- 各方式独立页面（切换过渡：右滑渐入，与全局面切换同节奏） -->
       <template v-else>
         <Transition name="method-slide"  :duration="180">
-          <div :key="page" class="method-page">
-            <header class="connection-header method-header">
-              <div class="header-copy">
-                <span class="connection-eyebrow">PLAY TOGETHER</span>
+          <div data-ui="FriendConnectView:23040345b003" :key="page" class="method-page">
+            <header data-ui="FriendConnectView:d294772458fe" class="connection-header method-header">
+              <div data-ui="FriendConnectView:0eeacbd88403" class="header-copy">
+
                 <h1>{{ currentCard?.name ?? '联机' }}</h1>
                 <p>{{ currentCard?.desc ?? '' }}</p>
               </div>
-              <div class="header-side">
-                <ConnectionStatus tone="neutral" :label="page === 'frp' ? 'FRP 隧道' : page === 'voxlink' ? 'VoxLink 房间' : '陶瓦房间'" />
-                <button class="btn btn-ghost" @click="page = 'choose'">← 更换方式</button>
+              <div data-ui="FriendConnectView:f84d848f6a7f" class="header-side">
+                <button data-ui="FriendConnectView:8c7ad785d0c7" class="btn btn-ghost" @click="page = 'choose'">← 更换方式</button>
               </div>
             </header>
 
@@ -163,4 +162,5 @@ function pick(key: ConnectPage) {
 /* 箭头悬浮滑入 */
 .pick-go { align-self: center; flex: none; color: var(--text-dim); font-size: var(--text-lg); opacity: 0.4; transform: translateX(-4px); transition: opacity .18s ease, transform .22s cubic-bezier(0.22, 0.9, 0.32, 1.2), color .18s ease; }
 .pick-card:hover .pick-go { color: var(--accent-2); opacity: 1; transform: translateX(0); }
+.friend-connect-page{max-width:1200px;container-type:inline-size}.pick-list{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.pick-card{padding:20px;animation:none;box-shadow:none}.pick-card:hover{box-shadow:none}.pick-desc{font-size:14px;line-height:1.65}.pick-name{font-size:18px}.pick-card:hover .pick-icon{transform:none}.method-header{margin-bottom:16px}.method-header p{font-size:13px;line-height:1.6;max-width:800px}.method-header h1{margin:0 0 6px}.pick-head{padding:0}.pick-head h1{font-size:24px}.method-slide-enter-from,.method-slide-leave-to{transform:none}@container(min-width:960px){.pick-list{grid-template-columns:repeat(3,minmax(0,1fr))}.pick-card{flex-direction:column;gap:14px}.pick-go{align-self:flex-end}.pick-copy{gap:12px}.pick-name{display:grid;gap:8px}.pick-name em{justify-self:start}}
 </style>

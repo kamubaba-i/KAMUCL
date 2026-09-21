@@ -68,3 +68,11 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
   .content .cfg-sections { grid-template-columns:minmax(0,1fr); }
   .content .cfg-sections button { flex-direction:row; align-items:center; flex-wrap:wrap; }
 }
+
+/* Management surfaces share rhythm; colors always derive from the active theme. */
+:root{--motion-fast:130ms;--motion-normal:190ms}
+.content:has(.settings-page){overflow:hidden}.content:has(.settings-page)>.route-view{height:100%;min-height:0}
+.content :is(button,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.content details>summary{cursor:pointer}.content button:disabled{cursor:not-allowed}
+.content .connection-details{background:transparent;box-shadow:none;padding:12px 0;border-radius:0;border-width:0 0 1px}
+.content .connection-panel{box-shadow:none}.content .connection-panel .connection-panel{background:transparent;box-shadow:none}

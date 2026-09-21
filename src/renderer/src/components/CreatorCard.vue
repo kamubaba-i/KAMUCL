@@ -7,9 +7,9 @@ const { decorativeActive } = useMotion()
 </script>
 <template>
  <section class="creator-card" data-ui="home:creators" @pointerenter="expanded=true">
-  <div class="creator-heading"><button class="creator-toggle" :aria-expanded="expanded" aria-controls="creator-names" @click="expanded=!expanded">参与测试及创作者<small lang="en">TESTERS &amp; CREATORS</small></button><a href="https://space.bilibili.com/9596327" target="_blank" rel="noopener noreferrer" class="icon-btn" aria-label="访问卡慕的哔哩哔哩空间">↗</a></div>
-  <p class="creator-intro">好想做卡慕的狗啊，别的狗至少还图口饭，我不一样，我只希望他发视频的时候能允许我在评论区汪两声。卡慕但凡回我一个“？”我都能截图裱起来当传家宝。</p>
-  <div v-show="expanded" id="creator-names" class="creator-name-layer" :class="{moving:decorativeActive}" data-ui="home:creator-names"><span v-for="(name,i) in names" :key="name" class="creator-bubble" :style="{'--delay':i*40+'ms','--drift':(i%3-1)*3+'px'}"><span>{{name}}</span></span></div>
+  <div data-ui="CreatorCard:3b0bd35ff2cd" class="creator-heading"><button data-ui="CreatorCard:b838c4453411" class="creator-toggle" :aria-expanded="expanded" aria-controls="creator-names" @click="expanded=!expanded">参与测试及创作者<small data-ui="CreatorCard:d9b60520217e" lang="en">TESTERS &amp; CREATORS</small></button><a data-ui="CreatorCard:86b4c178a448" href="https://space.bilibili.com/9596327" target="_blank" rel="noopener noreferrer" class="icon-btn" aria-label="访问卡慕的哔哩哔哩空间">↗</a></div>
+  <details class="creator-message"><summary>创作者的话</summary><p data-ui="CreatorCard:5031cfb3dd7e" class="creator-intro">好想做卡慕的狗啊，别的狗至少还图口饭，我不一样，我只希望他发视频的时候能允许我在评论区汪两声。卡慕但凡回我一个“？”我都能截图裱起来当传家宝。</p></details>
+  <div v-show="expanded" id="creator-names" class="creator-name-layer" :class="{moving:decorativeActive}" data-ui="home:creator-names"><span data-ui="CreatorCard:7cd0fbc9196c" v-for="(name,i) in names" :key="name" class="creator-bubble" :style="{'--delay':i*40+'ms','--drift':(i%3-1)*3+'px'}"><span data-ui="CreatorCard:587246bec0b9">{{name}}</span></span></div>
  </section>
 </template>
 <style scoped>

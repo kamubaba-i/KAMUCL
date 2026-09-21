@@ -1,7 +1,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { store, toast } from './store'
 import type { Settings } from '@shared/types'
-import { emptyDesign, cleanDesign, type ComponentDesign, type VisualDesign } from '@shared/visualDesign'
+import { emptyDesign, cleanDesign, resolveComponentDesign, type ComponentDesign, type VisualDesign } from '@shared/visualDesign'
 type Appearance=Pick<Settings,'theme'|'custom'|'background'|'launchThumbnail'|'homeLayout'|'visualDesign'>
 export interface DesignTarget { key:string; scope:string; label:string; tag:string; depth:number; element:HTMLElement; parentKey?:string; text:boolean; container:boolean; sortable:boolean; decoration:boolean }
 export const designTargets=shallowRef<DesignTarget[]>([])
@@ -12,7 +12,7 @@ export const designDraft=ref<Appearance|null>(null),designStageReady=ref(false),
 export const appearancePreview=computed(()=>store.editMode&&designDraft.value?{...store.settings,...designDraft.value} as Settings:store.settings)
 export const currentDesign=computed(()=>appearancePreview.value?.visualDesign||emptyDesign())
 export const designSelected=computed(()=>designTargets.value.find(t=>t.scope+'|'+t.key===designSelection.value))
-export const selectedDesign=computed(()=>{const t=designSelected.value;return t?currentDesign.value.pages[t.scope]?.components[t.key]||{}:{}})
+export const selectedDesign=computed(()=>{const t=designSelected.value;return t?resolveComponentDesign(currentDesign.value.pages[t.scope]?.components,t.key)||{}:{}})
 const appearance=(s:Settings):Appearance=>JSON.parse(JSON.stringify({theme:s.theme,custom:s.custom,background:s.background,launchThumbnail:s.launchThumbnail,homeLayout:s.homeLayout,visualDesign:cleanDesign(s.visualDesign)}))
 const copy=()=>JSON.parse(JSON.stringify(designDraft.value||appearance(store.settings!))) as Appearance
 let refresh=()=>{},saveTimer:ReturnType<typeof setTimeout>|undefined,saveQueue:Promise<unknown>=Promise.resolve(),baseline=''
@@ -81,7 +81,7 @@ export function installVisualDesign(){
    const labelText=(semantic||el.getAttribute('aria-label')||el.getAttribute('title')||(text?Array.from(el.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent).join(''):el.matches('button')?el.textContent:el.querySelector('h1,h2,h3,h4,strong')?.textContent)||'').trim().replace(/\s+/g,' ').slice(0,34)
    const parentEl=el.parentElement?.closest<HTMLElement>('[data-ui]')
    targets.push({key,scope,label:semantic|| (labelText?kind+' · '+labelText:kind),tag,depth:ancestors.length,element:el,parentKey:parentEl?elementKeys.get(parentEl):undefined,text,container:el.children.length>0&&!['button','label'].includes(tag),sortable:!!el.parentElement&&['flex','inline-flex','grid','inline-grid'].includes(getComputedStyle(el.parentElement).display),decoration})
-   const style=d.pages[scope]?.components[key]
+   const style=resolveComponentDesign(d.pages[scope]?.components,key)
    const o=originals.get(el)
    if(!style){if(o){for(const[k,v]of o.styles){if(v)el.style.setProperty(k,v);else el.style.removeProperty(k)}for(const[n,v]of o.text)if(n.isConnected)n.nodeValue=v;originals.delete(el)}continue}
    seen.add(el)

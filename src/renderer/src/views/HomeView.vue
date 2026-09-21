@@ -475,10 +475,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="home-dashboard">
-    <div class="home-main">
-      <section class="hero-card" data-edit="banner">
-        <img
+  <div data-ui="HomeView:a32c099bc136" class="home-dashboard">
+    <div data-ui="HomeView:5fc354f9fa6d" class="home-main">
+      <section data-ui="HomeView:53555cbc5ab3" class="hero-card" data-edit="banner">
+        <img data-ui="HomeView:1182a4262184"
           v-for="(item, index) in banners"
           :key="item.path"
           :src="item.src"
@@ -489,29 +489,29 @@ onUnmounted(() => {
           aria-hidden="true"
           @error="onBannerError(item)"
         />
-        <div class="hero-shade"></div>
+        <div data-ui="HomeView:5838d59b9e2a" class="hero-shade"></div>
 
-        <div class="hero-content" data-edit="bannerText">
-          <span class="hero-kicker">当前版本</span>
-          <div class="hero-metadata-slot">
+        <div data-ui="HomeView:2e850cf13849" class="hero-content" data-edit="bannerText">
+          <span data-ui="HomeView:13616e708e66" class="hero-kicker">当前版本</span>
+          <div data-ui="HomeView:027bc7e292dc" class="hero-metadata-slot">
             <Transition name="instance-switch" mode="out-in">
-              <div :key="JSON.stringify([currentVersion?.folder, selectedId, heroName, heroVersion, currentVersion?.loader, currentVersion?.loaderVersion])" class="hero-metadata">
-                <h1 :title="heroName" :class="{ 'long-name': heroName.length > 16 }">{{ heroName }}</h1>
-                <div class="hero-edition">
-                  <span v-if="currentVersion" class="hero-game-version" :title="`Minecraft ${heroVersion}`">{{ heroVersion }}</span>
-                  <span v-if="currentVersion" class="loader-badge">{{ loaderText(currentVersion) }}</span>
+              <div data-ui="HomeView:e8ce122328e6" :key="JSON.stringify([currentVersion?.folder, selectedId, heroName, heroVersion, currentVersion?.loader, currentVersion?.loaderVersion])" class="hero-metadata">
+                <h1 data-ui="HomeView:d209b16cd00e" :title="heroName" :class="{ 'long-name': heroName.length > 16 }">{{ heroName }}</h1>
+                <div data-ui="HomeView:273ef3354188" class="hero-edition">
+                  <span data-ui="HomeView:cbc929d650f0" v-if="currentVersion && !heroName.includes(heroVersion)" class="hero-game-version" :title="`Minecraft ${heroVersion}`">{{ heroVersion }}</span>
+                  <span data-ui="HomeView:323afa8d269b" v-if="currentVersion && !heroName.includes(loaderText(currentVersion))" class="loader-badge">{{ loaderText(currentVersion) }}</span>
                 </div>
               </div>
             </Transition>
           </div>
 
-          <div class="hero-actions">
-            <div class="hero-secondary-actions">
-              <button class="hero-settings" :disabled="!currentVersion" @click="openVersionSettings">
+          <div data-ui="HomeView:b9457a1e78a6" class="hero-actions">
+            <div data-ui="HomeView:8079f9c9866a" class="hero-secondary-actions">
+              <button data-ui="HomeView:f170f5154efb" class="hero-settings" :disabled="!currentVersion" @click="openVersionSettings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1.4 1.68V21h-4v-.08A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3 13.6H3v-4h.08A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10.4 3H14a1.7 1.7 0 0 0 1.4 1.6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 21 10.4V14a1.7 1.7 0 0 0-1.6 1Z" /></svg>
                 版本设置
               </button>
-              <button
+              <button data-ui="HomeView:8389ad960143"
                 class="hero-more"
                 :disabled="!currentVersion"
                 title="更多实例操作"
@@ -521,20 +521,20 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <div class="launch-combo" data-edit="accent">
-              <button
+            <div data-ui="HomeView:27feb55000dd" class="launch-combo" data-edit="accent">
+              <button data-ui="HomeView:3fed5eb9ac9e"
                 class="launch-main"
                 :class="{ launching }"
                 :disabled="launching || !currentVersion"
                 @click="onLaunchClick"
               >
-                <span v-if="launching" class="launch-progress" :style="{ width: percent + '%' }"></span>
-                <span class="launch-content">
+                <span data-ui="HomeView:62395e18f043" v-if="launching" class="launch-progress" :style="{ width: percent + '%' }"></span>
+                <span data-ui="HomeView:57cbf5d7ee2f" class="launch-content">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5Z" /></svg>
                   <span>{{ launchText }}</span>
                 </span>
               </button>
-              <button ref="versionMenuButton" class="launch-arrow" title="选择游戏实例" @click="toggleVersionMenu">
+              <button data-ui="HomeView:5ca10c2a5c92" ref="versionMenuButton" class="launch-arrow" title="选择游戏实例" @click="toggleVersionMenu">
                 <svg :class="{ open: versionMenu.open }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
               </button>
             </div>
@@ -542,55 +542,55 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section ref="runtimeStrip" class="runtime-strip" data-edit="card" @mouseleave="runtimeHover = -1">
-        <span class="runtime-blob" :class="{ on: runtimeHover >= 0 }" :style="runtimeBlobStyle" aria-hidden="true"></span>
-        <button class="runtime-item" @mouseenter="runtimeHover = 0" @click="openJavaPicker" title="选择此实例的 Java：自动或手动">
+      <section data-ui="HomeView:a9a31ca336dd" ref="runtimeStrip" class="runtime-strip" data-edit="card" @mouseleave="runtimeHover = -1">
+        <span data-ui="HomeView:43baf1da9a9d" class="runtime-blob" :class="{ on: runtimeHover >= 0 }" :style="runtimeBlobStyle" aria-hidden="true"></span>
+        <button data-ui="HomeView:5d665ee0e06b" class="runtime-item" @mouseenter="runtimeHover = 0" @click="openJavaPicker" title="选择此实例的 Java：自动或手动">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4M7 8h10a4 4 0 0 1 4 4v0a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8v0a4 4 0 0 1 4-4Z" /><path d="M8 13h8M9 17h6" /></svg>
           <span><small>运行环境</small><strong>{{ javaText }}</strong></span>
           <svg class="runtime-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
         </button>
-        <button class="runtime-item" @mouseenter="runtimeHover = 1" @click="openSettings('memory')">
+        <button data-ui="HomeView:ac285743c8c3" class="runtime-item" @mouseenter="runtimeHover = 1" @click="openSettings('memory')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2" /><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4M9 9h6v6H9Z" /></svg>
           <span><small>内存分配</small><strong>{{ memoryText }}</strong></span>
           <svg class="runtime-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
         </button>
-        <button class="runtime-item runtime-state" :class="heroStatus.tone" @mouseenter="runtimeHover = 2" @click="logOpen = true">
+        <button data-ui="HomeView:3e2f60ad69a5" class="runtime-item runtime-state" :class="heroStatus.tone" @mouseenter="runtimeHover = 2" @click="logOpen = true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6" /></svg>
           <span><small>运行状态</small><strong><i></i>{{ heroStatus.text }}</strong></span>
           <svg class="runtime-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
         </button>
       </section>
 
-      <section class="instances-block">
-        <div class="instances-head">
-          <h2>最近游戏</h2>
-          <button class="manage-instances" @click="store.currentView = 'game'">
+      <section data-ui="HomeView:d4eaa1c0d798" class="instances-block">
+        <div data-ui="HomeView:07c360f67ff2" class="instances-head">
+          <h2 data-ui="HomeView:ab67b2084be9">最近游戏</h2>
+          <button data-ui="HomeView:1f3a4e95599d" class="manage-instances" @click="store.currentView = 'game'">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
             管理实例
           </button>
         </div>
 
-        <div v-if="store.installed.length" class="instance-grid">
-          <article
+        <div data-ui="HomeView:204c17c101ec" v-if="store.installed.length" class="instance-grid">
+          <article data-ui="HomeView:22d3ec196f2b"
             v-for="version in recent"
             :key="version.id"
-            class="instance-card"
+            class="instance-card" tabindex="0" @keydown.enter.self="chooseVersion(version.id)" @keydown.space.self.prevent="chooseVersion(version.id)"
             :class="{ selected: version.id === selectedId }"
             data-edit="card"
             @click="chooseVersion(version.id)"
             @contextmenu.prevent="showFolderContextMenu(version.folder, version.id)"
           >
-            <img v-if="versionIconUrl(version)" class="instance-icon image" :src="versionIconUrl(version)" alt="" />
+            <img data-ui="HomeView:ead234e5a835" v-if="versionIconUrl(version)" class="instance-icon image" :src="versionIconUrl(version)" alt="" />
             <svg v-else class="instance-icon" viewBox="0 0 48 48" aria-hidden="true"><polygon points="24,5 43,14.5 24,24 5,14.5" fill="#79c144" /><polygon points="5,14.5 24,24 24,29.5 5,20" fill="#5da236" /><polygon points="24,24 43,14.5 43,20 24,29.5" fill="#4e8a2f" /><polygon points="5,20 24,29.5 24,43 5,33.5" fill="#8b5e34" /><polygon points="24,29.5 43,20 43,33.5 24,43" fill="#6f4a29" /></svg>
-            <div class="instance-copy">
-              <strong :title="versionLabel(version)">{{ versionLabel(version) }}</strong>
-              <span :title="displayVersionSub(version)">{{ displayVersionSub(version) }}</span>
+            <div data-ui="HomeView:0541baba1a35" class="instance-copy">
+              <strong data-ui="HomeView:51623bcd9cd5" :title="versionLabel(version)">{{ versionLabel(version) }}</strong>
+              <span data-ui="HomeView:59cc23bdfbdc" :title="displayVersionSub(version)">{{ displayVersionSub(version) }}</span>
             </div>
-            <button class="instance-more" title="更多" @click.stop="openCardMenu($event, version.id)">
+            <button data-ui="HomeView:b5167161777c" class="instance-more" title="更多" @click.stop="openCardMenu($event, version.id)">
               <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
             </button>
-            <span class="instance-last">上次游玩：{{ fmtLastPlayed(store.lastPlayed[version.id]) }}</span>
-            <button
+            <span data-ui="HomeView:ba095d8dcc15" v-if="store.lastPlayed[version.id]" class="instance-last">上次游玩：{{ fmtLastPlayed(store.lastPlayed[version.id]) }}</span>
+            <button data-ui="HomeView:1a638472fc2a"
               class="instance-play"
               :disabled="launching"
               :title="`启动 ${version.id}`"
@@ -600,57 +600,57 @@ onUnmounted(() => {
             </button>
           </article>
         </div>
-        <button v-else class="empty-instances" @click="store.currentView = 'game'">
+        <button data-ui="HomeView:c485ad83d7d3" v-else class="empty-instances" @click="store.currentView = 'game'">
           尚未安装游戏实例，点击前往版本管理
         </button>
       </section>
     </div>
 
-    <aside class="home-side">
-      <section class="account-panel" data-edit="card">
+    <aside data-ui="HomeView:3ce39fef1300" class="home-side">
+      <section data-ui="HomeView:1a033831e623" class="account-panel" data-edit="card">
         <template v-if="store.selectedAccount">
           <div class="account-head">
             <Avatar :size="54" />
-            <div class="account-copy" data-edit="text">
+            <div data-ui="HomeView:69c3212000eb" class="account-copy" data-edit="text">
               <strong>{{ accountName }}</strong>
               <span><i></i>{{ store.selectedAccount.type === 'offline' ? '离线账号' : '已登录' }}</span>
             </div>
-            <button class="account-more" title="账户管理" @click="store.currentView = 'accounts'">
+            <button data-ui="HomeView:c7c1ffb68ac7" class="account-more" title="账户管理" @click="store.currentView = 'accounts'">
               <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
             </button>
           </div>
           <button class="account-provider" @click="store.currentView = 'accounts'">
-            <span class="provider-mark" :class="store.selectedAccount.type"><svg v-if="store.selectedAccount.type === 'microsoft'" viewBox="0 0 22 22" aria-label="Microsoft"><path fill="#f25022" d="M0 0h10v10H0z"/><path fill="#7fba00" d="M12 0h10v10H12z"/><path fill="#00a4ef" d="M0 12h10v10H0z"/><path fill="#ffb900" d="M12 12h10v10H12z"/></svg><template v-else>{{ store.selectedAccount.type === 'yggdrasil' ? 'Y' : 'O' }}</template></span>
+            <span data-ui="HomeView:8bfe0faab45b" class="provider-mark" :class="store.selectedAccount.type"><svg v-if="store.selectedAccount.type === 'microsoft'" viewBox="0 0 22 22" aria-label="Microsoft"><path fill="#f25022" d="M0 0h10v10H0z"/><path fill="#7fba00" d="M12 0h10v10H12z"/><path fill="#00a4ef" d="M0 12h10v10H0z"/><path fill="#ffb900" d="M12 12h10v10H12z"/></svg><template v-else>{{ store.selectedAccount.type === 'yggdrasil' ? 'Y' : 'O' }}</template></span>
             <span>{{ accountTypeLabel }}</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
           </button>
         </template>
         <template v-else>
           <div class="account-head">
-            <div class="account-placeholder">?</div>
-            <div class="account-copy"><strong>未登录</strong><span class="offline-state">请选择账户</span></div>
+            <div data-ui="HomeView:14b73e10a66b" class="account-placeholder">?</div>
+            <div data-ui="HomeView:b713dda14ce9" class="account-copy"><strong>未登录</strong><span data-ui="HomeView:ab6dcd8df3ac" class="offline-state">请选择账户</span></div>
           </div>
           <button class="account-provider" @click="store.currentView = 'accounts'">
-            <span class="provider-mark offline">+</span><span>添加或选择账户</span>
+            <span data-ui="HomeView:57ae15324d65" class="provider-mark offline">+</span><span>添加或选择账户</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
           </button>
         </template>
       </section>
 
-      <section class="skin-panel" data-edit="card">
-        <div class="skin-head">
+      <section data-ui="HomeView:f56ae81d7b8f" class="skin-panel" data-edit="card">
+        <div data-ui="HomeView:a11abb820a96" class="skin-head">
           <div><h3>皮肤预览</h3><span>{{ currentSkin ? (skinVariant === 'slim' ? '纤细模型' : '经典模型') : '动态角色' }}</span></div>
-          <button class="skin-refresh" :disabled="skinLoading || !store.selectedAccount" title="联网刷新皮肤（默认使用本地缓存）" @click="reloadSkin(true)">
+          <button data-ui="HomeView:d5082937e164" class="skin-refresh" :disabled="skinLoading || !store.selectedAccount" title="联网刷新皮肤（默认使用本地缓存）" @click="reloadSkin(true)">
             <svg :class="{ spinning: skinLoading }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M6.1 9A7 7 0 0 1 18 6l2 1M4 17l2 1a7 7 0 0 0 11.9-3" /></svg>
           </button>
         </div>
-        <div class="skin-stage" @dblclick="store.currentView = store.selectedAccount ? 'skins' : 'accounts'">
+        <div data-ui="HomeView:22e64941359b" class="skin-stage" @dblclick="store.currentView = store.selectedAccount ? 'skins' : 'accounts'">
           <SkinViewer3D :src="skinSrc" :variant="skinVariant" :cape="activeCape" />
-          <div v-if="skinLoading" class="skin-overlay"><span class="spin"></span><span>正在加载皮肤…</span></div>
-          <button v-else-if="!store.selectedAccount" class="skin-overlay action" @click="store.currentView = 'accounts'">登录后加载角色皮肤</button>
-          <button v-else-if="skinError" class="skin-overlay action error" :title="skinError" @click="reloadSkin(true)">皮肤加载失败，点击重试</button>
+          <div data-ui="HomeView:862dfc8e4099" v-if="skinLoading" class="skin-overlay"><span data-ui="HomeView:369e7ffcf786" class="spin"></span><span>正在加载皮肤…</span></div>
+          <button data-ui="HomeView:0309ef6b61da" v-else-if="!store.selectedAccount" class="skin-overlay action" @click="store.currentView = 'accounts'">登录后加载角色皮肤</button>
+          <button data-ui="HomeView:70bc857e7889" v-else-if="skinError" class="skin-overlay action error" :title="skinError" @click="reloadSkin(true)">皮肤加载失败，点击重试</button>
         </div>
-        <button class="skin-tip" @click="store.currentView = store.selectedAccount ? 'skins' : 'accounts'">
+        <button data-ui="HomeView:d3685d94fd0f" class="skin-tip" @click="store.currentView = store.selectedAccount ? 'skins' : 'accounts'">
           拖动可旋转 · 行走动画
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6" /></svg>
         </button>
@@ -659,19 +659,19 @@ onUnmounted(() => {
     </aside>
 
     <Teleport to="body">
-      <div v-if="versionMenu.open" class="menu-overlay" @click="versionMenu.open = false"></div>
-      <div
+      <div data-ui="HomeView:d64e8ccae3be" v-if="versionMenu.open" class="menu-overlay" @click="versionMenu.open = false"></div>
+      <div data-ui="HomeView:d4dfd8dd87c8"
         v-if="versionMenu.open"
         class="float-menu"
         :style="{ top: versionMenu.top + 'px', left: versionMenu.left + 'px', width: versionMenu.width + 'px' }"
       >
-        <button class="menu-item" @click="folderListOpen = !folderListOpen">{{ folderListOpen ? '‹ 返回版本选择' : '文件夹列表 ›' }}</button>
+        <button data-ui="HomeView:9fae1e3ba335" class="menu-item" @click="folderListOpen = !folderListOpen">{{ folderListOpen ? '‹ 返回版本选择' : '文件夹列表 ›' }}</button>
         <template v-if="folderListOpen">
-          <button v-for="folder in store.settings?.folders || []" :key="folder.path" class="menu-item" :class="{ active: folder.path === store.settings?.activeFolder }" :disabled="folderSwitchBusy" :title="folder.path" @click="chooseGameFolder(folder.path)" @contextmenu.prevent="showFolderContextMenu(folder.path)">{{ folder.name }}</button>
-          <button class="menu-item" @click="store.currentView = 'game'">添加 / 管理文件夹</button>
+          <button data-ui="HomeView:4aa05f9d0808" v-for="folder in store.settings?.folders || []" :key="folder.path" class="menu-item" :class="{ active: folder.path === store.settings?.activeFolder }" :disabled="folderSwitchBusy" :title="folder.path" @click="chooseGameFolder(folder.path)" @contextmenu.prevent="showFolderContextMenu(folder.path)">{{ folder.name }}</button>
+          <button data-ui="HomeView:a82260e8c53c" class="menu-item" @click="store.currentView = 'game'">添加 / 管理文件夹</button>
         </template>
         <template v-else>
-        <button
+        <button data-ui="HomeView:dedcb316a30b"
           v-for="version in sortedInstalled"
           :key="version.id"
           class="menu-item"
@@ -680,49 +680,49 @@ onUnmounted(() => {
           @contextmenu.prevent="showFolderContextMenu(version.folder, version.id)"
         >
           <svg v-if="isFavorite(version.id, version.folder)" viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01Z" /></svg>
-          <span v-else class="menu-spacer"></span>
+          <span data-ui="HomeView:f77a89b73779" v-else class="menu-spacer"></span>
           {{ versionLabel(version) }}
         </button>
-        <div v-if="!sortedInstalled.length" class="menu-empty">暂无已安装实例</div>
+        <div data-ui="HomeView:2de4cc34bb59" v-if="!sortedInstalled.length" class="menu-empty">暂无已安装实例</div>
         </template>
       </div>
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="cardMenu.id" class="menu-overlay" @click="cardMenu.id = ''"></div>
-      <div
+      <div data-ui="HomeView:4f4a9fb8dc2a" v-if="cardMenu.id" class="menu-overlay" @click="cardMenu.id = ''"></div>
+      <div data-ui="HomeView:3c3ff2f77e4f"
         v-if="cardMenu.id && cardMenuVersion"
         class="float-menu card-float-menu"
         :style="{ top: cardMenu.top + 'px', left: cardMenu.left + 'px' }"
       >
-        <button class="menu-item" @click="openInstanceCenter(cardMenuVersion); cardMenu.id = ''">管理实例</button>
-        <button class="menu-item" @click="startVersion(cardMenuVersion.id); cardMenu.id = ''">启动实例</button>
-        <button class="menu-item" title="新建允许命令的创造模式测试世界并自动进入（Minecraft 1.20+）" :disabled="running || launching || restartBusy" @click="startVersion(cardMenuVersion.id, true); cardMenu.id = ''">启动并创建命令世界</button>
-        <button class="menu-item" :disabled="!running || restartBusy" @click="quickRestart(cardMenuVersion)">快速重启游戏</button>
-        <button class="menu-item" @click="toggleFavorite(cardMenuVersion.id, cardMenuVersion.folder); cardMenu.id = ''">
+        <button data-ui="HomeView:3e8d19a019ab" class="menu-item" @click="openInstanceCenter(cardMenuVersion); cardMenu.id = ''">管理实例</button>
+        <button data-ui="HomeView:a0dd508b6e16" class="menu-item" @click="startVersion(cardMenuVersion.id); cardMenu.id = ''">启动实例</button>
+        <button data-ui="HomeView:cc765cc95569" class="menu-item" title="新建允许命令的创造模式测试世界并自动进入（Minecraft 1.20+）" :disabled="running || launching || restartBusy" @click="startVersion(cardMenuVersion.id, true); cardMenu.id = ''">启动并创建命令世界</button>
+        <button data-ui="HomeView:98ec7f1bfdb4" class="menu-item" :disabled="!running || restartBusy" @click="quickRestart(cardMenuVersion)">快速重启游戏</button>
+        <button data-ui="HomeView:a83bf9067bf3" class="menu-item" @click="toggleFavorite(cardMenuVersion.id, cardMenuVersion.folder); cardMenu.id = ''">
           {{ isFavorite(cardMenuVersion.id, cardMenuVersion.folder) ? '取消收藏' : '收藏实例' }}
         </button>
-        <button class="menu-item" @click="openVersionFolder(cardMenuVersion.id)">打开文件夹</button>
-        <button class="menu-item danger" @click="requestRemove(cardMenuVersion)">删除实例</button>
+        <button data-ui="HomeView:471f5e20fd6f" class="menu-item" @click="openVersionFolder(cardMenuVersion.id)">打开文件夹</button>
+        <button data-ui="HomeView:31cc199f9344" class="menu-item danger" @click="requestRemove(cardMenuVersion)">删除实例</button>
       </div>
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="logOpen" class="log-mask" @pointerdown.self="logOpen = false">
-        <section class="log-dialog" role="dialog" aria-modal="true" aria-label="游戏日志">
-          <header>
+      <div data-ui="HomeView:923206ea2c37" v-if="logOpen" class="log-mask" @pointerdown.self="logOpen = false">
+        <section data-ui="HomeView:21a3dfa129bb" class="log-dialog" role="dialog" aria-modal="true" aria-label="游戏日志">
+          <header data-ui="HomeView:e10df8fdf6ce">
             <div><h3>启动日志</h3><span>{{ store.logs.length }} 行 · {{ heroStatus.text }}</span></div>
-            <button class="log-close" title="关闭" @click="logOpen = false">×</button>
+            <button data-ui="HomeView:8c1728a36b47" class="log-close" title="关闭" @click="logOpen = false">×</button>
           </header>
-          <div v-if="launchFailed" class="log-failure">
+          <div data-ui="HomeView:1921d3d812a6" v-if="launchFailed" class="log-failure">
             <span>检测到启动失败或异常退出</span>
-            <button :disabled="exportingLogs" @click="exportFailureLogs">{{ exportingLogs ? '导出中…' : '导出错误日志' }}</button>
+            <button data-ui="HomeView:4e02813325fa" :disabled="exportingLogs" @click="exportFailureLogs">{{ exportingLogs ? '导出中…' : '导出错误日志' }}</button>
           </div>
-          <div ref="logBody" class="log-body">
-            <p v-if="!store.logs.length" class="log-empty">暂无启动日志</p>
-            <pre v-else><span v-for="(line, index) in store.logs" :key="index">{{ line }}</span></pre>
+          <div data-ui="HomeView:d816343842fa" ref="logBody" class="log-body">
+            <p data-ui="HomeView:9e34f7306c51" v-if="!store.logs.length" class="log-empty">暂无启动日志</p>
+            <pre data-ui="HomeView:b8671047aacf" v-else><span data-ui="HomeView:d2bfb16eae17" v-for="(line, index) in store.logs" :key="index">{{ line }}</span></pre>
           </div>
-          <footer><button class="btn btn-ghost btn-sm" :disabled="!store.logs.length" @click="store.logs = []">清空日志</button></footer>
+          <footer data-ui="HomeView:113536fd4ef0"><button data-ui="HomeView:287dd6a53ff1" class="btn btn-ghost btn-sm" :disabled="!store.logs.length" @click="store.logs = []">清空日志</button></footer>
         </section>
       </div>
     </Teleport>
@@ -737,28 +737,28 @@ onUnmounted(() => {
     />
   </div>
   <Teleport to="body">
-    <div v-if="javaPicker" class="modal-mask" @pointerdown.self="!javaSaving && (javaPicker = null)" @keydown.esc="!javaSaving && (javaPicker = null)">
-      <section class="modal java-picker" role="dialog" aria-modal="true" aria-labelledby="java-picker-title">
-        <h3 id="java-picker-title" class="modal-title">选择 Java 运行环境</h3>
-        <p class="java-picker-description">{{ javaPicker.name }} · 仅修改此实例，不影响其他实例</p>
-        <label class="java-option"><input v-model="javaPicker.choice" type="radio" value="@auto" name="home-java" /><span><strong>自动选择</strong><small>按游戏的真实版本要求匹配 Java，必要时自动下载</small></span></label>
-        <label class="java-option"><input v-model="javaPicker.choice" type="radio" value="@inherit" name="home-java" /><span><strong>跟随全局设置</strong><small>{{ store.settings?.javaAuto ? '当前全局：自动选择' : '当前全局：' + (store.settings?.javaPath || '匹配本地 Java') }}</small></span></label>
-        <div class="java-list">
-          <label v-for="java in javas" :key="java.path" class="java-option"><input v-model="javaPicker.choice" type="radio" :value="java.path" name="home-java" /><span><strong>Java {{ java.version }} · {{ java.architecture || (java.is64Bit ? '64-bit' : '32-bit') }}</strong><small :title="java.path">{{ java.path }}</small></span></label>
-          <p v-if="!javas.length" class="java-picker-description">{{ javaChecked ? '未发现本地 Java，可使用自动选择，或在设置中添加 Java。' : '正在扫描本地 Java…' }}</p>
-          <p v-if="javaPicker.choice && !javaPicker.choice.startsWith('@') && !javas.some(java => java.path === javaPicker?.choice)" class="java-picker-description">当前指定：{{ javaPicker.choice }}</p>
+    <div data-ui="HomeView:5da5c508a315" v-if="javaPicker" class="modal-mask" @pointerdown.self="!javaSaving && (javaPicker = null)" @keydown.esc="!javaSaving && (javaPicker = null)">
+      <section data-ui="HomeView:d9cf38660e47" class="modal java-picker" role="dialog" aria-modal="true" aria-labelledby="java-picker-title">
+        <h3 data-ui="HomeView:5e6790a8da51" id="java-picker-title" class="modal-title">选择 Java 运行环境</h3>
+        <p data-ui="HomeView:96c5153e7b82" class="java-picker-description">{{ javaPicker.name }} · 仅修改此实例，不影响其他实例</p>
+        <label class="java-option"><input data-ui="HomeView:e530b03f8660" v-model="javaPicker.choice" type="radio" value="@auto" name="home-java" /><span><strong>自动选择</strong><small>按游戏的真实版本要求匹配 Java，必要时自动下载</small></span></label>
+        <label class="java-option"><input data-ui="HomeView:a0b100241102" v-model="javaPicker.choice" type="radio" value="@inherit" name="home-java" /><span><strong>跟随全局设置</strong><small>{{ store.settings?.javaAuto ? '当前全局：自动选择' : '当前全局：' + (store.settings?.javaPath || '匹配本地 Java') }}</small></span></label>
+        <div data-ui="HomeView:2b732ea02a21" class="java-list">
+          <label data-ui="HomeView:484d96932255" v-for="java in javas" :key="java.path" class="java-option"><input data-ui="HomeView:3b272633f5d0" v-model="javaPicker.choice" type="radio" :value="java.path" name="home-java" /><span><strong>Java {{ java.version }} · {{ java.architecture || (java.is64Bit ? '64-bit' : '32-bit') }}</strong><small data-ui="HomeView:012aa6cd6faf" :title="java.path">{{ java.path }}</small></span></label>
+          <p data-ui="HomeView:cf5a93492c1f" v-if="!javas.length" class="java-picker-description">{{ javaChecked ? '未发现本地 Java，可使用自动选择，或在设置中添加 Java。' : '正在扫描本地 Java…' }}</p>
+          <p data-ui="HomeView:c23c056bc1bd" v-if="javaPicker.choice && !javaPicker.choice.startsWith('@') && !javas.some(java => java.path === javaPicker?.choice)" class="java-picker-description">当前指定：{{ javaPicker.choice }}</p>
         </div>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" :disabled="javaSaving" @click="javaPicker = null; openSettings('java')">管理 Java</button>
-          <button class="btn btn-ghost" :disabled="javaSaving" @click="javaPicker = null">取消</button>
-          <button class="btn btn-gold" :disabled="javaSaving" @click="saveJavaChoice">{{ javaSaving ? '保存中…' : '保存选择' }}</button>
+        <div data-ui="HomeView:e1c395584dc9" class="modal-actions">
+          <button data-ui="HomeView:765c5489bdca" class="btn btn-ghost" :disabled="javaSaving" @click="javaPicker = null; openSettings('java')">管理 Java</button>
+          <button data-ui="HomeView:6248b7b5543e" class="btn btn-ghost" :disabled="javaSaving" @click="javaPicker = null">取消</button>
+          <button data-ui="HomeView:853a319d45b3" class="btn btn-gold" :disabled="javaSaving" @click="saveJavaChoice">{{ javaSaving ? '保存中…' : '保存选择' }}</button>
         </div>
       </section>
     </div>
   </Teleport>
-  <Teleport to="body"><div v-if="restartConfirm" class="modal-mask" style="z-index: 10030"><section class="modal" role="dialog" aria-modal="true" aria-label="正常退出超时">
-    <h3>正常退出等待超时</h3><p>Minecraft 可能仍在保存世界。建议在游戏内保存退出，然后重试。</p><p style="color: var(--danger)">强制结束可能丢失进度或损坏存档；只有你确认后才会执行。</p>
-    <div style="display: flex; gap: 12px; justify-content: flex-end"><button class="btn btn-ghost" :disabled="restartBusy" @click="cancelRestartPrompt">取消重启，继续等待</button><button class="btn btn-danger" :disabled="restartBusy" @click="quickRestart({ id: restartConfirm.id, folder: restartConfirm.folder } as InstalledVersion, restartConfirm.token)">确认强制结束并重启</button></div>
+  <Teleport to="body"><div data-ui="HomeView:9d63fadc1ed6" v-if="restartConfirm" class="modal-mask" style="z-index: 10030"><section data-ui="HomeView:b6df5ebbb9a2" class="modal" role="dialog" aria-modal="true" aria-label="正常退出超时">
+    <h3>正常退出等待超时</h3><p data-ui="HomeView:2925c2d17b9d">Minecraft 可能仍在保存世界。建议在游戏内保存退出，然后重试。</p><p data-ui="HomeView:37b32c3aeef4" style="color: var(--danger)">强制结束可能丢失进度或损坏存档；只有你确认后才会执行。</p>
+    <div data-ui="HomeView:6801f8598bb3" style="display: flex; gap: 12px; justify-content: flex-end"><button data-ui="HomeView:1ab5dde2249d" class="btn btn-ghost" :disabled="restartBusy" @click="cancelRestartPrompt">取消重启，继续等待</button><button data-ui="HomeView:df15de437ca0" class="btn btn-danger" :disabled="restartBusy" @click="quickRestart({ id: restartConfirm.id, folder: restartConfirm.folder } as InstalledVersion, restartConfirm.token)">确认强制结束并重启</button></div>
   </section></div></Teleport>
 </template>
 
@@ -1026,4 +1026,9 @@ onUnmounted(() => {
   .skin-stage { height: 230px; }
   .skin-panel { min-height: 322px; }
 }
+
+.home-dashboard{grid-template-columns:minmax(0,1fr) minmax(250px,290px);gap:16px}.hero-card{height:var(--banner-h);max-height:360px;min-height:320px}.hero-content{padding:24px;justify-content:space-between}.hero-metadata-slot{min-height:0}.hero-kicker{font-size:12px;align-self:flex-start;padding:5px 10px}.hero-content h1,.hero-content h1.long-name{font-size:clamp(24px,2.6vw,32px);line-height:1.25;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.hero-edition{margin-top:8px;gap:10px}.hero-game-version{font-size:15px}.launch-main{min-height:56px;min-width:180px;font-size:21px;padding:0 24px}.launch-arrow{width:48px}.hero-actions{gap:12px;flex-wrap:wrap}.runtime-strip{min-height:68px;padding:8px}.runtime-item{padding:10px 12px}.instance-grid{display:flex!important;flex-direction:column;gap:0}.home-dashboard .instance-card{display:grid;grid-template-columns:36px minmax(0,1fr) auto 36px 40px;gap:12px;align-items:center;min-height:72px;height:auto;padding:12px;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;background:transparent}.instance-card.selected{background:var(--accent-soft)}.instance-card:hover{background:var(--hover)}.instance-card .instance-icon{width:36px;height:36px}.instance-card .instance-copy{min-width:0}.instance-copy strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:normal}.instance-copy span{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.instance-more,.instance-last,.instance-play{position:static;margin:0;grid-row:1}.instance-last{grid-column:3;font-size:12px;white-space:nowrap}.instance-more{grid-column:4}.instance-play{grid-column:5;width:40px;height:34px}.instances-block{background:var(--surface-content);border-radius:var(--radius-lg);padding:16px}.instances-head{margin-bottom:8px}.account-panel{border-radius:var(--radius-lg) var(--radius-lg) 0 0;border-bottom:0;box-shadow:none;padding:16px}.skin-panel{border-radius:0 0 var(--radius-lg) var(--radius-lg);margin-top:-16px;border-top:0;box-shadow:none;padding:16px}.skin-stage{height:260px;min-height:220px}.account-head{gap:10px}.home-side{gap:16px}.home-creator{box-shadow:none;margin-top:0}.hero-shade{background:linear-gradient(180deg,rgba(0,0,0,.16),rgba(0,0,0,.18) 30%,rgba(0,0,0,.68))}
+@media(max-width:1100px){.home-dashboard{grid-template-columns:minmax(0,1fr)}.home-side{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}.account-panel{border-radius:var(--radius-lg)}.skin-panel{margin-top:0;border-radius:var(--radius-lg);grid-column:2;grid-row:1/3}.home-creator{grid-column:1}.hero-card{max-height:360px}}@media(max-width:700px){.home-side{grid-template-columns:minmax(0,1fr)}.skin-panel,.home-creator{grid-column:1;grid-row:auto}.home-dashboard .instance-card{grid-template-columns:28px minmax(0,1fr) 32px 36px;gap:8px}.instance-last{grid-row:2;grid-column:2;font-size:12px}.instance-more{grid-column:3}.instance-play{grid-column:4}.hero-content{padding:16px}.launch-main{min-width:140px}.runtime-strip{flex-wrap:wrap}.runtime-item{min-width:140px}.hero-card{min-height:330px}}
+
+.home-side{align-self:start}.skin-panel{flex:none;min-height:0}.home-side .skin-stage{height:230px;min-height:0}.skin-panel .skin-tip{margin-bottom:0}.account-panel{padding:16px}.hero-card .hero-image{object-position:center 42%}
 </style>

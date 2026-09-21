@@ -52,7 +52,7 @@ test('creator card uses theme tokens, keyboard focus and correct external Bilibi
   assert.match(creator, /target="_blank"/)
   assert.match(creator, /rel="noopener noreferrer"/)
   assert.match(creator, /aria-label="访问卡慕/)
-  assert.match(creator, /<button class="creator-toggle"/)
+  assert.match(creator, /<button\b[^>]*class="creator-toggle"/)
   assert.match(creator, /useMotion/)
   assert.match(creator, /var\(--surface-content\)/)
   assert.match(creator, /var\(--text\)/)

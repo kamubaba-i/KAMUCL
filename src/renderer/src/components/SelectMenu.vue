@@ -9,7 +9,7 @@ defineOptions({ inheritAttrs: false })
 
 const props = defineProps<{
   modelValue: string
-  options: Array<{ value: string; label: string }>
+  options: Array<{ value: string; label: string; description?: string }>
   disabled?: boolean
   placeholder?: string
   /** 浮层最大高度（超出滚动） */
@@ -22,6 +22,7 @@ const menuEl=ref<HTMLElement>(), active=ref(0)
 const buttonEl = ref<HTMLElement | null>(null)
 const menuStyle = ref<Record<string, string>>({})
 
+const currentOption = computed(() => props.options.find(o => o.value === props.modelValue))
 const currentLabel = computed(() =>
   props.options.find((o) => o.value === props.modelValue)?.label ?? props.placeholder ?? '请选择'
 )
@@ -66,7 +67,7 @@ onBeforeUnmount(close)
 </script>
 
 <template>
-  <button
+  <button data-ui="SelectMenu:cad40d2db882"
     v-bind="$attrs"
     ref="buttonEl"
     type="button"
@@ -74,14 +75,15 @@ onBeforeUnmount(close)
     :class="{ open, disabled: props.disabled }"
     :disabled="props.disabled"
     :aria-expanded="open"
+    :title="[currentLabel, currentOption?.description].filter(Boolean).join('\n')"
     @click="toggle"
   >
-    <span class="select-menu-label">{{ currentLabel }}</span>
+    <span data-ui="SelectMenu:bbb0a3638540" class="select-menu-label"><span>{{ currentLabel }}</span><small v-if="currentOption?.description">{{ currentOption.description }}</small></span>
     <svg class="select-menu-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
   </button>
   <Teleport to="body">
-    <div v-if="open" ref="menuEl" class="select-menu-float" @wheel.stop :style="menuStyle" role="listbox">
-      <button
+    <div data-ui="SelectMenu:3ebdff14f591" v-if="open" ref="menuEl" class="select-menu-float" @wheel.stop :style="menuStyle" role="listbox">
+      <button data-ui="SelectMenu:439e3aacaaa9"
         v-for="(o,i) in props.options"
         :data-focused="active===i"
         :key="o.value"
@@ -90,12 +92,13 @@ onBeforeUnmount(close)
         :class="{ active: o.value === props.modelValue }"
         role="option"
         :aria-selected="o.value === props.modelValue"
+        :title="[o.label, o.description].filter(Boolean).join('\n')"
         @click="choose(o.value)"
       >
-        <span class="select-menu-option-label">{{ o.label }}</span>
+        <span data-ui="SelectMenu:cd6bf191d88f" class="select-menu-option-label"><span>{{ o.label }}</span><small v-if="o.description">{{ o.description }}</small></span>
         <svg v-if="o.value === props.modelValue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
       </button>
-      <div v-if="!props.options.length" class="select-menu-empty">无可选项</div>
+      <div data-ui="SelectMenu:1d0ad7174b00" v-if="!props.options.length" class="select-menu-empty">无可选项</div>
     </div>
   </Teleport>
 </template>
@@ -162,4 +165,5 @@ onBeforeUnmount(close)
 .select-menu-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-menu-empty { display: flex; align-items: center; justify-content: center; min-height: var(--row-h); padding: var(--space-3); color: var(--text-dim); font-size: var(--text-xs); text-align: center; }
 @media (prefers-reduced-motion: reduce) { .select-menu-btn, .select-menu-chevron, .select-menu-option { transition: none; } }
+.select-menu-label,.select-menu-option-label{display:grid;gap:3px}.select-menu-label>span,.select-menu-option-label>span,.select-menu-label small,.select-menu-option-label small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.select-menu-label small,.select-menu-option-label small{font-size:12px;color:var(--text-dim);font-weight:400}.select-menu-float{max-width:calc(100vw - 24px)}
 </style>

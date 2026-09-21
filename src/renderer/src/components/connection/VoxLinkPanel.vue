@@ -3,6 +3,7 @@ import VoxLinkModSync from './VoxLinkModSync.vue'
 import SelectMenu from '../SelectMenu.vue'
 import type { InstalledVersion } from '@shared/types'
 import VoxLinkRelatedLinks from './VoxLinkRelatedLinks.vue'
+import { displayVersionName as versionLabel } from '../../store'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { DEFAULT_VOXLINK_ROOM_NAME, VOXLINK_ROOM_NAME_MAX, normalizeVoxlinkRoomName, isVoxlinkContentBlocked, VOXLINK_ROOM_BLOCKED_MESSAGE } from '@shared/voxlinkRoom'
 import ConnectionPanel from './ConnectionPanel.vue'
@@ -20,7 +21,7 @@ interface ConnStateEvent { phase?: string; status?: string; address?: string; de
 
 const instances = ref<InstalledVersion[]>([])
 const instanceKey = ref('')
-const instanceOptions = computed(() => instances.value.filter(v => !v.failed && !v.incomplete).map(v => ({ value: JSON.stringify([v.folder, v.id]), label: `${v.id} · ${v.folder}` })))
+const instanceOptions = computed(() => instances.value.filter(v => !v.failed && !v.incomplete).map(v => ({ value: JSON.stringify([v.folder, v.id]), label: versionLabel(v), description: `${v.mcVersion} · ${v.loader || '原版'} · ${v.folder}` })))
 const chosenInstance = computed(() => instances.value.find(v => JSON.stringify([v.folder, v.id]) === instanceKey.value))
 const selectedTarget = computed(() => chosenInstance.value ? { id: chosenInstance.value.id, folder: chosenInstance.value.folder } : undefined)
 const pendingJoin = ref('')
@@ -363,63 +364,63 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
 </script>
 
 <template>
-  <div class="voxlink-page">
-    <header class="vox-toolbar">
+  <div data-ui="VoxLinkPanel:8921adf51a40" class="voxlink-page">
+    <header data-ui="VoxLinkPanel:e2b25d0f5bce" class="vox-toolbar">
       <p class="connection-muted">{{ inFlow ? '保持本页开启，即可随时查看连接状态。' : '先选择游戏实例，再创建房间或寻找好友。' }}</p>
       <VoxLinkRelatedLinks />
     </header>
-    <p v-if="error" class="connection-error vox-alert" role="alert">{{ error }}</p>
-    <p v-if="sessionClosed" class="connection-error vox-alert">房间已结束，请重新创建或加入。</p>
+    <p data-ui="VoxLinkPanel:e56ab4ac207d" v-if="error" class="connection-error vox-alert" role="alert">{{ error }}</p>
+    <p data-ui="VoxLinkPanel:5878cb7ab6d6" v-if="sessionClosed" class="connection-error vox-alert">房间已结束，请重新创建或加入。</p>
 
     <ConnectionPanel v-if="inFlow" :title="connected ? '连接成功' : conn?.status === 'failed' ? '连接尚未完成' : isHost ? '房间已准备好' : '正在连接好友'" :subtitle="nextStep">
       <template #action><ConnectionStatus :tone="overallTone" :label="overallLabel" /></template>
-      <div v-if="connected && !isHost" class="address-hero" aria-live="polite">
+      <div data-ui="VoxLinkPanel:8a8b1646a130" v-if="connected && !isHost" class="address-hero" aria-live="polite">
         <span class="connection-eyebrow">在游戏中粘贴此地址</span>
-        <div class="address-line"><code>{{ mcAddress }}</code><button class="btn btn-gold" @click="copy(mcAddress)">复制地址</button></div>
+        <div data-ui="VoxLinkPanel:1e326a7f81c7" class="address-line"><code>{{ mcAddress }}</code><button data-ui="VoxLinkPanel:2d6cdb019744" class="btn btn-gold" @click="copy(mcAddress)">复制地址</button></div>
         <p>进入游戏 → <strong>多人游戏</strong> → <strong>直接连接</strong></p>
         <small>粘贴地址后，点击「加入服务器」。保持启动器和房间开启。</small>
       </div>
-      <div v-if="state?.session.code" class="room-strip">
+      <div data-ui="VoxLinkPanel:3a1b6ce6032b" v-if="state?.session.code" class="room-strip">
         <div><small>{{ isHost ? '把房间码发给好友' : '当前房间' }}</small><strong>{{ state?.room?.name }}</strong></div>
-        <div class="room-code"><code>{{ state.session.code }}</code><button class="btn btn-ghost" @click="copy(state.session.code)">复制房间码</button></div>
+        <div data-ui="VoxLinkPanel:68825fcf4f61" class="room-code"><code>{{ state.session.code }}</code><button data-ui="VoxLinkPanel:aa75ef3e2b10" class="btn btn-ghost" @click="copy(state.session.code)">复制房间码</button></div>
       </div>
-      <ol v-if="steps.length && !connected" class="stage-bar" aria-label="连接进度">
-        <li v-for="(step, i) in steps" :key="step.key" class="stage-item" :class="step.state"><span class="stage-dot">{{ step.state === 'done' ? '✓' : i + 1 }}</span><span class="stage-copy"><strong>{{ step.label }}</strong><small>{{ step.detail || '等待前一步完成' }}</small></span></li>
+      <ol data-ui="VoxLinkPanel:5a726f736537" v-if="steps.length && !connected" class="stage-bar" aria-label="连接进度">
+        <li data-ui="VoxLinkPanel:d2fc189fa8df" v-for="(step, i) in steps" :key="step.key" class="stage-item" :class="step.state"><span data-ui="VoxLinkPanel:e622b7bd540c" class="stage-dot">{{ step.state === 'done' ? '✓' : i + 1 }}</span><span data-ui="VoxLinkPanel:1fd8eb27a14d" class="stage-copy"><strong>{{ step.label }}</strong><small>{{ step.detail || '等待前一步完成' }}</small></span></li>
       </ol>
-      <div v-if="busy && !joined" class="flow-wait" role="status">{{ tab === 'host' ? '正在检测游戏并创建房间…' : '正在加入房间…' }}</div>
-      <p v-if="conn?.detail && !connected" class="connection-muted" role="status">{{ conn.detail }}</p>
-      <div v-if="fallbackVisible" class="manual-relay">
+      <div data-ui="VoxLinkPanel:9d884c39eb5e" v-if="busy && !joined" class="flow-wait" role="status">{{ tab === 'host' ? '正在检测游戏并创建房间…' : '正在加入房间…' }}</div>
+      <p data-ui="VoxLinkPanel:bec7ac0062f5" v-if="conn?.detail && !connected" class="connection-muted" role="status">{{ conn.detail }}</p>
+      <div data-ui="VoxLinkPanel:da26e461034b" v-if="fallbackVisible" class="manual-relay">
         <div><strong>也可以选择中继连接</strong><p class="connection-muted">直连已尝试 {{ punchElapsed }} 秒。是否使用中继，由你决定。</p></div>
-        <button class="btn btn-gold" :disabled="turnBusy || stageMap.turn?.status === 'active'" @click="useTurn">{{ turnBusy || stageMap.turn?.status === 'active' ? '正在建立中继…' : conn?.phase === 'turn' && conn?.status === 'failed' ? '重试 TURN 中继' : '使用 TURN 中继' }}</button>
-        <button class="btn btn-ghost" :disabled="relayTried || turnBusy || stageMap.turn?.status === 'active'" @click="useRelay">使用玩家中继</button>
+        <button data-ui="VoxLinkPanel:9e5bb2ba94c8" class="btn btn-gold" :disabled="turnBusy || stageMap.turn?.status === 'active'" @click="useTurn">{{ turnBusy || stageMap.turn?.status === 'active' ? '正在建立中继…' : conn?.phase === 'turn' && conn?.status === 'failed' ? '重试 TURN 中继' : '使用 TURN 中继' }}</button>
+        <button data-ui="VoxLinkPanel:abe294d0cda1" class="btn btn-ghost" :disabled="relayTried || turnBusy || stageMap.turn?.status === 'active'" @click="useRelay">使用玩家中继</button>
       </div>
-      <div class="connection-actions"><button class="btn btn-ghost" :disabled="leaving" @click="stop">{{ leaving ? '正在退出…' : joined ? isHost ? '关闭房间' : '退出房间' : '取消连接' }}</button></div>
+      <div class="connection-actions"><button data-ui="VoxLinkPanel:6bdf448cf61f" class="btn btn-ghost" :disabled="leaving" @click="stop">{{ leaving ? '正在退出…' : joined ? isHost ? '关闭房间' : '退出房间' : '取消连接' }}</button></div>
     </ConnectionPanel>
 
-    <ConnectionPanel v-else title="开始联机" subtitle="选择要一起游玩的实例，再创建或加入房间">
+    <ConnectionPanel v-else class="vox-workspace" title="游戏与房间">
       <label class="connection-field">游戏实例<SelectMenu v-model="instanceKey" :options="instanceOptions" :disabled="!!pendingJoin" placeholder="选择游戏实例" /><small>共享和下载的模组均使用此实例。</small></label>
-      <div class="connect-tabs" role="tablist" aria-label="联机入口"><button v-for="item in (['host','join','lobby'] as const)" :key="item" class="connect-tab" :class="{active:tab===item}" role="tab" :aria-selected="tab===item" @click="switchTab(item)">{{ item === 'host' ? '创建房间' : item === 'join' ? '加入房间' : '公共大厅' }}</button></div>
-      <div v-if="tab === 'host'" class="tab-body">
-        <div class="entry-tip"><span>01</span><p>先启动游戏，进入世界，选择<strong>「对局域网开放」</strong>。</p></div>
-        <label class="connection-field">房间名<input ref="roomNameInput" v-model="roomName" class="input" :maxlength="VOXLINK_ROOM_NAME_MAX" placeholder="给这次冒险起个名字" :aria-invalid="!!roomNameError" /><small v-if="roomNameError" class="connection-error" role="alert">{{ roomNameError }}</small></label>
-        <label class="connection-toggle"><span>在公共大厅显示<small>关闭后，好友仍可凭房间码加入。</small></span><input v-model="isPublic" type="checkbox" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
-        <details class="connection-details"><summary>没有检测到游戏？手动填写端口</summary><label class="connection-field">局域网游戏端口<input v-model="manualPort" class="input" type="number" min="1" max="65535" placeholder="留空自动检测" /><small>在游戏「对局域网开放」后的聊天提示中查看。</small></label></details>
-        <div class="connection-actions"><button class="btn btn-gold" @click="startHost">创建房间 →</button></div>
+      <div data-ui="VoxLinkPanel:a4a4e47d1972" class="connect-tabs" role="tablist" aria-label="联机入口"><button data-ui="VoxLinkPanel:bb11948caa5b" v-for="item in (['host','join','lobby'] as const)" :key="item" class="connect-tab" :class="{active:tab===item}" role="tab" :aria-selected="tab===item" @click="switchTab(item)">{{ item === 'host' ? '创建房间' : item === 'join' ? '加入房间' : '公共大厅' }}</button></div>
+      <div v-if="tab === 'host'" class="tab-body host-form">
+        <div data-ui="VoxLinkPanel:b8dcf152db46" class="entry-tip"><p><strong>邀请好友的步骤</strong><br/>1. 启动游戏并进入世界<br/>2. 选择「对局域网开放」<br/>3. 创建房间，把房间码发给好友</p></div>
+        <label class="connection-field">房间名<input data-ui="VoxLinkPanel:75532f9b2f0f" ref="roomNameInput" v-model="roomName" class="input" :maxlength="VOXLINK_ROOM_NAME_MAX" placeholder="给这次冒险起个名字" :aria-invalid="!!roomNameError" /><small data-ui="VoxLinkPanel:3f72715e277c" v-if="roomNameError" class="connection-error" role="alert">{{ roomNameError }}</small></label>
+        <label class="connection-toggle"><span>在公共大厅显示<small>关闭后，好友仍可凭房间码加入。</small></span><input data-ui="VoxLinkPanel:0388be29ae36" v-model="isPublic" type="checkbox" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
+        <details data-ui="VoxLinkPanel:ec950898b711" class="connection-details"><summary>没有检测到游戏？手动填写端口</summary><label class="connection-field">局域网游戏端口<input data-ui="VoxLinkPanel:766e671e24eb" v-model="manualPort" class="input" type="number" min="1" max="65535" placeholder="留空自动检测" /><small>在游戏「对局域网开放」后的聊天提示中查看。</small></label></details>
+        <div class="connection-actions"><button data-ui="VoxLinkPanel:21d65137d940" class="btn btn-gold" @click="startHost">创建房间 →</button></div>
       </div>
-      <div v-else-if="tab === 'join'" class="tab-body">
-        <label class="connection-field">好友的房间码<input v-model="joinCode" class="input room-input" maxlength="6" placeholder="输入 6 位房间码" @keydown.enter="startJoin(joinCode)" /></label>
+      <div data-ui="VoxLinkPanel:d5e1a4fcbada" v-else-if="tab === 'join'" class="tab-body">
+        <label class="connection-field">好友的房间码<input data-ui="VoxLinkPanel:252ad3055684" v-model="joinCode" class="input room-input" maxlength="6" placeholder="输入 6 位房间码" @keydown.enter="startJoin(joinCode)" /></label>
         <p class="connection-muted">加入前可检查所需模组。连接成功后，这里会显示游戏地址和加入指引。</p>
-        <div class="connection-actions"><button class="btn btn-gold" :disabled="joinCode.trim().length !== 6" @click="startJoin(joinCode)">加入房间 →</button></div>
+        <div class="connection-actions"><button data-ui="VoxLinkPanel:5efd9b881c4e" class="btn btn-gold" :disabled="joinCode.trim().length !== 6" @click="startJoin(joinCode)">加入房间 →</button></div>
       </div>
-      <div v-else-if="tab === 'lobby'" class="tab-body">
-        <div class="lobby-bar"><label class="connection-field lobby-search">发现房间<input v-model="search" class="input" placeholder="搜索房间名…" @keydown.enter="loadLobby" /></label><button class="btn btn-ghost" :disabled="loadingLobby" @click="loadLobby">{{ loadingLobby ? '刷新中…' : '刷新大厅' }}</button></div>
-        <p v-if="!rooms.length" class="connection-muted">{{ loadingLobby ? '正在寻找公开房间…' : '暂时没有公开房间，创建一个邀请好友吧。' }}</p>
-        <ul v-else class="lobby-list"><li v-for="room in rooms" :key="room.code" class="lobby-item"><div class="lobby-main"><span class="connection-eyebrow">{{ room.category || '一起游玩' }}</span><strong>{{ room.name }}</strong><small>{{ [room.gameVersion, room.loader].filter(Boolean).join(' · ') || '版本未标注' }}</small><span v-if="room.clientTag === 'kamucl'" class="kamucl-badge">KAMUCL 房间</span></div><div class="lobby-side"><span class="connection-muted">{{ room.currentPlayers ?? '?' }}/{{ room.maxPlayers ?? '?' }} 人</span><button class="btn btn-gold" @click="startJoin(room.code)">加入 →</button></div></li></ul>
+      <div data-ui="VoxLinkPanel:5dc76e918969" v-else-if="tab === 'lobby'" class="tab-body">
+        <div data-ui="VoxLinkPanel:5f0b077855e1" class="lobby-bar"><label data-ui="VoxLinkPanel:7a9c6cad1211" class="connection-field lobby-search">发现房间<input data-ui="VoxLinkPanel:b708e83ac19a" v-model="search" class="input" placeholder="搜索房间名…" @keydown.enter="loadLobby" /></label><button data-ui="VoxLinkPanel:016a2518dbf1" class="btn btn-ghost" :disabled="loadingLobby" @click="loadLobby">{{ loadingLobby ? '刷新中…' : '刷新大厅' }}</button></div>
+        <p data-ui="VoxLinkPanel:e312b633a89b" v-if="!rooms.length" class="connection-muted">{{ loadingLobby ? '正在寻找公开房间…' : '暂时没有公开房间，创建一个邀请好友吧。' }}</p>
+        <ul data-ui="VoxLinkPanel:23ebb3082754" v-else class="lobby-list"><li data-ui="VoxLinkPanel:84d06265d7c7" v-for="room in rooms" :key="room.code" class="lobby-item"><div data-ui="VoxLinkPanel:69f9a9318d00" class="lobby-main"><span class="connection-eyebrow">{{ room.category || '一起游玩' }}</span><strong>{{ room.name }}</strong><small>{{ [room.gameVersion, room.loader].filter(Boolean).join(' · ') || '版本未标注' }}</small><span data-ui="VoxLinkPanel:f8116c66cc88" v-if="room.clientTag === 'kamucl'" class="kamucl-badge">KAMUCL 房间</span></div><div data-ui="VoxLinkPanel:1040c97a6114" class="lobby-side"><span data-ui="VoxLinkPanel:9d3841267bb7" class="connection-muted">{{ room.currentPlayers ?? '?' }}/{{ room.maxPlayers ?? '?' }} 人</span><button data-ui="VoxLinkPanel:446640f4241c" class="btn btn-gold" @click="startJoin(room.code)">加入 →</button></div></li></ul>
       </div>
     </ConnectionPanel>
     <VoxLinkModSync v-if="pendingJoin" :code="pendingJoin" :target="selectedTarget" @join="joinAfterMods" @dismiss="pendingJoin = ''" />
-    <details class="connection-details reference-details"><summary>联机设置</summary><div class="connection-detail-content"><label class="connection-toggle"><span>协助其他玩家中继<small>允许使用玩家中继。TURN 始终由你主动点击，不会自动启用。</small></span><input type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="joined" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label><label class="connection-toggle"><span>发送联机故障诊断<small>向 VoxLink 上传脱敏的联机日志，帮助排查连接问题。</small></span><input type="checkbox" :checked="state?.settings.uploadDiagnostics ?? false" @change="toggleDiagnostics" /><span class="connection-toggle-track" aria-hidden="true"></span></label></div></details>
-    <details class="connection-details log-details"><summary>连接记录 · {{ logs.length }} 条</summary><div class="log-tools"><button class="btn btn-ghost" @click="logLevel = logLevel === 'all' ? 'important' : 'all'">{{ logLevel === 'all' ? '只看阶段与异常' : '显示详细记录' }}</button><button class="btn btn-ghost" :disabled="!logs.length" @click="copyLogs">复制日志</button></div><details v-for="group in logGroups" :key="group.label" class="log-group"><summary>{{ ({stun:'网络检测',host_stun:'房主网络检测',punch:'建立直连',host_punch:'好友连接',p2p:'直连',turn:'TURN 中继',relay:'玩家中继'} as Record<string,string>)[group.label] || group.label }} · {{ group.rows.length }} 条</summary><div class="connection-log-viewport"><p v-for="(log,i) in group.rows" :key="i" class="connection-log-line" :class="log.level"><span class="log-ts">{{ log.ts }}</span><span class="log-level">{{ log.level === 'error' ? '错误' : log.level === 'warn' ? '提醒' : log.level === 'stage' ? '阶段' : '详细' }}</span>{{ log.text }}</p></div></details><p v-if="!logGroups.length" class="connection-muted">暂无阶段或异常记录。</p></details>
+    <details data-ui="VoxLinkPanel:6110025709f6" class="connection-details reference-details"><summary>联机设置</summary><div data-ui="VoxLinkPanel:00597c7aef0f" class="connection-detail-content"><label class="connection-toggle"><span>协助其他玩家中继<small>允许使用玩家中继。TURN 始终由你主动点击，不会自动启用。</small></span><input data-ui="VoxLinkPanel:87677ed49b2c" type="checkbox" :checked="state?.settings.allowRelay ?? true" :disabled="joined" @change="toggleRelay" /><span class="connection-toggle-track" aria-hidden="true"></span></label><label class="connection-toggle"><span>发送联机故障诊断<small>向 VoxLink 上传脱敏的联机日志，帮助排查连接问题。</small></span><input data-ui="VoxLinkPanel:1db3b2b22cc9" type="checkbox" :checked="state?.settings.uploadDiagnostics ?? false" @change="toggleDiagnostics" /><span class="connection-toggle-track" aria-hidden="true"></span></label></div></details>
+    <details data-ui="VoxLinkPanel:c39538d7cf3d" class="connection-details log-details"><summary>连接记录 · {{ logs.length }} 条</summary><div data-ui="VoxLinkPanel:09f23d68d816" class="log-tools"><button data-ui="VoxLinkPanel:5e98e2a6c162" class="btn btn-ghost" @click="logLevel = logLevel === 'all' ? 'important' : 'all'">{{ logLevel === 'all' ? '只看阶段与异常' : '显示详细记录' }}</button><button data-ui="VoxLinkPanel:3b583dbf59f3" class="btn btn-ghost" :disabled="!logs.length" @click="copyLogs">复制日志</button></div><details data-ui="VoxLinkPanel:4df65d02a080" v-for="group in logGroups" :key="group.label" class="log-group"><summary>{{ ({stun:'网络检测',host_stun:'房主网络检测',punch:'建立直连',host_punch:'好友连接',p2p:'直连',turn:'TURN 中继',relay:'玩家中继'} as Record<string,string>)[group.label] || group.label }} · {{ group.rows.length }} 条</summary><div data-ui="VoxLinkPanel:1325cce1cc38" class="connection-log-viewport"><p data-ui="VoxLinkPanel:ec5b6c9228e1" v-for="(log,i) in group.rows" :key="i" class="connection-log-line" :class="log.level"><span data-ui="VoxLinkPanel:a0bb180b19af" class="log-ts">{{ log.ts }}</span><span data-ui="VoxLinkPanel:688da0e690b8" class="log-level">{{ log.level === 'error' ? '错误' : log.level === 'warn' ? '提醒' : log.level === 'stage' ? '阶段' : '详细' }}</span>{{ log.text }}</p></div></details><p data-ui="VoxLinkPanel:754d75aae709" v-if="!logGroups.length" class="connection-muted">暂无阶段或异常记录。</p></details>
   </div>
 </template>
 <style scoped>
@@ -430,4 +431,5 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
 .lobby-bar{display:flex;align-items:flex-end;gap:14px}.lobby-search{flex:1;max-width:420px}.lobby-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;list-style:none;margin:0;padding:0}.lobby-item{display:flex;flex-direction:column;justify-content:space-between;gap:22px;padding:22px;border-radius:18px;background:var(--card-2);box-shadow:var(--shadow);transition:background .2s,transform .2s}.lobby-item:hover{background:color-mix(in srgb,var(--accent) 8%,var(--card-2));transform:translateY(-2px)}.lobby-main{display:grid;gap:9px;overflow-wrap:anywhere}.lobby-main strong{font-size:19px}.lobby-main small{color:var(--text-dim)}.lobby-side{display:flex;align-items:center;justify-content:space-between;gap:12px}.kamucl-badge{font-size:11px;color:var(--accent)}
 .reference-details,.log-details{padding:16px 20px}.log-tools{display:flex;gap:10px;justify-content:flex-end;padding:12px 0}.log-group{margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--card-2)}.log-group summary{cursor:pointer;font-size:13px}.log-ts{color:var(--text-dim);margin-right:10px}.log-level{font-size:11px;margin-right:8px;color:var(--text-dim)}.connection-log-line.error,.connection-log-line.error .log-level{color:var(--danger)}.connection-log-line.warn .log-level{color:var(--accent)}
 @media(max-width:900px){.vox-toolbar,.room-strip{align-items:flex-start;flex-direction:column}.stage-bar{grid-template-columns:1fr 1fr}.room-code code{font-size:22px}}@media(prefers-reduced-motion:reduce){.lobby-item{transition:none}.lobby-item:hover{transform:none}}
+.voxlink-page{gap:12px}.vox-toolbar{margin-bottom:12px}.vox-toolbar p{font-size:13px}.host-form{grid-template-columns:minmax(0,2fr) minmax(200px,1fr);gap:16px 24px}.host-form>*{grid-column:1}.host-form .entry-tip{grid-column:2;grid-row:1/5;align-self:start;background:transparent;padding:4px 0;border-radius:0;align-items:flex-start;font-size:13px;line-height:2}.host-form .connection-toggle{padding:10px 0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:none}.host-form .connection-details{padding:8px 0}.connect-tabs{display:flex;gap:4px;padding:4px;border-bottom:1px solid var(--border);margin:12px 0}.connect-tab{border:0!important;background:none!important;border-radius:var(--radius-sm)!important;padding:8px 14px}.connect-tab.active{background:var(--accent-soft)!important;color:var(--text)!important}.lobby-item{box-shadow:none;border:1px solid var(--border);padding:16px;border-radius:var(--radius-md)}.lobby-item:hover{transform:none}.lobby-main strong{font-size:16px}.voxlink-page .reference-details,.voxlink-page .log-details{padding:12px 0}.host-form .connection-actions .btn{min-height:40px}@media(max-width:1000px){.host-form{grid-template-columns:minmax(0,1fr)}.host-form .entry-tip{grid-column:1;grid-row:auto;font-size:12px}.host-form .entry-tip br{display:none}}
 </style>

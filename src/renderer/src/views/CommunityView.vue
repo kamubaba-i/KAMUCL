@@ -2,7 +2,7 @@
 import ContentSkeleton from '../components/ContentSkeleton.vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { communityDownload, communityFiles, communitySearch, errText, getManifest, getModTargets } from '../api'
-import { store, toast, selectedInstance, selectInstance } from '../store'
+import { store, toast, selectedInstance, selectInstance, displayVersionName as versionLabel } from '../store'
 import { instanceKey } from '@shared/modCompatibility'
 import { communityFileMatchesInstance, usesCommunityLoader } from '@shared/communityPolicy'
 import { mcmodSearchUrl } from '@shared/communityLinks'
@@ -456,41 +456,23 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
 </script>
 
 <template>
-  <div class="page" :data-design-page="query.kind">
+  <div data-ui="CommunityView:6e56fae5e7dd" class="page community-page" :data-design-page="query.kind">
     <!-- 标题 -->
-    <div class="page-head">
-      <h1 class="page-title">社区资源</h1>
-      <p class="page-sub">搜索并下载 Modrinth / CurseForge 上的 Mod、整合包、资源包、光影与数据包</p>
+    <div data-ui="CommunityView:9346ef73457d" class="page-head">
+      <h1 data-ui="CommunityView:5476a5545de6" class="page-title">社区资源</h1>
+      <p data-ui="CommunityView:8ea54e89551b" class="page-sub">搜索并下载 Modrinth / CurseForge 上的 Mod、整合包、资源包、光影与数据包</p>
     </div>
 
+      <div data-ui="CommunityView:f7acd66aeb10" class="filter-row instance-row">
+        <label data-ui="CommunityView:34312978e030" class="instance-label">选择版本</label>
+        <SelectMenu v-if="store.installed.length" class="filter-select instance-filter" aria-label="选择版本" :model-value="currentInstance ? instanceKey(currentInstance) : ''" placeholder="选择实例…" :options="store.installed.filter(x => !x.failed && !x.incomplete).map(v => ({value:instanceKey(v),label:versionLabel(v),description:[v.mcVersion,v.loader,v.folder].filter(Boolean).join(' · ')}))" @change="useInstance" />
+        <button data-ui="CommunityView:49df26abb0c5" class="btn btn-ghost btn-sm" @click="useCurrentInstance">使用当前实例</button>
+      </div>
     <!-- 搜索卡片 -->
-    <div class="card search-card">
-      <div class="filter-row instance-row">
-        <label class="instance-label">选择版本</label>
-        <SelectMenu v-if="store.installed.length" class="filter-select instance-filter" aria-label="选择版本" :model-value="currentInstance ? instanceKey(currentInstance) : ''" placeholder="选择实例…" :options="store.installed.filter(x => !x.failed && !x.incomplete).map(v => ({value:instanceKey(v),label:v.id+'（'+v.mcVersion+(v.loader?' · '+v.loader:'')+'）'}))" @change="useInstance" />
-        <button class="btn btn-ghost btn-sm" @click="useCurrentInstance">使用当前实例</button>
-      </div>
-      <div class="search-row">
-        <input
-          v-model="query.keyword"
-          class="input"
-          placeholder="输入资源名称，回车搜索…"
-          @keyup.enter="onSearch"
-        />
-        <button class="btn btn-gold search-btn" :disabled="loading" @click="onSearch">
-          <span v-if="loading" class="spin"></span>
-          <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-          搜索
-        </button>
-        <button class="btn btn-ghost" :disabled="loading" @click="onReset">重置条件</button>
-      </div>
-
-      <div class="kind-capsules" ref="kindCapsules">
-        <span class="capsule-blob" :style="kindBlobStyle" aria-hidden="true"></span>
-        <button
+    <div data-ui="CommunityView:5551ade589f2" class="card search-card">
+      <div data-ui="CommunityView:cc7ad8d814fc" class="kind-capsules" ref="kindCapsules">
+        <span data-ui="CommunityView:911176084f18" class="capsule-blob" :style="kindBlobStyle" aria-hidden="true"></span>
+        <button data-ui="CommunityView:9275c1ee8bbc"
           v-for="t in kindTabs"
           :key="t.value"
           class="capsule"
@@ -502,11 +484,29 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
         </button>
       </div>
 
+      <div data-ui="CommunityView:d516b82f0eb8" class="search-row">
+        <input data-ui="CommunityView:bc0450fd9c8f"
+          v-model="query.keyword"
+          class="input"
+          placeholder="输入资源名称，回车搜索…"
+          @keyup.enter="onSearch"
+        />
+        <button data-ui="CommunityView:ce39174e4563" class="btn btn-gold search-btn" :disabled="loading" @click="onSearch">
+          <span data-ui="CommunityView:bb1887897e8c" v-if="loading" class="spin"></span>
+          <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          搜索
+        </button>
+        <button data-ui="CommunityView:15aecd36844d" class="btn btn-ghost" :disabled="loading" @click="onReset">重置条件</button>
+      </div>
+
       <div class="filter-row">
-        <SelectMenu v-model="query.source" class="filter-select" :options="sourceOptions" @change="onFilterChange" />
+        <SelectMenu aria-label="资源来源" v-model="query.source" class="filter-select" :options="sourceOptions" @change="onFilterChange" />
         <!-- 可搜索版本下拉：完整 MC 版本列表（远程清单数据源） -->
-        <div class="ver-filter">
-          <input
+        <div data-ui="CommunityView:a7e5c548e576" class="ver-filter">
+          <input data-ui="CommunityView:df846b92dee0"
             v-model="versionInput"
             class="input ver-filter-input"
             :placeholder="manifestLoading ? '加载版本列表…' : (query.mcVersion || '全部版本')"
@@ -515,12 +515,12 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
             @change="applyVersionInput"
             @keydown.enter.prevent="applyVersionInput"
           />
-          <div v-if="versionDropdownOpen" class="menu-overlay" @click="versionDropdownOpen = false"></div>
-          <div v-if="versionDropdownOpen" class="float-menu ver-filter-menu">
-            <button class="menu-item" :class="{ active: !query.mcVersion }" @mousedown.prevent @click="pickVersion('')">
+          <div data-ui="CommunityView:c262110ba1ea" v-if="versionDropdownOpen" class="menu-overlay" @click="versionDropdownOpen = false"></div>
+          <div data-ui="CommunityView:8e1248a50470" v-if="versionDropdownOpen" class="float-menu ver-filter-menu">
+            <button data-ui="CommunityView:45317b5bff2e" class="menu-item" :class="{ active: !query.mcVersion }" @mousedown.prevent @click="pickVersion('')">
               全部版本
             </button>
-            <button
+            <button data-ui="CommunityView:7bf879d180c7"
               v-for="v in filteredVersionOptions"
               :key="v"
               class="menu-item"
@@ -530,27 +530,27 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
             >
               {{ v }}
             </button>
-            <div v-if="!filteredVersionOptions.length" class="ver-menu-empty">无匹配版本</div>
+            <div data-ui="CommunityView:6570e9d15e20" v-if="!filteredVersionOptions.length" class="ver-menu-empty">无匹配版本</div>
           </div>
         </div>
-        <SelectMenu v-if="supportsLoader" v-model="query.loader" class="filter-select" :options="loaderOptions" @change="onFilterChange" />
-        <SelectMenu v-model="query.sort" class="filter-select" :options="sortOptions" @change="onFilterChange" />
+        <SelectMenu aria-label="加载器" v-if="supportsLoader" v-model="query.loader" class="filter-select" :options="loaderOptions" @change="onFilterChange" />
+        <SelectMenu aria-label="排序" v-model="query.sort" class="filter-select" :options="sortOptions" @change="onFilterChange" />
       </div>
     </div>
 
     <!-- 结果列表 -->
-    <div ref="listCard" class="card list-card">
-      <div v-if="results.length && (loading || loadError)" class="status-strip" role="status">{{ loading ? '正在更新条件，暂时显示上次结果…' : '更新失败，以下为上次结果：' + loadError }}<button v-if="loadError" class="btn btn-ghost btn-sm" @click="doSearch(true)">重试</button></div>
-      <p v-for="warning in searchWarnings" :key="warning" class="search-warning">{{ warning }}</p>
+    <div data-ui="CommunityView:5e55abba5e8a" ref="listCard" class="card list-card">
+      <div data-ui="CommunityView:72423555b623" v-if="results.length && (loading || loadError)" class="status-strip" role="status">{{ loading ? '正在更新条件，暂时显示上次结果…' : '更新失败，以下为上次结果：' + loadError }}<button data-ui="CommunityView:4ab4e45e43a0" v-if="loadError" class="btn btn-ghost btn-sm" @click="doSearch(true)">重试</button></div>
+      <p data-ui="CommunityView:fa2eef57b2fc" v-for="warning in searchWarnings" :key="warning" class="search-warning">{{ warning }}</p>
       <!-- 加载中 -->
 <ContentSkeleton v-if="loading && !results.length" label="正在搜索社区资源…" :rows="6" retry @retry="doSearch(true)"/>
       <!-- 错误态 -->
-      <div v-else-if="loadError && !results.length" class="empty">
+      <div data-ui="CommunityView:680f71022a3b" v-else-if="loadError && !results.length" class="empty">
         <span>搜索失败：{{ loadError }}</span>
-        <button class="btn btn-ghost btn-sm" @click="usesPagination ? doSearch(false) : onSearch()">重试</button>
+        <button data-ui="CommunityView:dadfdac6acc0" class="btn btn-ghost btn-sm" @click="usesPagination ? doSearch(false) : onSearch()">重试</button>
       </div>
       <!-- 空态 -->
-      <div v-else-if="!results.length" class="empty">
+      <div data-ui="CommunityView:170233f26efe" v-else-if="!results.length" class="empty">
         <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
           <path d="M3 12h18" />
@@ -561,43 +561,43 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
       </div>
       <!-- 列表 -->
       <template v-else>
-        <div class="result-list" :inert="loading || !!loadError" :aria-busy="loading">
-          <div v-for="r in results" :key="itemKey(r)" class="result-card">
-            <div class="result-top">
-              <div class="result-icon">
-                <img
+        <div data-ui="CommunityView:ea58bb908a86" class="result-list" :inert="loading || !!loadError" :aria-busy="loading">
+          <div data-ui="CommunityView:0d40e298da83" v-for="r in results" :key="itemKey(r)" class="result-card">
+            <div data-ui="CommunityView:491b5f81c088" class="result-top">
+              <div data-ui="CommunityView:00f58a1819fa" class="result-icon">
+                <img data-ui="CommunityView:830997d3ecb7"
                   v-if="r.iconUrl && !brokenIcons.has(itemKey(r))"
                   :src="r.iconUrl"
                   alt=""
                   loading="lazy"
                   @error="onIconError(r)"
                 />
-                <span v-else class="icon-placeholder">{{ (r.title || '?').charAt(0).toUpperCase() }}</span>
+                <span data-ui="CommunityView:a6c25e1efd38" v-else class="icon-placeholder">{{ (r.title || '?').charAt(0).toUpperCase() }}</span>
               </div>
-              <div class="result-head">
-                <MarqueeText class="result-title" :text="r.title"/>
-                <span class="tag" :class="r.source === 'modrinth' ? 'tag-success' : 'tag-cf'">
+              <div data-ui="CommunityView:d33af84ab969" class="result-head">
+                <strong class="result-title" tabindex="0" :title="r.title">{{ r.title }}</strong>
+                <span data-ui="CommunityView:6f93851d6071" class="tag" :class="r.source === 'modrinth' ? 'tag-success' : 'tag-cf'">
                   来源：{{ r.source === 'modrinth' ? 'Modrinth' : 'CurseForge' }}
                 </span>
-                <span v-if="r.author" class="muted result-author">{{ r.author }}</span>
+                <span data-ui="CommunityView:ad4b7d43f757" v-if="r.author" class="muted result-author">{{ r.author }}</span>
               </div>
             </div>
-            <p class="result-desc" :title="r.description">{{ r.description || '暂无简介' }}</p>
-            <div class="result-meta muted">
+            <p data-ui="CommunityView:2c1a48d38ee1" class="result-desc" :title="r.description">{{ r.description || '暂无简介' }}</p>
+            <div data-ui="CommunityView:b2d346eb1503" class="result-meta muted">
               <span>下载量 {{ fmtDownloads(r.downloads) }}</span>
-              <span class="meta-dot">·</span>
+              <span data-ui="CommunityView:e69c45508563" class="meta-dot">·</span>
               <span>更新于 {{ fmtDate(r.updatedAt) }}</span>
             </div>
-            <div class="result-foot">
-              <div class="result-links">
-                <button
+            <div data-ui="CommunityView:9195d6b103b6" class="result-foot">
+              <div data-ui="CommunityView:22746f0aa9cd" class="result-links">
+                <button data-ui="CommunityView:7c3533e67ba3"
                   class="icon-btn"
                   :title="`打开 ${r.source === 'modrinth' ? 'Modrinth' : 'CurseForge'} 源页面（查看完整介绍）`"
                   @click="openExternal(sourceUrl(r))"
                 >
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
                 </button>
-                <button
+                <button data-ui="CommunityView:0c667bb024b0"
                   class="icon-btn"
                   title="在 MC 百科查看介绍与教程"
                   @click="openMcmod(r)"
@@ -605,7 +605,7 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
                 </button>
               </div>
-              <button class="btn btn-gold btn-sm result-dl" @click="openDownload(r)">
+              <button data-ui="CommunityView:6d17d47c8729" class="btn btn-gold btn-sm result-dl" @click="openDownload(r)">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12 3v11" />
                   <path d="m7 10 5 5 5-5" />
@@ -617,81 +617,81 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
           </div>
         </div>
         <!-- 无限滚动哨兵：进入视口自动加载更多（按钮保留作兜底） -->
-        <div v-if="!usesPagination && hasMore && !loading && !loadError" ref="moreSentinel" class="more-sentinel"></div>
+        <div data-ui="CommunityView:1833f0867a9c" v-if="!usesPagination && hasMore && !loading && !loadError" ref="moreSentinel" class="more-sentinel"></div>
         <!-- 加载更多 -->
-        <div v-if="!usesPagination && hasMore" class="more-row">
-          <button class="btn btn-ghost" :disabled="loadingMore" @click="onLoadMore">
-            <span v-if="loadingMore" class="spin"></span>
+        <div data-ui="CommunityView:c18472307641" v-if="!usesPagination && hasMore" class="more-row">
+          <button data-ui="CommunityView:165371e35396" class="btn btn-ghost" :disabled="loadingMore" @click="onLoadMore">
+            <span data-ui="CommunityView:6fa61ac3821a" v-if="loadingMore" class="spin"></span>
             {{ loadingMore ? '加载中…' : '加载更多' }}
           </button>
         </div>
       </template>
-      <nav v-if="usesPagination && searched && totalPages > 1" class="pagination" aria-label="资源分页">
+      <nav data-ui="CommunityView:d47a3ad6ba73" v-if="usesPagination && searched && totalPages > 1" class="pagination" aria-label="资源分页">
         <span class="muted">共 {{ totalResults }} 项 · 第 {{ currentPage }} / {{ totalPages }} 页</span>
-        <button class="btn btn-ghost btn-sm" :disabled="loading || currentPage <= 1" @click="goToPage(currentPage - 1)">上一页</button>
-        <button v-for="page in visiblePages" :key="page" class="btn btn-sm" :class="page === currentPage ? 'btn-gold' : 'btn-ghost'" :aria-current="page === currentPage ? 'page' : undefined" :disabled="loading" @click="goToPage(page)">{{ page }}</button>
-        <button class="btn btn-ghost btn-sm" :disabled="loading || currentPage >= totalPages" @click="goToPage(currentPage + 1)">下一页</button>
+        <button data-ui="CommunityView:391d4872befc" class="btn btn-ghost btn-sm" :disabled="loading || currentPage <= 1" @click="goToPage(currentPage - 1)">上一页</button>
+        <button data-ui="CommunityView:79ac33e57fdc" v-for="page in visiblePages" :key="page" class="btn btn-sm" :class="page === currentPage ? 'btn-gold' : 'btn-ghost'" :aria-current="page === currentPage ? 'page' : undefined" :disabled="loading" @click="goToPage(page)">{{ page }}</button>
+        <button data-ui="CommunityView:2f9290893a14" class="btn btn-ghost btn-sm" :disabled="loading || currentPage >= totalPages" @click="goToPage(currentPage + 1)">下一页</button>
       </nav>
     </div>
 
     <!-- 下载模态框 -->
     <Teleport to="body">
-      <div v-if="modal.open" class="modal-mask" @pointerdown.self="!modal.downloading && (modal.open = false)">
-        <div class="modal download-modal">
-          <h3 class="modal-title"><MarqueeText :text="'下载 ' + modal.item?.title"/></h3>
-          <div v-if="modal.item" class="modal-links">
-            <button class="btn btn-ghost btn-sm" @click="openExternal(sourceUrl(modal.item))">
+      <div data-ui="CommunityView:ef88acc39749" v-if="modal.open" class="modal-mask" @pointerdown.self="!modal.downloading && (modal.open = false)">
+        <div data-ui="CommunityView:6904c547ed30" class="modal download-modal">
+          <h3 data-ui="CommunityView:7b81ed690844" class="modal-title"><MarqueeText :text="'下载 ' + modal.item?.title"/></h3>
+          <div data-ui="CommunityView:a84b1e456827" v-if="modal.item" class="modal-links">
+            <button data-ui="CommunityView:6fabba70cd3a" class="btn btn-ghost btn-sm" @click="openExternal(sourceUrl(modal.item))">
               {{ modal.item.source === 'modrinth' ? 'Modrinth 源页面' : 'CurseForge 源页面' }}
             </button>
-            <button class="btn btn-ghost btn-sm" @click="openMcmod(modal.item)">
+            <button data-ui="CommunityView:03eb0c52ad3e" class="btn btn-ghost btn-sm" @click="openMcmod(modal.item)">
               MC 百科介绍
             </button>
           </div>
           <div class="filter-row">
-            <label class="modal-field">Minecraft 版本<input v-model="modal.mcVersion" class="input" list="mod-minecraft-versions" placeholder="全部版本" @change="loadFiles"/></label>
-            <label v-if="usesCommunityLoader(modal.kind)" class="modal-field">Loader<SelectMenu v-model="modal.loader" :options="loaderOptions" @change="loadFiles" /></label>
-            <datalist id="mod-minecraft-versions"><option v-for="v in manifestVersions" :key="v" :value="v"/></datalist>
+            <label data-ui="CommunityView:9b7baa1d1a72" class="modal-field">Minecraft 版本<input data-ui="CommunityView:75b46121b566" v-model="modal.mcVersion" class="input" list="mod-minecraft-versions" placeholder="全部版本" @change="loadFiles"/></label>
+            <label data-ui="CommunityView:73416dae43e4" v-if="usesCommunityLoader(modal.kind)" class="modal-field">Loader<SelectMenu v-model="modal.loader" :options="loaderOptions" @change="loadFiles" /></label>
+            <datalist data-ui="CommunityView:3ea5bc9c8890" id="mod-minecraft-versions"><option v-for="v in manifestVersions" :key="v" :value="v"/></datalist>
           </div>
 
           <p class="modal-label">选择文件版本</p>
-          <div v-if="modal.loadingFiles" class="files-loading">
-            <span class="spin"></span>
+          <div data-ui="CommunityView:8f95d8f66a15" v-if="modal.loadingFiles" class="files-loading">
+            <span data-ui="CommunityView:8941adbc1d4f" class="spin"></span>
             <span class="muted">正在获取文件列表…</span>
           </div>
           <template v-else>
-            <div v-if="modal.files.length" class="file-list">
-              <button
+            <div data-ui="CommunityView:db1154820afe" v-if="modal.files.length" class="file-list">
+              <button data-ui="CommunityView:ceffac990295"
                 v-for="f in modal.files"
                 :key="f.fileId"
                 class="file-row"
                 :class="{ active: modal.fileId === f.fileId }"
                 @click="modal.fileId = f.fileId"
               >
-                <span class="file-main">
-                  <span class="file-name" :title="f.fileName">{{ f.fileName }}</span>
-                  <span class="file-sub">版本 {{ f.version }} · MC {{ f.gameVersions.join(' / ') }}<template v-if="usesCommunityLoader(modal.kind) && f.loaders.length"> · {{ f.loaders.join(' / ') }}</template></span>
+                <span data-ui="CommunityView:05bff2e14ac9" class="file-main">
+                  <span data-ui="CommunityView:3906a840cd50" class="file-name" :title="f.fileName">{{ f.fileName }}</span>
+                  <span data-ui="CommunityView:a7eecc7757d6" class="file-sub">版本 {{ f.version }} · MC {{ f.gameVersions.join(' / ') }}<template v-if="usesCommunityLoader(modal.kind) && f.loaders.length"> · {{ f.loaders.join(' / ') }}</template></span>
                 </span>
-                <span class="file-side">
-                  <span class="tag" :class="releaseTagClass(f.releaseType)">{{ releaseText[f.releaseType] }}</span>
-                  <span class="muted file-meta">{{ fmtDate(f.date) }} · {{ fmtSize(f.size) }}</span>
+                <span data-ui="CommunityView:9584cb689677" class="file-side">
+                  <span data-ui="CommunityView:44e7a728a5f3" class="tag" :class="releaseTagClass(f.releaseType)">{{ releaseText[f.releaseType] }}</span>
+                  <span data-ui="CommunityView:32e67d25368a" class="muted file-meta">{{ fmtDate(f.date) }} · {{ fmtSize(f.size) }}</span>
                 </span>
               </button>
             </div>
-            <p v-if="modal.filesError" class="files-error">{{ modal.filesError }}</p>
+            <p data-ui="CommunityView:579adeba801a" v-if="modal.filesError" class="files-error">{{ modal.filesError }}</p>
           </template>
 
           <!-- 目标版本（整合包安装即新实例，无需选择） -->
           <template v-if="!isModpack">
             <p class="modal-label">下载到版本</p>
             <SelectMenu v-if="targetOptions.length" v-model="modal.versionId" :options="targetOptions.map(v => ({value:instanceKey(v),label:v.id+' · '+v.mcVersion+' / '+(v.loader || '纯净版')+' · '+v.folder}))" @change="selectDownloadInstance" />
-            <p v-else class="files-error">没有与所选文件兼容的已安装实例；可调整文件筛选，或在游戏版本页安装。</p>
+            <p data-ui="CommunityView:ab12acbb18fe" v-else class="files-error">没有与所选文件兼容的已安装实例；可调整文件筛选，或在游戏版本页安装。</p>
           </template>
-          <p v-else class="muted pack-tip">整合包将下载后自动创建独立实例并安装</p>
+          <p data-ui="CommunityView:a8e08b82f315" v-else class="muted pack-tip">整合包将下载后自动创建独立实例并安装</p>
 
-          <div class="modal-actions">
-            <button class="btn btn-ghost" :disabled="modal.downloading" @click="modal.open = false">取消</button>
-            <button class="btn btn-gold" :disabled="!canConfirm" @click="confirmDownload">
-              <span v-if="modal.downloading" class="spin"></span>
+          <div data-ui="CommunityView:2356b94bbc0d" class="modal-actions">
+            <button data-ui="CommunityView:989d28842ec5" class="btn btn-ghost" :disabled="modal.downloading" @click="modal.open = false">取消</button>
+            <button data-ui="CommunityView:cade5c4fc83a" class="btn btn-gold" :disabled="!canConfirm" @click="confirmDownload">
+              <span data-ui="CommunityView:d3c64175bb8e" v-if="modal.downloading" class="spin"></span>
               {{ modal.downloading ? '下载中…' : '确认下载' }}
             </button>
           </div>
@@ -1077,4 +1077,8 @@ function selectDownloadInstance() { const target = targetOptions.value.find(v =>
   gap: var(--space-3);
   margin-top: var(--space-5);
 }
+.search-card{padding:16px;display:flex;flex-direction:column;gap:12px}.search-row{margin:0}.instance-row{margin:0;padding:0;justify-content:flex-end}.instance-row .instance-filter{max-width:420px}.filter-row{gap:12px}.result-list{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}.result-card{box-shadow:none;padding:16px;min-width:0}.result-title{font-size:16px;line-height:1.45;white-space:normal;word-break:normal;overflow-wrap:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-height:none;min-height:0}.result-head{min-width:0;gap:6px}.result-desc{line-height:1.6;min-height:3.2em;-webkit-line-clamp:2}.result-head .tag{font-size:11px;background:var(--card-2);color:var(--text-dim);border:0}.result-links .icon-btn{width:34px;height:34px}.result-foot{gap:12px}.result-author{font-size:12px}.result-meta{font-size:12px}.capsule{border:0!important}.capsule-blob{background:var(--accent-soft)!important;box-shadow:none!important}@media(max-width:800px){.instance-row{flex-wrap:wrap}.instance-row .instance-filter{max-width:none;width:100%}.search-card{padding:12px}}
+.community-page{display:grid;grid-template-columns:minmax(0,1fr);gap:12px!important}.community-page>.page-head{margin:0}.community-page>.instance-row{justify-content:flex-start}.community-page .search-card{margin:0}.community-page .kind-capsules{margin:0;padding:0 0 8px;border-bottom:1px solid var(--border)}.community-page .search-card .filter-row{margin:0}.community-page .result-title{font-size:16px}@media(min-width:1450px){.community-page{grid-template-columns:minmax(0,1fr) minmax(360px,1fr)}.community-page>.instance-row{justify-content:flex-end}.community-page>.search-card,.community-page>.card,.community-page>.status-strip{grid-column:1/-1}}
+
+.community-page .capsule.active { color:var(--text); background:var(--accent-soft); text-shadow:none; }
 </style>

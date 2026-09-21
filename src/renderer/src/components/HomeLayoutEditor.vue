@@ -1,5 +1,10 @@
 <script setup lang="ts">
 /** 图一固定布局下的个性化背景与启动卡图片管理。 */
+import banner1 from '../assets/banner1.webp'
+import banner2 from '../assets/banner2.webp'
+import banner3 from '../assets/banner3.webp'
+import banner4 from '../assets/banner4.png'
+const builtInPreviews=[banner1,banner2,banner3,banner4]
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { carouselImages, carouselDuration, MAX_CAROUSEL_IMAGES } from '@shared/appearancePolicy'
 import { updateSettings } from '../settingsUpdates'
@@ -181,14 +186,14 @@ function setLaunchFit(fit: ImageFit) {
         <h3 class="group-title group-title-tight">窗口背景</h3>
         <p class="muted group-hint group-hint-flush">默认透出并模糊真实系统桌面；图片模式仅在你主动选择时启用。</p>
       </div>
-      <button class="btn btn-ghost btn-sm" @click="resetBg">恢复默认</button>
+      <button data-ui="HomeLayoutEditor:457065564dba" class="btn btn-ghost btn-sm" @click="resetBg">恢复默认</button>
     </div>
 
-    <p v-if="reducedTransparency && store.settings?.background.mode === 'none'" class="group-hint" role="status">
+    <p data-ui="HomeLayoutEditor:f6dd4302c066" v-if="reducedTransparency && store.settings?.background.mode === 'none'" class="group-hint" role="status">
       macOS 已开启“降低透明度”，系统会将毛玻璃显示为实色。可在“系统设置 → 辅助功能 → 显示”中关闭此选项，恢复桌面毛玻璃。
     </p>
-    <div class="bg-modes">
-      <button
+    <div data-ui="HomeLayoutEditor:05b5e9438975" class="bg-modes">
+      <button data-ui="HomeLayoutEditor:ab1c088a4afb"
         v-for="m in bgModes"
         :key="m.value"
         class="capsule"
@@ -202,19 +207,19 @@ function setLaunchFit(fit: ImageFit) {
     <template v-if="store.settings?.background.mode === 'color'">
       <div class="bg-row">
         <span class="muted bg-label">背景色</span>
-        <input
+        <input data-ui="HomeLayoutEditor:b7f054062be4"
           type="color"
           class="color-swatch"
           :value="store.settings.background.color"
           @input="setBg({ color: ($event.target as HTMLInputElement).value })"
         />
-        <span class="mono muted">{{ store.settings.background.color }}</span>
+        <span data-ui="HomeLayoutEditor:bac4082566ae" class="mono muted">{{ store.settings.background.color }}</span>
       </div>
     </template>
 
     <template v-if="store.settings?.background.mode === 'image'">
-      <div v-if="store.settings.background.image && !backgroundPreviewFailed" class="image-preview background-preview">
-        <img
+      <div data-ui="HomeLayoutEditor:559b6b5ae0d7" v-if="store.settings.background.image && !backgroundPreviewFailed" class="image-preview background-preview">
+        <img data-ui="HomeLayoutEditor:65cf8c030362"
           :src="managedImageUrl(store.settings.background.image)"
           :style="{ objectFit: fitCss(store.settings.background.fit) }"
           alt="自定义背景预览"
@@ -226,27 +231,27 @@ function setLaunchFit(fit: ImageFit) {
       </div>
       <div class="bg-row">
         <span class="muted bg-label">背景图片</span>
-        <button class="btn btn-ghost btn-sm" :disabled="importingBackground || importingBackgroundMulti" @click="pickImage">
+        <button data-ui="HomeLayoutEditor:600aad811fea" class="btn btn-ghost btn-sm" :disabled="importingBackground || importingBackgroundMulti" @click="pickImage">
           {{ importingBackground ? '处理中…' : '导入单张…' }}
         </button>
-        <button class="btn btn-ghost btn-sm" :disabled="importingBackground || importingBackgroundMulti" @click="pickImageMulti">
+        <button data-ui="HomeLayoutEditor:b5d9e0d6a917" class="btn btn-ghost btn-sm" :disabled="importingBackground || importingBackgroundMulti" @click="pickImageMulti">
           {{ importingBackgroundMulti ? '处理中…' : '添加多张（可多选）…' }}
         </button>
-        <span class="muted bg-img-path" :title="store.settings.background.image">
+        <span data-ui="HomeLayoutEditor:a0ee9d306678" class="muted bg-img-path" :title="store.settings.background.image">
           {{ store.settings.background.image ? '已由 KAMUCL 管理' : '未选择' }}
         </span>
       </div>
-      <ol v-if="bgImageList.length > 1" class="carousel-list" aria-label="背景图切换列表">
-        <li v-for="(image, index) in bgImageList" :key="image">
+      <ol data-ui="HomeLayoutEditor:e28f1ea34df0" v-if="bgImageList.length > 1" class="carousel-list" aria-label="背景图切换列表">
+        <li data-ui="HomeLayoutEditor:bcb005d78798" v-for="(image, index) in bgImageList" :key="image">
           <img :src="managedImageUrl(image)" :alt="`第 ${index + 1} 张`" />
           <span>{{ index + 1 }}</span>
-          <button class="btn btn-ghost btn-sm" @click="removeBgImage(image)">移除</button>
+          <button data-ui="HomeLayoutEditor:c50825368bbb" class="btn btn-ghost btn-sm" @click="removeBgImage(image)">移除</button>
         </li>
       </ol>
       <div v-if="bgImageList.length > 1" class="bg-row">
         <span class="muted bg-label">自动切换</span>
         <div class="fit-options">
-          <button
+          <button data-ui="HomeLayoutEditor:8f06ad84f746"
             v-for="m in switchModes"
             :key="m.value"
             class="capsule"
@@ -260,7 +265,7 @@ function setLaunchFit(fit: ImageFit) {
       </div>
       <div v-if="bgImageList.length > 1 && (store.settings.background.switchMode ?? 'off') !== 'off'" class="bg-row">
         <span class="muted bg-label">切换间隔</span>
-        <input
+        <input data-ui="HomeLayoutEditor:0d7dbca39e6b"
           type="number"
           class="input num-input"
           min="30"
@@ -274,7 +279,7 @@ function setLaunchFit(fit: ImageFit) {
       <div class="bg-row">
         <span class="muted bg-label">显示方式</span>
         <div class="fit-options">
-          <button
+          <button data-ui="HomeLayoutEditor:f6ec348fd689"
             v-for="fit in fitModes"
             :key="fit.value"
             class="capsule"
@@ -287,7 +292,7 @@ function setLaunchFit(fit: ImageFit) {
       </div>
       <div class="bg-row">
         <span class="muted bg-label">图片透明度</span>
-        <input
+        <input data-ui="HomeLayoutEditor:ca782d9e2791"
           type="range"
           class="slider"
           min="0"
@@ -300,7 +305,7 @@ function setLaunchFit(fit: ImageFit) {
       </div>
       <div class="bg-row">
         <span class="muted bg-label">图片模糊</span>
-        <input
+        <input data-ui="HomeLayoutEditor:48130ab6cc28"
           type="range"
           class="slider"
           min="0"
@@ -311,7 +316,7 @@ function setLaunchFit(fit: ImageFit) {
         />
         <span class="muted bg-val">{{ store.settings.background.blur }}px</span>
       </div>
-      <p class="muted group-hint">透明度越高图片越透；图片模糊单独控制清晰度。系统桌面毛玻璃由操作系统管理，不受这两个图片选项影响。</p>
+      <p data-ui="HomeLayoutEditor:c53c77f7d517" class="muted group-hint">透明度越高图片越透；图片模糊单独控制清晰度。系统桌面毛玻璃由操作系统管理，不受这两个图片选项影响。</p>
     </template>
   </div>
 
@@ -322,32 +327,30 @@ function setLaunchFit(fit: ImageFit) {
         <h3 class="group-title group-title-tight">首页启动卡</h3>
         <p class="muted group-hint group-hint-flush">实例专属图片优先；未设置时使用这里的全局图片，再回退内置轮播。</p>
       </div>
-      <button class="btn btn-ghost btn-sm" @click="resetThumbnail">恢复内置轮播</button>
+      <button data-ui="HomeLayoutEditor:033eef52e2e9" class="btn btn-ghost btn-sm" @click="resetThumbnail">恢复内置轮播</button>
     </div>
-    <div v-if="store.settings?.launchThumbnail.image && !thumbnailPreviewFailed" class="image-preview launch-preview">
-      <img
+    <div data-ui="HomeLayoutEditor:9a79e6484980" v-if="store.settings?.launchThumbnail.image && !thumbnailPreviewFailed" class="image-preview launch-preview">
+      <img data-ui="HomeLayoutEditor:3e1ea1e8ba39"
         :src="managedImageUrl(store.settings.launchThumbnail.image)"
         :style="{ objectFit: fitCss(store.settings.launchThumbnail.fit) }"
         alt="启动卡缩略图预览"
         @error="thumbnailPreviewFailed = true"
       />
     </div>
-    <div v-else class="image-preview image-preview-empty">
-      {{ thumbnailPreviewFailed ? '缩略图不可用，将自动使用内置轮播' : '当前使用内置三图轮播' }}
-    </div>
+    <div v-else class="built-in-previews"><img v-for="(src,index) in builtInPreviews" :key="src" :src="src" :alt="`内置插画 ${index+1}`"/><small class="muted">{{thumbnailPreviewFailed ? '图片不可用，已回退内置轮播' : `当前使用 ${builtInPreviews.length} 张内置插画轮播`}}</small></div>
     <div class="bg-row">
       <span class="muted bg-label">默认图片</span>
-      <button class="btn btn-ghost btn-sm" :disabled="importingThumbnail" @click="pickLaunchThumbnail">
+      <button data-ui="HomeLayoutEditor:d9002bd65d2e" class="btn btn-ghost btn-sm" :disabled="importingThumbnail" @click="pickLaunchThumbnail">
         {{ importingThumbnail ? '处理中…' : '添加图片（可多选）…' }}
       </button>
-      <span class="muted bg-img-path">
+      <span data-ui="HomeLayoutEditor:6054c28ad3cc" class="muted bg-img-path">
         {{ images.length ? `${images.length} / ${MAX_CAROUSEL_IMAGES} 张 · 已由 KAMUCL 管理` : '内置轮播' }}
       </span>
     </div>
     <div class="bg-row">
       <span class="muted bg-label">显示方式</span>
       <div class="fit-options">
-        <button
+        <button data-ui="HomeLayoutEditor:537b581dd0d7"
           v-for="fit in fitModes"
           :key="fit.value"
           class="capsule"
@@ -358,17 +361,17 @@ function setLaunchFit(fit: ImageFit) {
         </button>
       </div>
     </div>
-    <ol v-if="images.length" class="carousel-list" aria-label="启动卡轮播顺序">
-      <li v-for="(image, index) in images" :key="image">
+    <ol data-ui="HomeLayoutEditor:78dcf55b4b19" v-if="images.length" class="carousel-list" aria-label="启动卡轮播顺序">
+      <li data-ui="HomeLayoutEditor:c9fcdfd782bb" v-for="(image, index) in images" :key="image">
         <img :src="managedImageUrl(image)" :alt="`第 ${index + 1} 张`" />
         <span>{{ index + 1 }}</span>
-        <label class="slide-duration">停留 <input type="number" min="1" max="120" step="0.5" :aria-label="`第 ${index + 1} 张停留秒数`" :value="carouselDuration(store.settings?.launchThumbnail.durations?.[image] ?? store.settings?.launchThumbnail.intervalSeconds)" @change="setDuration(($event.target as HTMLInputElement).value, image)" /> 秒</label>
-        <button class="btn btn-ghost btn-sm" :disabled="index === 0" title="向前移动" @click="moveImage(index, -1)">↑</button>
-        <button class="btn btn-ghost btn-sm" :disabled="index === images.length - 1" title="向后移动" @click="moveImage(index, 1)">↓</button>
-        <button class="btn btn-ghost btn-sm" @click="changeImages(images.filter((_, i) => i !== index))">移除</button>
+        <label data-ui="HomeLayoutEditor:1b8a2f6bf653" class="slide-duration">停留 <input data-ui="HomeLayoutEditor:b820622679f5" type="number" min="1" max="120" step="0.5" :aria-label="`第 ${index + 1} 张停留秒数`" :value="carouselDuration(store.settings?.launchThumbnail.durations?.[image] ?? store.settings?.launchThumbnail.intervalSeconds)" @change="setDuration(($event.target as HTMLInputElement).value, image)" /> 秒</label>
+        <button data-ui="HomeLayoutEditor:2b6f46e2b899" class="btn btn-ghost btn-sm" :disabled="index === 0" title="向前移动" @click="moveImage(index, -1)">↑</button>
+        <button data-ui="HomeLayoutEditor:5dd6420ad302" class="btn btn-ghost btn-sm" :disabled="index === images.length - 1" title="向后移动" @click="moveImage(index, 1)">↓</button>
+        <button data-ui="HomeLayoutEditor:ebd5db203bf7" class="btn btn-ghost btn-sm" @click="changeImages(images.filter((_, i) => i !== index))">移除</button>
       </li>
     </ol>
-    <div class="bg-row"><label for="carousel-default-duration">默认停留时间</label><input id="carousel-default-duration" type="number" min="1" max="120" step="0.5" class="input num-input" :value="carouselDuration(store.settings?.launchThumbnail.intervalSeconds)" @change="setDuration(($event.target as HTMLInputElement).value)" /><span class="muted">秒 · 用于内置轮播及未单独设置的图片</span></div>
+    <div class="bg-row"><label data-ui="HomeLayoutEditor:dee929e66133" for="carousel-default-duration">默认停留时间</label><input data-ui="HomeLayoutEditor:c51dd8fea2e7" id="carousel-default-duration" type="number" min="1" max="120" step="0.5" class="input num-input" :value="carouselDuration(store.settings?.launchThumbnail.intervalSeconds)" @change="setDuration(($event.target as HTMLInputElement).value)" /><span class="muted">秒 · 用于内置轮播及未单独设置的图片</span></div>
   </div>
 </template>
 
@@ -486,4 +489,5 @@ function setLaunchFit(fit: ImageFit) {
 .mono {
   font-size: var(--text-xs);
 }
+.built-in-previews{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}.built-in-previews img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:var(--radius-sm)}.built-in-previews small{grid-column:1/-1;font-size:12px}.group+.group{margin-top:16px}@media(max-width:650px){.built-in-previews{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
