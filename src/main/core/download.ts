@@ -60,7 +60,7 @@ export class DownloadHttpError extends Error {
 class InvalidContent extends Error {}
 class NetworkIdle extends Error {}
 export const transferTimeouts = { inactivityMs: 15_000, alternativeHeadersMs: 2500 }
-export const slowSpeedThresholds = { largeFileBytes: 1024*1024, largeWindowMs: 8000, largeMinBps: 256*1024, windowMs: 15000, minWindowBytes: 16*1024, warmupBytes: 1024*1024, warmupMs: 15000 }
+export const slowSpeedThresholds = { largeFileBytes: 1024*1024, largeWindowMs: 8000, largeMinBps: 256*1024, smallWindowMs: 4000, smallMinBps: 32*1024, windowMs: 15000, minWindowBytes: 16*1024, warmupBytes: 1024*1024, warmupMs: 15000 }
 const failures = new Map<string, { count: number; until: number }>()
 const origin = (url: string) => { try { return new URL(url).origin } catch { return url } }
 const serverCooldowns = new Map<string, number>()
@@ -152,7 +152,7 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
   let response: Response | undefined, reader: ReadableStreamDefaultReader<Uint8Array> | undefined, file: fs.promises.FileHandle | undefined
   let timer: ReturnType<typeof setInterval> | undefined, waiting = false, sinceData = 0, elapsed = 0, windowTime = 0, windowBytes = 0, transferred = 0
   let last = performance.now()
-  let headersMs = 0, bodyMs = 0
+  let headersMs = 0, bodyMs = 0, remainingBytes = expected.size ?? Infinity
   const slow = slowSpeedThresholds
   try {
     signal?.throwIfAborted()
@@ -160,6 +160,14 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     try { offset = (await fs.promises.stat(temporary)).size } catch { /* First request. */ }
     // Cross-source continuation without a hash cannot establish representation identity.
     if (!expected.sha1 && !expected.sha512 && !expected.sha256) offset = 0
+    const required = range ? range.end - range.start + 1 : expected.size
+    // A cancelled/late EOF may leave every byte already on disk. Never send
+    // Range: bytes=size- (HTTP 416); the caller still verifies the full hash.
+    if (offset && required === offset && (range || !await verifyFile(temporary, expected, signal))) {
+      progress?.(offset, required, 0)
+      return offset
+    }
+    if (required !== undefined && offset >= required) offset = 0
     const headers: Record<string,string> = { 'accept-encoding': 'identity' }
     if (range) headers.Range = `bytes=${range.start + offset}-${range.end}`
     else if (offset) headers.Range = `bytes=${offset}-`
@@ -172,11 +180,16 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
       // first source early when an exact fallback exists; the last source keeps
       // the full idle allowance, so slower but usable connections can finish.
       if (!response && hasAlternative && elapsed >= transferTimeouts.alternativeHeadersMs) controller.abort(new NetworkIdle('下载源响应缓慢，切换备用来源'))
-      const duration = hasAlternative && (expected.size ?? 0) >= slow.largeFileBytes ? slow.largeWindowMs : slow.windowMs
+      const smallAlternative = hasAlternative && !!response && (expected.size ?? 0) < slow.largeFileBytes
+      const duration = hasAlternative && (expected.size ?? 0) >= slow.largeFileBytes ? slow.largeWindowMs : smallAlternative ? Math.min(slow.smallWindowMs, slow.windowMs) : slow.windowMs
       if (windowTime >= duration) {
         const aggressive = hasAlternative && (expected.size ?? 0) >= slow.largeFileBytes
         const ready = transferred >= slow.warmupBytes || elapsed >= slow.warmupMs
-        if ((aggressive && windowBytes / (windowTime / 1000) < slow.largeMinBps) || (ready && windowBytes < slow.minWindowBytes)) controller.abort(new NetworkIdle('下载速度过慢'))
+        const rate = windowBytes / (windowTime / 1000)
+        // Small mods/assets used to tolerate a few KB/s indefinitely. Switch only
+        // when an exact alternate exists and finishing is not already imminent.
+        const smallStalled = smallAlternative && rate < slow.smallMinBps && remainingBytes > 0 && remainingBytes / Math.max(1, rate) > slow.smallWindowMs / 1000
+        if ((aggressive && rate < slow.largeMinBps) || smallStalled || (ready && windowBytes < slow.minWindowBytes)) controller.abort(new NetworkIdle('下载速度过慢'))
         windowTime = 0; windowBytes = 0
       }
     }, Math.max(10, Math.min(100, transferTimeouts.inactivityMs / 4)))
@@ -209,6 +222,8 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
     file = await fs.promises.open(temporary, offset ? 'a' : 'w')
     reader = response.body.getReader()
     let done = offset
+    remainingBytes = total ? total - done : Infinity
+    windowTime = 0; windowBytes = 0
     progress?.(done, total, 0)
     while (true) {
       await waitIfTaskPaused(signal)
@@ -227,9 +242,12 @@ async function receive(url: string, temporary: string, expected: Integrity, sign
         if (!result.bytesWritten) throw new Error('写入文件失败')
         written += result.bytesWritten
       }
-      done += written; transferred += written; windowBytes += written
+      done += written; transferred += written; windowBytes += written; remainingBytes = total ? Math.max(0, total - done) : Infinity
       if (total && done > total) throw new InvalidContent('响应数据超出声明大小')
       progress?.(done, total, written)
+      // HTTP length/Content-Range plus the final hash define completion, not a
+      // delayed transport EOF. Release this slot immediately once bytes arrive.
+      if (total && done === total) break
     }
     if (total && done !== total) throw new InvalidContent('下载大小不符')
     await file.sync()
@@ -300,10 +318,11 @@ async function segmented(url: string, dest: string, expected: Integrity, signal:
       source.used = true; source.active++; tried.set(source, retry + 1)
       const before = received[index]; let connectedAt = performance.now()
       try {
-        await receive(source.url, file, expected, controller.signal, (done, _total, wire) => { received[index] = done; emit(wire) }, retry === 0, { start, end }, finalUrl => {
+        await receive(source.url, file, expected, controller.signal, (done, _total, wire) => { received[index] = done; emit(wire) }, retry === 0, { start, end }, _finalUrl => {
           // Keep the logical origin for shared measurements. Redirect targets
           // may be signed/short-lived and must not become a batch-wide endpoint.
-          source.url = finalUrl
+          // Always resolve the original address on the next range/retry. Pinning
+          // a mirror's redirect traps all later ranges on one slow/expired node.
           connectedAt = performance.now()
         }, sourcePool, source.identity)
         source.rate = (received[index] - before) * 1000 / Math.max(1, performance.now() - connectedAt)
@@ -430,13 +449,23 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
 export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressFn, concurrency = downloadLimiter.maxConcurrent, mirror: MirrorPref = 'official', signal?: AbortSignal): Promise<void> {
   const tracker = new DownloadProgressTracker(), speed = new SmoothedSpeedEstimator(), active = new Map<number,string>()
   const sourcePool = new DownloadSourcePool()
-  // Start large files early so a queue of tiny assets cannot leave all of the
-  // music/client data until the tail. Preserve caller indices for progress.
+  // Most workers start large files early; reserve one in four for small files.
+  // Overlap per-file latency with bulk transfer instead of deferring thousands
+  // of small assets until 99% of bytes are already downloaded. No extra slots.
   const order = tasks.map((task, index) => ({ index, size: task.size ?? 0 })).sort((a, b) => b.size - a.size)
+  const workers = Math.min(tasks.length, Math.max(1, Math.floor(concurrency) || 1))
+  const mixed = workers >= 4 && order.some(task => task.size >= 1024 * 1024)
+  const large = mixed ? order.filter(task => task.size >= 1024 * 1024) : order
+  const small = mixed ? order.filter(task => task.size < 1024 * 1024).reverse() : []
+  let largeCursor = 0, smallCursor = 0
+  const take = (worker: number) => {
+    if (mixed && worker % 4 === 3 && smallCursor < small.length) return small[smallCursor++]
+    return largeCursor < large.length ? large[largeCursor++] : small[smallCursor++]
+  }
   tasks.forEach(task => tracker.add(task.size)); tracker.seal()
   const controller = new AbortController(), abort = () => controller.abort(signal?.reason)
   signal?.addEventListener('abort', abort, { once: true }); inheritTaskControl(signal, controller.signal)
-  let cursor = 0, firstError: unknown, networkBytes = 0
+  let firstError: unknown, networkBytes = 0
   const report = () => {
     const snapshot = tracker.snapshot(), paused = isTaskPaused(signal)
     const sampled = speed.sample(networkBytes, snapshot.bytesTotal == null ? null : Math.max(0, snapshot.bytesTotal - snapshot.bytesDone), performance.now(), paused)
@@ -447,9 +476,11 @@ export async function downloadAll(tasks: DownloadTask[], progress?: AllProgressF
   try {
     signal?.throwIfAborted()
     if (!tasks.length) { progress?.(0,0,0,{completedFiles:0,totalFiles:0,bytesDone:0,bytesTotal:0,fraction:1,indeterminate:false,speedBps:0,etaSeconds:null,paused:false}); return }
-    await Promise.all(Array.from({ length: Math.min(tasks.length, Math.max(1, Math.floor(concurrency) || 1)) }, async () => {
-      while (!controller.signal.aborted && cursor < tasks.length) {
-        const index = order[cursor++].index, task = tasks[index]; active.set(index, task.label ?? path.basename(task.dest))
+    await Promise.all(Array.from({ length: workers }, async (_, worker) => {
+      while (!controller.signal.aborted) {
+        const next = take(worker)
+        if (!next) return
+        const index = next.index, task = tasks[index]; active.set(index, task.label ?? path.basename(task.dest))
         try {
           await downloadFile(task.url, task.dest, (done,total,wire = 0) => { networkBytes += wire; tracker.record(index,done,total) }, task.sha1, mirror, controller.signal, task.urls, { sha512: task.sha512, sha256: task.sha256, size: task.size, reuseDirs: task.reuseDirs, reuseFiles: task.reuseFiles, sourcePool, maxSegments: () => Math.max(1, Math.floor(downloadLimiter.maxConcurrent / Math.max(1, active.size))) })
           tracker.recordComplete(index, (await fs.promises.stat(task.dest)).size); active.delete(index)

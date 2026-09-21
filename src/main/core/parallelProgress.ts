@@ -38,7 +38,8 @@ export class ParallelProgress {
         stages.push(...event.parallelStages.map(child => ({ ...child, id: `${lane.id}/${child.id}` })))
       } else {
         stages.push({ id: lane.id, label: lane.label, text: event?.text ?? '等待准备', progress,
-          state: done ? 'done' : event ? 'running' : 'waiting', speed: done ? undefined : event?.speed })
+          state: done ? 'done' : event ? 'running' : 'waiting', speed: done ? undefined : event?.speed,
+          indeterminate: !done && event?.indeterminate })
       }
     }
     const progress = this.range[0] + (this.range[1] - this.range[0]) * weighted / this.lanes.reduce((n, lane) => n + lane.weight, 0)

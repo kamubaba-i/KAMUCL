@@ -1485,10 +1485,10 @@ onUnmounted(() => {
                   <div v-for="lane in t.parallelStages" :key="lane.id" :data-ui="'download.stage.' + lane.id" class="dl-stage" :class="{ 'is-done': lane.state === 'done' }">
                     <div class="dl-stage-heading">
                       <span>{{ lane.label }}</span>
-                      <span class="muted">{{ lane.state === 'done' ? '已就绪' : lane.state === 'waiting' ? '准备中' : taskProgressPercent({ status: 'running', progress: lane.progress }) + '%' }}</span>
+                      <span class="muted">{{ lane.state === 'done' ? '已就绪' : lane.state === 'waiting' ? '准备中' : lane.indeterminate ? '处理中' : taskProgressPercent({ status: 'running', progress: lane.progress }) + '%' }}</span>
                     </div>
                     <div class="dl-stage-detail muted" :title="lane.text">{{ lane.text }}</div>
-                    <div class="dl-bar"><div class="dl-bar-fill" :style="{ width: taskProgressPercent({ status: lane.state === 'done' ? 'done' : 'running', progress: lane.progress }) + '%' }"></div></div>
+                    <div v-if="!lane.indeterminate" class="dl-bar"><div class="dl-bar-fill" :style="{ width: taskProgressPercent({ status: lane.state === 'done' ? 'done' : 'running', progress: lane.progress }) + '%' }"></div></div>
                   </div>
                 </div>
               </div>

@@ -13,7 +13,7 @@ export async function versionInstallHarness(root: string, metadataFetch: typeof 
         export { getSettings } from './src/main/core/settings';
         export { listFabricApiVersions } from './src/main/core/loaders';
         export { communityDownload, communitySearchPage, communityFiles } from './src/main/core/community';
-        export { installModpack } from './src/main/core/modpacks';
+        export { installModpack, extractOverrides } from './src/main/core/modpacks';
         export { supplyModpackFiles } from './src/main/core/modpackManualFiles';
         export { closeHttpClient } from './src/main/core/httpClient';`,
       resolveDir: process.cwd(), loader: 'ts'

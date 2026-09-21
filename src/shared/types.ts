@@ -617,6 +617,7 @@ export interface ParallelStage {
   progress: number
   state: 'waiting' | 'running' | 'done'
   speed?: number
+  indeterminate?: boolean
 }
 export interface ManualModpackFile {
   projectID: number

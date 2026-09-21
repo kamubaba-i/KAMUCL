@@ -32,7 +32,7 @@ import { registerVersionFolder, versionDir, versionJsonPath, versionsDir } from 
 import { allFolders, gameDir, withGameFolder } from './paths'
 import { installVersion, listAllInstalled, readVersionJson, flattenInstance } from './versions'
 import { packRuntimeProfile } from './packRuntime'
-import { throwIfCancelled } from './tasks'
+import { throwIfCancelled, waitIfTaskPaused } from './tasks'
 import { listGameFolders, setActiveGameFolder } from './gameFolders'
 import { canonicalPath, samePath } from './folderPaths'
 import { logScope } from './launcherLog'
@@ -697,19 +697,19 @@ async function mapPool<T, R>(
 }
 
 /** 只解压 overrides 前缀下的普通文件；不安全路径或符号链接直接拒绝。 */
-async function extractOverrides(
+export async function extractOverrides(
   zip: AdmZip,
   prefix: string | null,
   destDir: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  progress?: (done: number, total: number, name: string) => void
 ): Promise<string[]> {
   if (!prefix) return []
   const pre = normEntry(prefix).replace(/\/+$/, '') + '/'
   const extracted: string[] = []
-  for (const entry of zip.getEntries()) {
+  const files = zip.getEntries().filter(entry => !entry.isDirectory && normEntry(entry.entryName).startsWith(pre)).map(entry => {
     throwIfCancelled(signal)
     const name = normEntry(entry.entryName)
-    if (entry.isDirectory || !name.startsWith(pre)) continue
     const rel = name.slice(pre.length)
     const dest = safeJoin(destDir, rel)
     if (!dest) throw new Error(`overrides 包含不安全路径：${rel}`)
@@ -717,10 +717,34 @@ async function extractOverrides(
       throw new Error(`overrides 不允许符号链接：${rel}`)
     }
     if (entry.header.size > 512 * 1024 * 1024) throw new Error(`overrides 单文件超过 512 MB：${rel}`)
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, entry.getData())
-    extracted.push(rel.replace(/\\/g, '/'))
-    if (extracted.length % 8 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
+    return { entry, dest, rel: rel.replace(/\\/g, '/') }
+  })
+  const directories = new Map<string, Promise<unknown>>()
+  let lastReported = 0
+  for (let cursor = 0; cursor < files.length;) {
+    // Bound both memory and writes. Large entries run alone; aliases never write
+    // concurrently. Preserve ZIP order and drain all writers before rollback.
+    const batch: typeof files = [], destinations = new Set<string>()
+    let bytes = 0
+    while (cursor < files.length && batch.length < 4) {
+      const item = files[cursor], key = process.platform === 'win32' ? item.dest.toLowerCase() : item.dest
+      if (batch.length && (bytes + item.entry.header.size > 16 * 1024 * 1024 || destinations.has(key))) break
+      batch.push(item); destinations.add(key); bytes += item.entry.header.size; cursor++
+    }
+    await runParallelTasks(batch.map(item => async signal => {
+      await waitIfTaskPaused(signal); throwIfCancelled(signal)
+      const dir = path.dirname(item.dest)
+      if (!directories.has(dir)) directories.set(dir, fs.promises.mkdir(dir, { recursive: true }))
+      await directories.get(dir)
+      const data = item.entry.getData()
+      throwIfCancelled(signal)
+      await fs.promises.writeFile(item.dest, data, { signal })
+    }), signal)
+    extracted.push(...batch.map(item => item.rel))
+    if (extracted.length === files.length || performance.now() - lastReported >= 100) {
+      lastReported = performance.now()
+      progress?.(extracted.length, files.length, batch.at(-1)!.rel)
+    }
   }
   return extracted
 }
@@ -1119,12 +1143,15 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
     // 7) 解压 overrides 覆盖到实例目录
     report({ stage: 'modpack', progress: 0.96, text: '解压覆盖文件…' })
     throwIfCancelled(opts?.signal)
-    const overrideFiles = await extractOverrides(zip, meta.overridesPrefix, instDir, opts?.signal)
+    const extractionProgress = (start: number, span: number) => (done: number, total: number, name: string) =>
+      report({ stage: 'modpack', progress: start + span * done / Math.max(1, total), text: `正在写入整合包配置 ${done}/${total} · ${name}` })
+    const overrideFiles = await extractOverrides(zip, meta.overridesPrefix, instDir, opts?.signal, extractionProgress(0.96, 0.02))
     const clientOverrideFiles = await extractOverrides(
       zip,
       meta.clientOverridesPrefix ?? null,
       instDir,
-      opts?.signal
+      opts?.signal,
+      extractionProgress(0.98, 0.005)
     )
 
     // 默认按键替换：用户选择时用启动器默认键位覆盖整合包 options.txt 的 key_* 项
