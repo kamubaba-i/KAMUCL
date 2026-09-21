@@ -122,3 +122,5 @@ import './modpack-autocomplete-1098.test'
 import './ui-system.test'
 import './download-tail-1100.test'
 import './ui-refinement.test'
+
+import './ui-motion-112.test'

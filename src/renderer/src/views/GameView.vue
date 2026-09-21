@@ -2,13 +2,13 @@
 import { formatReleaseTime } from '@shared/releaseTime'
 import { openInstanceCenter } from '../instanceCenter'
 import ContentSkeleton from '../components/ContentSkeleton.vue'
+import { catalogSession } from '../catalogCache'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
   addFolder,
   cleanupPartialInstall,
   errText,
   formatSpeed,
-  getVersionCatalog,
   getIsolationPlan,
   getSettings,
   getInstalled,
@@ -76,21 +76,19 @@ const folderKey = (p: string) => p.replace(/\\/g, '/').replace(/\/$/, '').toLowe
 const installedFolderOptions = computed(() => [{ value: '', label: '全部文件夹' }, { value: '@current', label: '当前文件夹' }, ...(store.settings?.folders ?? []).map(f => ({ value: f.path, label: `${f.name} · ${f.path}` }))])
 watch(installedFolderOptions, options => { if (!options.some(o => o.value === installedFolder.value)) installedFolder.value = '' })
 // ---------------- 清单加载 ----------------
-const manifest = ref<RemoteVersion[]>([])
+const cachedCatalog = catalogSession.peek()
+const manifest = ref<RemoteVersion[]>(cachedCatalog?.versions ?? [])
 const loading = ref(false)
 const loadError = ref('')
-const staleCatalog = ref(false)
-const checkedAt = ref(0)
+const staleCatalog = ref(cachedCatalog?.stale ?? false)
+const checkedAt = ref(cachedCatalog?.checkedAt ?? 0)
 let disposed = false
 let lastAttempt = 0
 let catalogTimer: ReturnType<typeof setInterval> | undefined
 
-/** 顶部 Tab：版本下载 / 已安装（消灭内层嵌套滚动，localStorage 记忆） */
-const TAB_KEY = 'kamucl.gameTab'
-const tab = ref<'download' | 'installed'>(
-  localStorage.getItem(TAB_KEY) === 'download' ? 'download' : 'installed'
-)
-watch(tab, (t) => localStorage.setItem(TAB_KEY, t))
+/** Each visit starts with local instances; remote metadata is loaded only on demand. */
+const tab = ref<'download' | 'installed'>('installed')
+watch(tab, value => { if (value === 'download') void load() })
 
 // ---------------- Tab 滑动指示块（版本下载 ⇄ 已安装 平滑滑动，与导航水滴同款弹簧动效） ----------------
 const gameTabs = ref<HTMLElement | null>(null)
@@ -131,7 +129,7 @@ async function load(refresh = false) {
   loading.value = true
   loadError.value = ''
   try {
-    const result = await getVersionCatalog(refresh)
+    const result = await catalogSession.load(refresh)
     if (disposed) return
     manifest.value = result.versions
     staleCatalog.value = result.stale
@@ -141,7 +139,7 @@ async function load(refresh = false) {
   } finally { if (!disposed) loading.value = false }
 }
 function checkCatalogOnReturn() {
-  if (document.visibilityState === 'visible' && Date.now() - lastAttempt >= 60_000) void load(true)
+  if (tab.value === 'download' && document.visibilityState === 'visible' && Date.now() - lastAttempt >= 60_000) void load()
 }
 onUnmounted(() => {
   disposed = true
@@ -326,10 +324,9 @@ async function revealCurrentFolder() {
 }
 
 onMounted(() => {
-  void load(true)
   window.addEventListener('focus', checkCatalogOnReturn)
   document.addEventListener('visibilitychange', checkCatalogOnReturn)
-  catalogTimer = setInterval(() => { if (document.visibilityState === 'visible') void load(true) }, 5 * 60_000)
+  catalogTimer = setInterval(() => { if (tab.value === 'download' && document.visibilityState === 'visible') void load() }, 5 * 60_000)
   void loadFolderState()
 })
 

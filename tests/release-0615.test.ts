@@ -16,8 +16,8 @@ test('百科仅发送原始英文名称，不包含中文译名（卡片与弹�
   assert.equal(mcmodSearchUrl({ title: '中文名', slug: '中文' }), null)
 })
 
-test('透明主题与设置预览共用 Tiffany Blue，其他主题不变', () => {
-  assert.equal(THEME_PRESETS.transparent.colors.accent, '#81d8d0')
+test('默认黑紫主题与设置预览共用紫色，其他主题不变', () => {
+  assert.equal(THEME_PRESETS.transparent.colors.accent, '#9475ed')
   assert.equal(THEME_PRESETS['black-orange'].colors.accent, '#f97316')
   const settings = fs.readFileSync('src/renderer/src/views/SettingsView.vue', 'utf8')
   assert.match(settings, /named\('transparent'\)/)

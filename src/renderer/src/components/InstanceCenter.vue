@@ -51,7 +51,7 @@ onUnmounted(()=>{document.removeEventListener('keydown',key,true);previousFocus?
    <section class="ic" role="dialog" aria-modal="true" aria-labelledby="ic-title" data-ui="instance-center:page">
     <header class="ic-header"><div><small>实例管理中心</small><h2 id="ic-title">{{ overview?.name||target.id }}</h2><p>{{ overview?.mcVersion }} <span v-if="overview?.loader">· {{ overview.loader }}</span> · {{ overview?.shared?'共享游戏目录':'独立游戏目录' }}</p></div><button class="btn btn-ghost" aria-label="关闭实例管理" @click="close">✕</button></header>
     <nav class="ic-tabs" aria-label="实例功能"><button v-for="[value,label] in sections" :key="value" :class="{active:tab===value}" @click="chooseTab(value)">{{label}}</button></nav>
-    <div class="ic-content">
+    <div :key="tab" class="ic-content">
      <p v-if="error" class="ic-error" role="alert">{{error}} <button class="btn btn-sm" :disabled="busy" @click="refresh">重新加载</button></p>
      <p v-if="overview?.running" class="ic-hint">此目录的游戏正在运行。请退出游戏后再复制、备份或恢复。</p>
      <p v-if="loading" class="ic-empty">正在读取实例…</p>

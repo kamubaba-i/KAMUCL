@@ -33,7 +33,7 @@
 .content :is(.connection-header h1,.pick-head h1) { font-size:var(--text-title); }
 .content :is(.connection-field,.connection-result,.pick-desc) { font-size:var(--text-md); }
 .content .connection-columns { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); }
-.content .method-slide-leave-active { display:none; }
+
 .modal,.select-menu-list,.instance-more-menu,.context-menu { background-color:var(--surface-raised); }
 .modal { max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow:auto; }
 .modal :is(input,select,textarea) { min-width:0; max-width:100%; }
@@ -76,3 +76,51 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 .content details>summary{cursor:pointer}.content button:disabled{cursor:not-allowed}
 .content .connection-details{background:transparent;box-shadow:none;padding:12px 0;border-radius:0;border-width:0 0 1px}
 .content .connection-panel{box-shadow:none}.content .connection-panel .connection-panel{background:transparent;box-shadow:none}
+
+/* Motion contract: native disclosures animate both directions without click interception,
+   timers, synthetic open state or remounting forms. Electron's Chromium supports intrinsic size. */
+details::details-content {
+  interpolate-size: allow-keywords;
+  block-size: 0;
+  opacity: 0;
+  overflow: clip;
+  transition: block-size 220ms var(--ease-out), opacity 180ms ease, content-visibility 220ms allow-discrete;
+}
+details[open]::details-content { block-size:auto; opacity:1; }
+/* Absolute-positioned action menus must escape the disclosure's zero-height flow box. */
+details:has(> summary.btn)::details-content { block-size:auto; overflow:visible; }
+.popover-enter-active,.popover-leave-active { transition:opacity 180ms ease,translate 200ms var(--ease-out); }
+.popover-enter-from,.popover-leave-to { opacity:0; translate:0 -5px; }
+.popover-leave-active { pointer-events:none; }
+.subpage-enter-active { transition:opacity 200ms ease,translate 200ms var(--ease-out); }
+.subpage-enter-from { opacity:0; translate:0 6px; }
+.subpage-leave-active { display:none; }
+/* Display-based tabs retain their existing component state and fade in on every reveal.
+   No exit delay: rapid navigation cannot queue clicks or leave invisible controls on top. */
+:is(.cfg-page > .card,.settings-body > *, .game-controls,.list-card,.installed-card,
+ .folder-manager-actions,.notice-panel,.float-menu,.instance-more-menu,.menu,.context-menu,
+ .modal-mask,.modal,.ic-mask,.ic-dialog-mask,.connection-panel,.settings-search-results,.options-entrances,.tab-body,.ic-content,.connection-result) {
+  transition:opacity 200ms ease;
+}
+@starting-style {
+  :is(.cfg-page > .card,.settings-body > *, .game-controls,.list-card,.installed-card,
+   .folder-manager-actions,.notice-panel,.float-menu,.instance-more-menu,.menu,.context-menu,
+   .modal-mask,.modal,.ic-mask,.ic-dialog-mask,.connection-panel,.settings-search-results,.options-entrances,.tab-body,.ic-content,.connection-result) { opacity:0; }
+}
+/* Focus uses one outer glow on composite search controls; keyboard focus remains visible. */
+.content :is(.tool-search,.server-search,.search-box,.input,.select,.capsule,.cfg-sections button),
+.select-menu-btn {
+  transition:background-color 180ms ease,color 180ms ease,border-color 180ms ease,box-shadow 220ms ease,outline-color 180ms ease;
+}
+.content :is(.tool-search,.server-search):focus-within { border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft); }
+.content :is(.tool-search,.server-search) input:focus-visible { outline:none;box-shadow:none; }
+/* Preserve the old persisted theme key while making its default material neutral and calm. */
+html[data-theme="transparent"] { color-scheme:dark; }
+html[data-theme="transparent"] .btn-gold { background:var(--accent-deep);box-shadow:none; }
+html[data-motion="reduced"] details::details-content { transition:none; }
+@media(prefers-reduced-motion:reduce) {
+  details::details-content { transition:none; }
+  .popover-enter-active,.popover-leave-active,.subpage-enter-active { transition:none; }
+}
+
+.ic-tabs button { transition:background-color 180ms ease,color 180ms ease; }

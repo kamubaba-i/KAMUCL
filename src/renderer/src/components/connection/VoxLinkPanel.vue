@@ -400,19 +400,19 @@ onUnmounted(() => { offEvent?.(); if (tickTimer) clearInterval(tickTimer) })
     <ConnectionPanel v-else class="vox-workspace" title="游戏与房间">
       <label class="connection-field">游戏实例<SelectMenu v-model="instanceKey" :options="instanceOptions" :disabled="!!pendingJoin" placeholder="选择游戏实例" /><small>共享和下载的模组均使用此实例。</small></label>
       <div data-ui="VoxLinkPanel:a4a4e47d1972" class="connect-tabs" role="tablist" aria-label="联机入口"><button data-ui="VoxLinkPanel:bb11948caa5b" v-for="item in (['host','join','lobby'] as const)" :key="item" class="connect-tab" :class="{active:tab===item}" role="tab" :aria-selected="tab===item" @click="switchTab(item)">{{ item === 'host' ? '创建房间' : item === 'join' ? '加入房间' : '公共大厅' }}</button></div>
-      <div v-if="tab === 'host'" class="tab-body host-form">
+      <div key="host" v-if="tab === 'host'" class="tab-body host-form">
         <div data-ui="VoxLinkPanel:b8dcf152db46" class="entry-tip"><p><strong>邀请好友的步骤</strong><br/>1. 启动游戏并进入世界<br/>2. 选择「对局域网开放」<br/>3. 创建房间，把房间码发给好友</p></div>
         <label class="connection-field">房间名<input data-ui="VoxLinkPanel:75532f9b2f0f" ref="roomNameInput" v-model="roomName" class="input" :maxlength="VOXLINK_ROOM_NAME_MAX" placeholder="给这次冒险起个名字" :aria-invalid="!!roomNameError" /><small data-ui="VoxLinkPanel:3f72715e277c" v-if="roomNameError" class="connection-error" role="alert">{{ roomNameError }}</small></label>
         <label class="connection-toggle"><span>在公共大厅显示<small>关闭后，好友仍可凭房间码加入。</small></span><input data-ui="VoxLinkPanel:0388be29ae36" v-model="isPublic" type="checkbox" /><span class="connection-toggle-track" aria-hidden="true"></span></label>
         <details data-ui="VoxLinkPanel:ec950898b711" class="connection-details"><summary>没有检测到游戏？手动填写端口</summary><label class="connection-field">局域网游戏端口<input data-ui="VoxLinkPanel:766e671e24eb" v-model="manualPort" class="input" type="number" min="1" max="65535" placeholder="留空自动检测" /><small>在游戏「对局域网开放」后的聊天提示中查看。</small></label></details>
         <div class="connection-actions"><button data-ui="VoxLinkPanel:21d65137d940" class="btn btn-gold" @click="startHost">创建房间 →</button></div>
       </div>
-      <div data-ui="VoxLinkPanel:d5e1a4fcbada" v-else-if="tab === 'join'" class="tab-body">
+      <div data-ui="VoxLinkPanel:d5e1a4fcbada" key="join" v-else-if="tab === 'join'" class="tab-body">
         <label class="connection-field">好友的房间码<input data-ui="VoxLinkPanel:252ad3055684" v-model="joinCode" class="input room-input" maxlength="6" placeholder="输入 6 位房间码" @keydown.enter="startJoin(joinCode)" /></label>
         <p class="connection-muted">加入前可检查所需模组。连接成功后，这里会显示游戏地址和加入指引。</p>
         <div class="connection-actions"><button data-ui="VoxLinkPanel:5efd9b881c4e" class="btn btn-gold" :disabled="joinCode.trim().length !== 6" @click="startJoin(joinCode)">加入房间 →</button></div>
       </div>
-      <div data-ui="VoxLinkPanel:5dc76e918969" v-else-if="tab === 'lobby'" class="tab-body">
+      <div data-ui="VoxLinkPanel:5dc76e918969" key="lobby" v-else-if="tab === 'lobby'" class="tab-body">
         <div data-ui="VoxLinkPanel:5f0b077855e1" class="lobby-bar"><label data-ui="VoxLinkPanel:7a9c6cad1211" class="connection-field lobby-search">发现房间<input data-ui="VoxLinkPanel:b708e83ac19a" v-model="search" class="input" placeholder="搜索房间名…" @keydown.enter="loadLobby" /></label><button data-ui="VoxLinkPanel:016a2518dbf1" class="btn btn-ghost" :disabled="loadingLobby" @click="loadLobby">{{ loadingLobby ? '刷新中…' : '刷新大厅' }}</button></div>
         <p data-ui="VoxLinkPanel:e312b633a89b" v-if="!rooms.length" class="connection-muted">{{ loadingLobby ? '正在寻找公开房间…' : '暂时没有公开房间，创建一个邀请好友吧。' }}</p>
         <ul data-ui="VoxLinkPanel:23ebb3082754" v-else class="lobby-list"><li data-ui="VoxLinkPanel:84d06265d7c7" v-for="room in rooms" :key="room.code" class="lobby-item"><div data-ui="VoxLinkPanel:69f9a9318d00" class="lobby-main"><span class="connection-eyebrow">{{ room.category || '一起游玩' }}</span><strong>{{ room.name }}</strong><small>{{ [room.gameVersion, room.loader].filter(Boolean).join(' · ') || '版本未标注' }}</small><span data-ui="VoxLinkPanel:f8116c66cc88" v-if="room.clientTag === 'kamucl'" class="kamucl-badge">KAMUCL 房间</span></div><div data-ui="VoxLinkPanel:1040c97a6114" class="lobby-side"><span data-ui="VoxLinkPanel:9d3841267bb7" class="connection-muted">{{ room.currentPlayers ?? '?' }}/{{ room.maxPlayers ?? '?' }} 人</span><button data-ui="VoxLinkPanel:446640f4241c" class="btn btn-gold" @click="startJoin(room.code)">加入 →</button></div></li></ul>

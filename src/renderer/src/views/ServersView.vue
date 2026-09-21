@@ -507,5 +507,25 @@ async function copyAddress(s: ServerEntry) {
 .servers-page .server-batch > .btn { margin-left: auto; }
 @media (max-width: 1120px) { .servers-page .server-workspace { grid-template-columns: 1fr; } .servers-page .server-detail { position: static; } }
 .servers-page{gap:16px}.servers-page .connection-header{margin:0;padding:0}.servers-page .connection-header h1 small{font-size:12px;font-weight:400;color:var(--text-dim);margin-left:12px}.server-toolbar{margin:0;gap:12px}.servers-page .server-list-item{border:0;border-bottom:1px solid var(--border);border-radius:0;min-height:80px;box-shadow:none;padding:0 8px;background:transparent}.servers-page .server-list-item.active{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent)}.servers-page .server-row-button{padding:12px;min-width:0}.servers-page .server-row-copy{min-width:0}.servers-page .server-row-copy strong{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.servers-page .server-row-state{min-width:76px}.servers-page .server-favorite{order:3;margin:0 4px}.servers-page .server-row-button{flex:1}.servers-page .server-detail-title h3{font-size:21px}.servers-page .server-detail{align-self:start}@media(max-width:800px){.server-toolbar{flex-wrap:wrap}.server-toolbar .server-search{flex-basis:100%}.servers-page .connection-header h1 small{display:block;margin:6px 0 0}}
-.servers-page .server-list{gap:0;background:var(--surface-content);padding:0 12px;border:1px solid var(--border);border-radius:var(--radius-lg)}.servers-page .server-list-item{animation:none;overflow:visible}.servers-page .server-list-item:hover,.servers-page .server-list-item:active{transform:none;box-shadow:none}.servers-page .server-list-item:hover .server-monogram{transform:none}@media(min-width:1121px){.servers-page .server-workspace{grid-template-columns:minmax(260px,44fr) minmax(300px,56fr);min-height:0;flex:1}.servers-page .server-list,.servers-page .server-detail{max-height:calc(100vh - 270px);overflow:auto;scrollbar-gutter:stable}.content:has(.servers-page){overflow:hidden}.servers-page{height:100%;min-height:0}}
+.servers-page .server-list{gap:0;background:var(--surface-content);padding:0 12px;border:1px solid var(--border);border-radius:var(--radius-lg)}.servers-page .server-list-item{animation:none;overflow:visible}.servers-page .server-list-item:hover,.servers-page .server-list-item:active{transform:none;box-shadow:none}.servers-page .server-list-item:hover .server-monogram{transform:none}@media(min-width:1121px){.servers-page .server-workspace{grid-template-columns:minmax(360px,1.2fr) minmax(320px,1fr);min-height:0;flex:1}.servers-page .server-list,.servers-page .server-detail{max-height:calc(100vh - 270px);overflow:auto;scrollbar-gutter:stable}.content:has(.servers-page){overflow:hidden}.servers-page{height:100%;min-height:0}}
+
+.servers-page .server-workspace { gap:16px; }
+.servers-page .server-list { padding:8px; }
+.servers-page .server-list-item { padding:0 4px; min-height:86px; }
+.servers-page .server-list-item.active { border-bottom-color:var(--border);box-shadow:none;background:var(--accent-soft);border-radius:var(--radius-sm); }
+.servers-page .server-list-item.active .server-row-copy strong { color:var(--accent-2); }
+.servers-page .server-row-button { gap:12px;padding:12px 8px; }
+.servers-page .server-monogram { width:36px;height:36px; }
+.servers-page .server-row-state { min-width:66px; }
+.servers-page .server-favorite { margin:0 4px; }
+.servers-page .server-list > .connection-muted { padding:8px;font-size:12px; }
+.servers-page .server-detail .connection-panel-body { gap:16px;padding:20px; }
+.servers-page .server-detail-title h3 { margin:0;font-size:20px; }
+.servers-page .server-facts { padding:12px 0;border-block:1px solid var(--border); }
+.servers-page .server-facts strong { font-size:18px; }
+.servers-page .server-description { padding:10px 12px;line-height:1.6; }
+.servers-page .server-detail .connection-panel-head { padding:12px 20px; }
+.servers-page .server-detail .connection-panel-head h2 { font-size:14px;color:var(--text-dim);font-weight:500; }
+@media(min-width:1121px) { .servers-page { max-width:1480px;margin-inline:auto;width:100%; }.servers-page .server-detail { position:sticky;top:0; } }
+@media(max-width:1120px) { .servers-page .server-workspace { grid-template-columns:minmax(0,1fr); }.servers-page .server-list{max-height:360px;overflow:auto}.servers-page .server-detail{position:static} }
 </style>

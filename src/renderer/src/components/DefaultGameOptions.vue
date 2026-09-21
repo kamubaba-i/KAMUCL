@@ -52,6 +52,7 @@ onMounted(async () => {
     <p class="options-note muted">只同步你修改的项目，其余保留游戏设置。预览版本用于检查兼容性，启动时会按实际版本转换数值。</p>
     <p data-ui="DefaultGameOptions:10d78a0fdb4e" v-if="unavailable.length" class="options-warning">{{ version }} 不支持：{{ unavailable.map(d => d.label).join('、') }}。这些项目仅对支持它们的版本生效。</p>
     <div data-ui="DefaultGameOptions:0d8159fbfd41" class="options-path"><button data-ui="DefaultGameOptions:1562533f2d42" v-if="page !== 'root'" class="btn btn-ghost btn-sm" @click="page = page === 'mouse' ? 'controls' : 'root'">← 返回</button><span>选项{{ page === 'mouse' ? ' / 控制' : '' }}{{ page !== 'root' ? ' / ' + title : '' }}</span></div>
+    <Transition name="subpage" :duration="200"><div :key="page" class="options-subpage">
     <div data-ui="DefaultGameOptions:e6f5ebde59ad" v-if="page === 'controls'" class="mc-options-grid options-entrances"><button data-ui="DefaultGameOptions:f1628cab636d" class="btn btn-ghost" @click="page = 'mouse'">鼠标设置 · 灵敏度与滚动…</button><button data-ui="DefaultGameOptions:6db7a55c29cd" class="btn btn-ghost" @click="emit('section', 'keys')">按键控制…</button></div>
     <div data-ui="DefaultGameOptions:389b53ed107f" v-if="loading" class="empty">正在读取配置…</div>
     <div data-ui="DefaultGameOptions:82a40224d2d5" v-else class="mc-options-grid">
@@ -68,6 +69,7 @@ onMounted(async () => {
 
     <div data-ui="DefaultGameOptions:442a64be81c7" v-if="page === 'root'" class="mc-options-grid options-entrances"><button data-ui="DefaultGameOptions:bc796694a084" v-for="[id, name] in GAME_OPTION_PAGES" :key="id" class="option-entry" @click="open(id)">{{ name }}<span>›</span></button></div>
     <p data-ui="DefaultGameOptions:49d93417eccf" v-if="page === 'credits'" class="empty">Minecraft 的鸣谢与著作权信息请在游戏内查看；此入口不修改配置。</p>
+    </div></Transition>
     <details class="options-note muted"><summary>同步规则与兼容性说明</summary><p>只同步已修改的原版选项，未修改项跟随游戏。预览版本不会切换游戏实例；启动时按真实版本转换。模组接管的选项需同时检查模组配置。</p></details>
   </section>
 </template>

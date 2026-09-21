@@ -48,6 +48,8 @@ function pick(key: ConnectPage) {
 <template>
   <div data-ui="FriendConnectView:69eba3f628bf" class="page friend-connect-page" :data-design-page="page">
     <div data-ui="FriendConnectView:67caa1fbb509" class="connect-page">
+      <Transition name="subpage" :duration="200">
+      <div :key="page" class="connect-stage">
       <!-- 方式选择页（landing） -->
       <template v-if="page === 'choose'">
         <header data-ui="FriendConnectView:dc6bf3ba90d8" class="connection-header pick-head">
@@ -80,7 +82,7 @@ function pick(key: ConnectPage) {
 
       <!-- 各方式独立页面（切换过渡：右滑渐入，与全局面切换同节奏） -->
       <template v-else>
-        <Transition name="method-slide"  :duration="180">
+
           <div data-ui="FriendConnectView:23040345b003" :key="page" class="method-page">
             <header data-ui="FriendConnectView:d294772458fe" class="connection-header method-header">
               <div data-ui="FriendConnectView:0eeacbd88403" class="header-copy">
@@ -97,8 +99,10 @@ function pick(key: ConnectPage) {
             <VoxLinkPanel v-else-if="page === 'voxlink'" />
             <TerracottaPanel v-else-if="page === 'terracotta'" />
           </div>
-        </Transition>
+
       </template>
+      </div>
+      </Transition>
     </div>
   </div>
 </template>
@@ -112,14 +116,6 @@ function pick(key: ConnectPage) {
   .method-header { flex-wrap: wrap; }
   .header-copy { flex-basis: 100%; }
   .header-side { justify-content: flex-end; }
-}
-
-/* 方式子页面切换过渡：右滑+淡入（mode out-in） */
-.method-slide-enter-active, .method-slide-leave-active { transition: opacity var(--motion-normal) ease; }
-.method-slide-enter-from { opacity: 0; transform: translateX(22px); }
-.method-slide-leave-to { opacity: 0; transform: translateX(-14px); }
-@media (prefers-reduced-motion: reduce) {
-  .method-slide-enter-active, .method-slide-leave-active { transition: none; }
 }
 
 /* 方式选择页：三张横向大卡片，宽松排布 */
@@ -162,5 +158,5 @@ function pick(key: ConnectPage) {
 /* 箭头悬浮滑入 */
 .pick-go { align-self: center; flex: none; color: var(--text-dim); font-size: var(--text-lg); opacity: 0.4; transform: translateX(-4px); transition: opacity .18s ease, transform .22s cubic-bezier(0.22, 0.9, 0.32, 1.2), color .18s ease; }
 .pick-card:hover .pick-go { color: var(--accent-2); opacity: 1; transform: translateX(0); }
-.friend-connect-page{max-width:1200px;container-type:inline-size}.pick-list{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.pick-card{padding:20px;animation:none;box-shadow:none}.pick-card:hover{box-shadow:none}.pick-desc{font-size:14px;line-height:1.65}.pick-name{font-size:18px}.pick-card:hover .pick-icon{transform:none}.method-header{margin-bottom:16px}.method-header p{font-size:13px;line-height:1.6;max-width:800px}.method-header h1{margin:0 0 6px}.pick-head{padding:0}.pick-head h1{font-size:24px}.method-slide-enter-from,.method-slide-leave-to{transform:none}@container(min-width:960px){.pick-list{grid-template-columns:repeat(3,minmax(0,1fr))}.pick-card{flex-direction:column;gap:14px}.pick-go{align-self:flex-end}.pick-copy{gap:12px}.pick-name{display:grid;gap:8px}.pick-name em{justify-self:start}}
+.friend-connect-page{max-width:1200px;container-type:inline-size}.pick-list{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.pick-card{padding:20px;animation:none;box-shadow:none}.pick-card:hover{box-shadow:none}.pick-desc{font-size:14px;line-height:1.65}.pick-name{font-size:18px}.pick-card:hover .pick-icon{transform:none}.method-header{margin-bottom:16px}.method-header p{font-size:13px;line-height:1.6;max-width:800px}.method-header h1{margin:0 0 6px}.pick-head{padding:0}.pick-head h1{font-size:24px}@container(min-width:960px){.pick-list{grid-template-columns:repeat(3,minmax(0,1fr))}.pick-card{flex-direction:column;gap:14px}.pick-go{align-self:flex-end}.pick-copy{gap:12px}.pick-name{display:grid;gap:8px}.pick-name em{justify-self:start}}
 </style>

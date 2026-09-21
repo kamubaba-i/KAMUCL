@@ -41,9 +41,12 @@ test('community download modal: file list redesigned as breathing card rows (指
 
 test('friend connect: sub-page transition on method switch (指令2)', () => {
   const fc = read('src/renderer/src/views/FriendConnectView.vue')
-  assert.match(fc, /<Transition name="method-slide"\s+:duration="180">/)
-  assert.match(fc, /\.method-slide-enter-from \{ opacity: 0; transform: translateX\(22px\)/)
-  assert.match(fc, /prefers-reduced-motion/)
+  assert.match(fc, /<Transition name="subpage" :duration="200">/)
+  assert.ok(fc.indexOf('<Transition name="subpage"') < fc.indexOf('<template v-if="page'))
+  const motion = read('src/renderer/src/ui-system.css')
+  assert.match(motion, /\.subpage-enter-from.*opacity:0/)
+  assert.match(motion, /prefers-reduced-motion/)
+
 })
 
 test('home runtime strip: hover feedback follows pointer between cells', () => {

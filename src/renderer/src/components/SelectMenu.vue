@@ -82,6 +82,7 @@ onBeforeUnmount(close)
     <svg class="select-menu-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
   </button>
   <Teleport to="body">
+    <Transition name="popover">
     <div data-ui="SelectMenu:3ebdff14f591" v-if="open" ref="menuEl" class="select-menu-float" @wheel.stop :style="menuStyle" role="listbox">
       <button data-ui="SelectMenu:439e3aacaaa9"
         v-for="(o,i) in props.options"
@@ -100,6 +101,7 @@ onBeforeUnmount(close)
       </button>
       <div data-ui="SelectMenu:1d0ad7174b00" v-if="!props.options.length" class="select-menu-empty">无可选项</div>
     </div>
+      </Transition>
   </Teleport>
 </template>
 
@@ -118,7 +120,7 @@ onBeforeUnmount(close)
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 220ms ease;
 }
 .select-menu-btn:hover:not(.disabled) { border-color: var(--accent-deep, var(--accent)); }
 .select-menu-btn.open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }

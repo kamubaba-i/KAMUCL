@@ -962,10 +962,10 @@ function applyCustomVars(custom: CustomTheme, theme: ThemeName) {
   const colors = theme === 'custom' ? readableCustomColors(custom.colors) : custom.colors
   const accent = colors.accent
   const dark = hexLuminance(colors.bg) < 0.46
-  const transparent = theme === 'transparent'
+  const blackPurple = theme === 'transparent'
   const cardOpacity = dark ? 88 : 94
   const raisedOpacity = dark ? 82 : 91
-  const sideOpacity = dark ? 26 : 38
+  const sideOpacity = blackPurple ? 88 : dark ? 26 : 38
   const accent2 = `color-mix(in srgb, ${accent} ${dark ? 72 : 84}%, ${dark ? 'white' : 'black'})`
   const accentDeep = `color-mix(in srgb, ${accent} 78%, black)`
   st.setProperty('--accent', accent)
@@ -1002,7 +1002,7 @@ function applyCustomVars(custom: CustomTheme, theme: ThemeName) {
   st.setProperty('--shadow-lg', dark ? '0 20px 55px rgba(0, 0, 0, 0.42)' : '0 20px 55px rgba(31, 50, 85, 0.18)')
   st.setProperty(
     '--shell-surface',
-    `color-mix(in srgb, ${colors.bg} ${transparent ? 24 : dark ? 30 : 42}%, transparent)`
+    `color-mix(in srgb, ${colors.bg} ${blackPurple ? 96 : dark ? 30 : 42}%, transparent)`
   )
   st.setProperty('--glass-blur', '28px')
   // 图一布局是全部主题共享的固定骨架；旧 layout 字段只保留兼容，不再改变结构。

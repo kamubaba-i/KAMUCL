@@ -317,18 +317,19 @@ export const THEME_PRESETS: Record<
       bannerText: '#ffffff'
     }
   },
+  // Keep the persisted key so existing default-theme users migrate without losing customization.
   transparent: {
-    label: '默认 · 透明',
-    description: '蒂芙尼蓝重点色的系统桌面磨砂玻璃',
+    label: '默认·黑紫',
+    description: '中性炭黑界面与柔和紫色强调，保留轻盈玻璃层次',
     colors: {
-      accent: '#81d8d0',
-      bg: '#10191b',
-      card: '#172225',
-      text: '#f4f8f5',
-      textDim: '#abb8b0',
-      border: '#52615a',
-      sidebarBg: '#10191d',
-      sidebarText: '#c2ccc5',
+      accent: '#9475ed',
+      bg: '#212121',
+      card: '#292929',
+      text: '#f5f5f5',
+      textDim: '#b4b4b4',
+      border: '#414141',
+      sidebarBg: '#171717',
+      sidebarText: '#c7c7c7',
       bannerText: '#ffffff'
     }
   }

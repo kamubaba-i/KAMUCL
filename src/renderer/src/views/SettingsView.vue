@@ -263,11 +263,6 @@ function chooseTheme(theme: ThemeName, _label: string) {
   void save({ theme })
 }
 
-function themePreviewBackground(theme: ThemeName, fallback: string): string {
-  if (theme !== 'transparent') return fallback
-  return 'linear-gradient(145deg, rgba(20, 34, 38, .72), rgba(10, 18, 21, .9)), linear-gradient(135deg, #455b62, #7a6558)'
-}
-
 // ---------------- Java 列表 ----------------
 const javas = ref<Awaited<ReturnType<typeof listJava>>>([])
 const javaLoading = ref(true)
@@ -623,12 +618,12 @@ async function onRemovePlugin(p: PluginInfo) {
               <span data-ui="SettingsView:ff8e35becbf3"
                 class="theme-preview"
                 :class="{ 'preview-custom': theme.key === 'custom', 'preview-transparent': theme.key === 'transparent' }"
-                :style="{ background: themePreviewBackground(theme.key, theme.colors.bg) }"
+                :style="{ background: theme.colors.bg }"
               >
                 <span data-ui="SettingsView:202a66a2a038"
                   class="tp-side"
                   :style="{
-                    background: theme.key === 'transparent' ? 'rgba(12, 23, 25, .68)' : theme.colors.sidebarBg,
+                    background: theme.colors.sidebarBg,
                     borderRight: '1px solid ' + theme.colors.border
                   }"
                 >
@@ -638,7 +633,7 @@ async function onRemovePlugin(p: PluginInfo) {
                   <span data-ui="SettingsView:e0b92057c385"
                     class="tp-top"
                     :style="{
-                      background: theme.key === 'transparent' ? 'rgba(20, 31, 33, .62)' : theme.colors.card,
+                      background: theme.colors.card,
                       borderBottom: '1px solid ' + theme.colors.border
                     }"
                   ></span>
@@ -646,7 +641,7 @@ async function onRemovePlugin(p: PluginInfo) {
                     <span data-ui="SettingsView:d9c43308480c"
                       class="tp-block"
                       :style="{
-                        background: theme.key === 'transparent' ? 'rgba(27, 39, 40, .64)' : theme.colors.card,
+                        background: theme.colors.card,
                         border: '1px solid ' + theme.colors.border
                       }"
                     ></span>
