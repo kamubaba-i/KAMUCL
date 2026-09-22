@@ -90,7 +90,7 @@ test('splash holds the assembled avatar for two seconds before revealing', () =>
   const startup = read('src/shared/startup.ts')
   assert.match(startup, /ASSEMBLED_HOLD_MS = 2000/)
   const splash = read('src/renderer/src/splash.ts')
-  assert.match(splash, /setTimeout\(\(\) => bridge\.assembled\(\), reduced \? 0 : ASSEMBLED_HOLD_MS\)/)
+  assert.match(splash, /reduced \|\| elapsed - convergence >= CONVERGE_DURATION \+ ASSEMBLED_HOLD_MS/)
 })
 
 test('java picker save button uses the gold accent style and actions row is laid out', () => {

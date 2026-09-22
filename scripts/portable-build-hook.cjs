@@ -3,7 +3,7 @@
 // 2. 解压目录：模板优先走 "$TEMP\${UNPACK_DIR_NAME}"（unpackDirName 即使为 false 也会
 //    被 electron-builder 填成随机 ksuid），否则才落 $PLUGINSDIR\app——两条路径都在系统 TEMP，
 //    用户不可见且占用系统盘；统一改为解压到 exe 所在目录的固定子目录 KAMUCL-runtime
-//    缓存按完整构建内容隔离，完整解压后复用；首次解压前先显示轻量粒子。
+//    缓存按完整构建内容隔离，完整解压后复用；首次解压前先显示轻量玻璃碎片。
 // 在构建时变换模板，不修改 node_modules；升级模板后无法识别则阻止错误出包。
 const OLD_UNPACK_PLUGINS = 'StrCpy $INSTDIR "$PLUGINSDIR\\app"'
 const OLD_UNPACK_TEMP = 'StrCpy $INSTDIR "$TEMP\\${UNPACK_DIR_NAME}"'
