@@ -25,6 +25,7 @@ import { getSettings } from './settings'
 import { getValidAccount, selectedAccount } from './accounts'
 import { validateJavaRuntime } from './javaRuntimeHealth'
 import { ensureJava, requiredMajor, scanJavaForLaunch, resolveJavaExecutable, selectHealthyJava, probeJavaAsync } from './java'
+import { gameJavaExecutable } from './javaScanUtils'
 import { macJavaArchitecture } from './javaArchitecture'
 import {
   assetsDir,
@@ -550,6 +551,7 @@ async function launchOwned(
 
       const selectedJavaPath = javaPath
       javaPath = await resolveJavaExecutable(javaPath)
+      javaPath = gameJavaExecutable(javaPath)
       if (selectedJavaPath !== javaPath) log(`[KAMUCL] Java 转发入口已解析到真实运行时: ${javaPath}`)
       const javaInfo = await probeJavaAsync(javaPath)
       const need = requiredMajor(merged)
