@@ -82,6 +82,31 @@ test('已知哈希文件跨目录准确复用，损坏缓存回退网络，不�
   } finally { await s.close(); fs.rmSync(root, { recursive: true, force: true }) }
 })
 
+test('下载复用拒绝符号链接源和目标临时文件，避免跨目录读取或写入', async () => {
+  const root = temporary(), outside = path.join(root, 'outside'), body = Buffer.from('private cache')
+  fs.mkdirSync(outside)
+  const real = path.join(outside, 'asset'), linked = path.join(root, 'linked')
+  fs.writeFileSync(real, body)
+  fs.symlinkSync(real, linked, process.platform === 'win32' ? 'file' : undefined)
+  const target = path.join(root, 'target')
+  let hits = 0
+  const s = await server((_req, res) => { hits++; res.end(body) })
+  try {
+    await downloadFile(s.url, target, undefined, sha(body), 'official', undefined, [], { size: body.length, reuseFiles: [linked] })
+    assert.equal(hits, 1, '符号链接源不能被当作缓存复用')
+    assert.equal(fs.existsSync(target), true)
+
+    const second = path.join(root, 'second'), outsideTarget = path.join(outside, 'written'), part = second + '.part'
+    fs.writeFileSync(outsideTarget, 'untouched')
+    fs.symlinkSync(outsideTarget, part, process.platform === 'win32' ? 'file' : undefined)
+    await assert.rejects(
+      downloadFile(s.url, second, undefined, sha(body), 'official', undefined, [], { size: body.length, reuseFiles: [real] }),
+      /符号链接|临时文件/
+    )
+    assert.equal(fs.readFileSync(outsideTarget, 'utf8'), 'untouched')
+  } finally { await s.close(); fs.rmSync(root, { recursive: true, force: true }) }
+})
+
 test('版本安装复用其他已绑定目录的资源索引、资源和依赖，不联网获取已有内容', async () => {
   const root = temporary(), game = path.join(root, 'game'), other = path.join(root, 'other'), asset = Buffer.from('asset'), lib = Buffer.from('library')
   const index = Buffer.from(JSON.stringify({ objects: { a: { hash: sha(asset), size: asset.length } } }))
