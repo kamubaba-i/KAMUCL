@@ -180,11 +180,11 @@ function setLaunchFit(fit: ImageFit) {
 
 <template>
   <!-- 背景 -->
-  <div class="card group">
+  <details class="card group layout-setting" data-section="background"><summary>窗口背景 <small>桌面玻璃、颜色与图片</small></summary><div class="layout-setting-body">
     <div class="layout-head">
       <div>
         <h3 class="group-title group-title-tight">窗口背景</h3>
-        <p class="muted group-hint group-hint-flush">默认透出并模糊真实系统桌面；图片模式仅在你主动选择时启用。</p>
+        <p class="muted group-hint group-hint-flush">桌面玻璃的透出程度跟随当前主题；也可选择纯色或自定义图片。</p>
       </div>
       <button data-ui="HomeLayoutEditor:457065564dba" class="btn btn-ghost btn-sm" @click="resetBg">恢复默认</button>
     </div>
@@ -318,10 +318,10 @@ function setLaunchFit(fit: ImageFit) {
       </div>
       <p data-ui="HomeLayoutEditor:c53c77f7d517" class="muted group-hint">透明度越高图片越透；图片模糊单独控制清晰度。系统桌面毛玻璃由操作系统管理，不受这两个图片选项影响。</p>
     </template>
-  </div>
+  </div></details>
 
   <!-- 首页启动卡全局缩略图 -->
-  <div class="card group">
+  <details class="card group layout-setting" data-section="thumbnail"><summary>首页启动卡图片 <small>内置插画、自定义图片与轮播</small></summary><div class="layout-setting-body">
     <div class="layout-head">
       <div>
         <h3 class="group-title group-title-tight">首页启动卡</h3>
@@ -372,7 +372,7 @@ function setLaunchFit(fit: ImageFit) {
       </li>
     </ol>
     <div class="bg-row"><label data-ui="HomeLayoutEditor:dee929e66133" for="carousel-default-duration">默认停留时间</label><input data-ui="HomeLayoutEditor:c51dd8fea2e7" id="carousel-default-duration" type="number" min="1" max="120" step="0.5" class="input num-input" :value="carouselDuration(store.settings?.launchThumbnail.intervalSeconds)" @change="setDuration(($event.target as HTMLInputElement).value)" /><span class="muted">秒 · 用于内置轮播及未单独设置的图片</span></div>
-  </div>
+  </div></details>
 </template>
 
 <style scoped>
@@ -489,5 +489,20 @@ function setLaunchFit(fit: ImageFit) {
 .mono {
   font-size: var(--text-xs);
 }
-.built-in-previews{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}.built-in-previews img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:var(--radius-sm)}.built-in-previews small{grid-column:1/-1;font-size:12px}.group+.group{margin-top:16px}@media(max-width:650px){.built-in-previews{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.built-in-previews{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}.built-in-previews img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:var(--radius-sm)}.built-in-previews small{grid-column:1/-1;font-size:12px}.group+.group{margin-top:0}@media(max-width:650px){.built-in-previews{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.layout-setting { padding:0; }
+.layout-setting>summary { display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;font-weight:600;font-size:14px; }
+.layout-setting>summary::after { content:'⌄';margin-left:auto;color:var(--text-dim);transition:rotate 180ms; }
+.layout-setting[open]>summary::after { rotate:180deg; }
+.layout-setting>summary small { font-size:12px;color:var(--text-dim);font-weight:400; }
+.layout-setting-body { padding:0 18px 14px; }
+.layout-setting .layout-head { margin-bottom:10px;flex-wrap:wrap; }
+.layout-setting .layout-head h3 { display:none; }
+.layout-setting .image-preview { height:90px;max-width:320px; }
+.layout-setting .built-in-previews { max-width:440px; }
+.layout-setting .built-in-previews img { height:60px; }
+.layout-setting .bg-row { margin:8px 0;gap:8px; }
+.layout-setting .carousel-list { grid-template-columns:minmax(0,1fr);max-height:220px;overflow:auto; }
+@media(max-width:600px) { .layout-setting>summary{flex-wrap:wrap;gap:4px 12px}.layout-setting>summary small{flex-basis:80%} }
 </style>

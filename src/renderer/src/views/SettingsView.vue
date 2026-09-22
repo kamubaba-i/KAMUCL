@@ -32,7 +32,7 @@ import { autoMemoryMB } from '@shared/memory'
 import type { LocalUpdateCheck, PluginInfo, ReleaseInfo, Settings, ThemeName, UpdateStateInfo } from '@shared/types'
 import { QQ_GROUP_NUMBER } from '@shared/branding'
 import HomeLayoutEditor from '../components/HomeLayoutEditor.vue'
-import { settingsCatalog, settingsCategories, searchSettings, type SettingsCategory } from '@shared/settingsCatalog'
+import { settingsCatalog, settingsCategories, settingsScopes, scopeOfCategory, searchSettings, type SettingsCategory, type SettingsScope } from '@shared/settingsCatalog'
 import { updateSettings } from '../settingsUpdates'
 
 const page = ref<HTMLElement | null>(null)
@@ -42,13 +42,18 @@ const settingsQuery = ref('')
 const searchMatches = computed(() => searchSettings(settingsQuery.value))
 const savedCategory = sessionStorage.getItem('kamucl.settings.category')
 const category = ref<SettingsCategory>(settingsCategories.find(c => c.id === savedCategory)?.id ?? 'appearance')
+const scope = computed(() => scopeOfCategory(category.value))
+const visibleCategories = computed(() => settingsCategories.filter(c => c.scope === scope.value))
+const lastCategories: Record<SettingsScope, SettingsCategory> = { launcher: 'appearance', game: 'game' }
+lastCategories[scope.value] = category.value
+function selectScope(id: SettingsScope) { void selectCategory(lastCategories[id]) }
 const positions = new Map<string, number>()
 let navigation = 0
 function scroller() { return page.value?.querySelector<HTMLElement>('.settings-body') }
 async function selectCategory(id: SettingsCategory) {
   const ticket = ++navigation
   const scroll = scroller(); positions.set(category.value, scroll?.scrollTop ?? 0)
-  category.value = id; settingsQuery.value = ''; sessionStorage.setItem('kamucl.settings.category', id)
+  category.value = id; lastCategories[scopeOfCategory(id)] = id; settingsQuery.value = ''; sessionStorage.setItem('kamucl.settings.category', id)
   await nextTick()
   if (ticket === navigation && scroll) scroll.scrollTop = Math.min(positions.get(id) ?? 0, Math.max(0, scroll.scrollHeight-scroll.clientHeight))
 }
@@ -59,7 +64,11 @@ async function jumpSetting(id: string) {
   const target = page.value?.querySelector<HTMLElement>('[data-section="' + id + '"]')
   if (!target) return
   if (target.tagName === 'DETAILS') (target as HTMLDetailsElement).open = true
-  target.querySelectorAll<HTMLDetailsElement>('details').forEach(details => { details.open = true })
+  // Reveal only the path to the result, never expand every advanced setting below it.
+  for (let parent = target.parentElement; parent && parent !== scroller(); parent = parent.parentElement) {
+    if (parent.tagName === 'DETAILS') (parent as HTMLDetailsElement).open = true
+  }
+  await nextTick()
   target.setAttribute('tabindex', '-1')
   const body=scroller(); if(body)body.scrollTop += target.getBoundingClientRect().top-body.getBoundingClientRect().top-12; target.focus({ preventScroll: true })
 }
@@ -589,8 +598,9 @@ async function onRemovePlugin(p: PluginInfo) {
 
 <div data-ui="SettingsView:821acd5b45d3" class="settings-navigation">
       <label data-ui="SettingsView:213f2c95d295" class="settings-search"><input data-ui="SettingsView:a49601b2b97e" v-model="settingsQuery" class="input" type="search" placeholder="搜索：内存、Java、动画、下载…" aria-label="搜索设置" @keydown.esc="settingsQuery = ''" /></label>
-      <nav data-ui="SettingsView:59cf14ccb4be" class="settings-categories" aria-label="设置分类"><button data-ui="SettingsView:68ab6a2985c0" v-for="item in settingsCategories" :key="item.id" class="btn btn-ghost" :aria-current="category === item.id ? 'page' : undefined" @click="selectCategory(item.id)">{{ item.label }}</button></nav>
-      <div data-ui="SettingsView:9e789d8ad646" v-if="settingsQuery.trim()" class="settings-search-results" role="region" aria-label="设置搜索结果"><p data-ui="SettingsView:4c05037c5017" v-if="!searchMatches.length" class="muted">没有找到相关设置，试试“主题”“内存”或“下载”。</p><button data-ui="SettingsView:5bdb3d2f1359" v-for="item in searchMatches" :key="item.id" class="btn btn-ghost" @click="jumpSetting(item.id)"><strong data-ui="SettingsView:32a83676fd73">{{ item.name }}</strong><span class="muted">{{ settingsCategories.find(c => c.id === item.category)?.label }} →</span></button></div>
+      <nav class="settings-scopes" aria-label="设置范围"><button v-for="item in settingsScopes" :key="item.id" class="btn btn-ghost" :aria-current="scope === item.id ? 'page' : undefined" @click="selectScope(item.id)">{{ item.label }}</button></nav>
+      <nav data-ui="SettingsView:59cf14ccb4be" class="settings-categories" aria-label="设置分类"><button data-ui="SettingsView:68ab6a2985c0" v-for="item in visibleCategories" :key="item.id" class="btn btn-ghost" :aria-current="category === item.id ? 'page' : undefined" @click="selectCategory(item.id)">{{ item.label }}</button></nav>
+      <div data-ui="SettingsView:9e789d8ad646" v-if="settingsQuery.trim()" class="settings-search-results" role="region" aria-label="设置搜索结果"><p data-ui="SettingsView:4c05037c5017" v-if="!searchMatches.length" class="muted">没有找到相关设置，试试“主题”“内存”或“下载”。</p><button data-ui="SettingsView:5bdb3d2f1359" v-for="item in searchMatches" :key="item.id" class="btn btn-ghost" @click="jumpSetting(item.id)"><strong data-ui="SettingsView:32a83676fd73">{{ item.name }}</strong><span class="muted">{{ settingsScopes.find(s => s.id === scopeOfCategory(item.category))?.label }} · {{ settingsCategories.find(c => c.id === item.category)?.label }} →</span></button></div>
     </div>
     <div class="settings-body" tabindex="0" aria-label="设置内容">
     <div data-ui="SettingsView:a82a0d33446b" v-if="!store.settings" class="card empty">
@@ -661,7 +671,7 @@ async function onRemovePlugin(p: PluginInfo) {
             </button>
           </div>
 
-          <p class="muted group-hint">先选择喜欢的基础主题，再进入外观工作台，直接点选页面上的卡片、按钮与文字，自由调整布局与样式。</p>
+          <div class="theme-tools"><p class="muted group-hint">选择基础配色；个性化可继续调整布局、文字和透明度。</p>
           <button data-ui="SettingsView:16e9da51c37b"
             class="btn personalize-btn"
             @click="enterEditMode"
@@ -671,7 +681,7 @@ async function onRemovePlugin(p: PluginInfo) {
               <path d="M1 14h6M9 8h6M17 16h6" />
             </svg>
             个性化
-          </button>
+          </button></div>
         </div>
       </details>
 
@@ -681,7 +691,7 @@ async function onRemovePlugin(p: PluginInfo) {
           <h3 class="group-title">功能管理</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
         </summary>
-        <div class="collapse-body">
+        <div class="collapse-body feature-grid">
           <p class="muted group-hint">
             关闭的功能将从侧边栏隐藏入口。核心功能（首页/游戏/设置）不可关闭。
           </p>
@@ -700,7 +710,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- 个性化背景与启动卡图片；首页结构固定为图一布局。 -->
-      <div data-ui="SettingsView:9816c9c5870a" data-section="background" v-show="category === 'appearance'"><HomeLayoutEditor /></div>
+      <div data-ui="SettingsView:9816c9c5870a" class="background-settings" v-show="category === 'appearance'"><HomeLayoutEditor /></div>
     <div data-ui="SettingsView:0683ad7389b1" v-if="store.settings && category === 'appearance'" class="card group group-inline setting-target" data-section="motion" tabindex="-1"><div><h3 class="group-title">减少动态效果</h3><p data-ui="SettingsView:53f72432b671" class="muted">停止装饰动画与自动轮播，缩短过渡。系统开启减少动态效果时也会自动生效。</p></div><label class="switch"><input data-ui="SettingsView:35ef39b7e9bc" type="checkbox" aria-label="减少动态效果" :checked="store.settings.reduceMotion === true" @change="save({ reduceMotion: ($event.target as HTMLInputElement).checked })"/><span data-ui="SettingsView:4490d3e5d395" class="switch-ui"/></label></div>
 
       <!-- 下载 + 下载目标文件夹：同一行横向排布，窄窗口自动换行 -->
@@ -749,8 +759,9 @@ async function onRemovePlugin(p: PluginInfo) {
             <p class="muted group-hint">CurseForge 官方 API 需要免费注册申请：<a data-ui="SettingsView:b8eb49f2eba5" class="upd-link" href="https://console.curseforge.com/" target="_blank" rel="noreferrer">console.curseforge.com</a>（注册 → 创建应用 → 复制 API Key 粘贴到上方）。填入后社区资源的 CurseForge 搜索与下载走官方通道，不受镜像波动影响。</p></details>
           </div>
         </details>
-        <div class="card group">
-          <h3 class="group-title">下载目标文件夹</h3>
+      </div>
+        <div v-show="category === 'directories'" data-section="installation" class="card group directory-setting">
+          <h3 class="group-title">新版本安装目录</h3>
           <p class="muted group-hint">
             新版本将安装到此目录；在游戏版本页管理绑定目录。
           </p>
@@ -761,14 +772,13 @@ async function onRemovePlugin(p: PluginInfo) {
             </button>
           </div>
         </div>
-      </div>
 
       <!-- 默认版本隔离 -->
-      <div data-ui="SettingsView:72c1d8b58f43" v-show="category === 'game'" data-section="isolation" class="card group group-inline">
+      <div data-ui="SettingsView:72c1d8b58f43" v-show="category === 'directories'" data-section="isolation" class="card group group-inline">
         <div>
           <h3 class="group-title">新版本默认开启版本隔离（推荐）</h3>
           <p class="muted group-hint">
-            每个新安装的版本使用独立的存档/模组/配置目录，互不干扰。关闭后新版本与全局共享游戏目录；已安装的版本可在游戏版本页单独开关。
+            仅影响新安装的版本。开启后独立保存存档、模组与配置；已有实例在游戏版本页调整。
           </p>
         </div>
         <label class="switch">
@@ -781,8 +791,9 @@ async function onRemovePlugin(p: PluginInfo) {
         </label>
       </div>
 
+      <div v-show="category === 'game'" class="runtime-grid">
       <!-- 内存 -->
-      <details data-ui="SettingsView:af57e3969b2b" v-show="category === 'game'" class="card group collapse setting-target" data-section="memory" tabindex="-1" open>
+      <details data-ui="SettingsView:af57e3969b2b" class="card group collapse setting-target" data-section="memory" tabindex="-1" open>
         <summary class="collapse-head">
           <h3 class="group-title">内存分配</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -846,7 +857,7 @@ async function onRemovePlugin(p: PluginInfo) {
       </details>
 
       <!-- Java -->
-      <details data-ui="SettingsView:b128c0a66c1b" v-show="category === 'game'" class="card group collapse setting-target" data-section="java" tabindex="-1" open>
+      <details data-ui="SettingsView:b128c0a66c1b" class="card group collapse setting-target" data-section="java" tabindex="-1" open>
         <summary class="collapse-head">
           <h3 class="group-title">Java 运行时</h3>
           <span class="collapse-arrow" aria-hidden="true"></span>
@@ -887,7 +898,7 @@ async function onRemovePlugin(p: PluginInfo) {
               未检测到本机 Java，将使用「自动选择」或在启动时自动下载。
             </p>
 
-            <details class="java-detected" :open="!store.settings.javaAuto"><summary>本机 Java 与手动管理（{{ javas.length }}）</summary>
+            <details class="java-detected"><summary>本机 Java 与手动管理（{{ javas.length }}）</summary>
             <div data-ui="SettingsView:205e9439c186" class="java-scan-row">
               <div data-ui="SettingsView:b5bbe482ca7a" class="java-scan-status">
                 <span class="muted">扫描注册表、PATH、启动器 Runtime 与全部本地固定磁盘</span>
@@ -946,8 +957,19 @@ async function onRemovePlugin(p: PluginInfo) {
         </div>
       </details>
 
+        <details data-ui="SettingsView:612d9b820913" class="card group" data-section="jvm"><summary data-ui="SettingsView:3cc49dcec409" class="group-title">高级 · JVM 参数</summary>
+          <input data-ui="SettingsView:cce61f7d8c4e"
+            v-model="store.settings.jvmArgs"
+            class="input mono"
+            placeholder="例如：-XX:+UseG1GC -XX:+ParallelRefProcEnabled"
+            @change="save({ jvmArgs: store.settings!.jvmArgs })"
+          />
+          <p class="muted group-hint">高级选项，留空则使用默认参数</p>
+        </details>
+      </div>
+
       <!-- 分辨率 + JVM 参数：同一行横向排布 -->
-      <div data-ui="SettingsView:a1da38f817b5" v-show="category === 'game'" class="settings-grid">
+      <div data-ui="SettingsView:a1da38f817b5" v-show="category === 'display'" class="settings-grid">
         <div data-ui="SettingsView:5265f547a736" class="card group" data-section="resolution">
           <h3 class="group-title">游戏窗口分辨率</h3>
           <div data-ui="SettingsView:7e472ba8461b" class="resolution-row">
@@ -991,33 +1013,11 @@ async function onRemovePlugin(p: PluginInfo) {
           </p>
         </div>
 
-        <details data-ui="SettingsView:612d9b820913" class="card group" data-section="jvm"><summary data-ui="SettingsView:3cc49dcec409" class="group-title">高级 · JVM 参数</summary>
-          <input data-ui="SettingsView:cce61f7d8c4e"
-            v-model="store.settings.jvmArgs"
-            class="input mono"
-            placeholder="例如：-XX:+UseG1GC -XX:+ParallelRefProcEnabled"
-            @change="save({ jvmArgs: store.settings!.jvmArgs })"
-          />
-          <p class="muted group-hint">高级选项，留空则使用默认参数</p>
-        </details>
       </div>
 
       <!-- 正版代理 + 启动后关闭：同一行横向排布 -->
-      <div data-ui="SettingsView:35d4b384db5b" v-show="category === 'game'" data-section="launch" class="settings-grid">
-        <div class="card group group-inline">
-          <div>
-            <h3 class="group-title">正版登录使用系统代理</h3>
-            <p class="muted group-hint">默认直连微软端点（安全优先）。浏览器能打开微软登录页但启动器登录失败时开启；经代理 CONNECT 隧道传输，端到端 TLS 证书校验保持不变。</p>
-          </div>
-          <label class="switch">
-            <input data-ui="SettingsView:41ae714db129"
-              :checked="store.settings.msUseProxy === true"
-              type="checkbox"
-              @change="save({ msUseProxy: ($event.target as HTMLInputElement).checked })"
-            />
-            <span class="switch-ui"></span>
-          </label>
-        </div>
+      <div data-ui="SettingsView:35d4b384db5b" v-show="category === 'general'" data-section="launch" class="settings-grid">
+
 
         <div class="card group group-inline">
           <div>
@@ -1029,6 +1029,20 @@ async function onRemovePlugin(p: PluginInfo) {
               v-model="store.settings.closeAfterLaunch"
               type="checkbox"
               @change="save({ closeAfterLaunch: store.settings!.closeAfterLaunch })"
+            />
+            <span class="switch-ui"></span>
+          </label>
+        </div>
+        <div class="card group group-inline">
+          <div>
+            <h3 class="group-title">正版登录使用系统代理</h3>
+            <p class="muted group-hint">微软登录失败而浏览器正常时可开启。默认直连；开启后仍保留 TLS 证书校验。</p>
+          </div>
+          <label class="switch">
+            <input data-ui="SettingsView:41ae714db129"
+              :checked="store.settings.msUseProxy === true"
+              type="checkbox"
+              @change="save({ msUseProxy: ($event.target as HTMLInputElement).checked })"
             />
             <span class="switch-ui"></span>
           </label>
@@ -1226,7 +1240,7 @@ async function onRemovePlugin(p: PluginInfo) {
 .settings-search-results button { justify-content:space-between; white-space:normal; text-align:left; }
 .settings-page [data-section] { scroll-margin-top:150px; }
 .settings-page [data-section]:focus { outline:2px solid var(--accent); outline-offset:3px; }
-.settings-page .group { margin-bottom:16px; }
+.settings-page .group { margin-bottom:0; }
 @media(max-width:800px) { .settings-navigation { position:relative; } .settings-search { align-items:stretch; flex-direction:column; } .settings-page [data-section] { scroll-margin-top:16px; } }
 
 /* 关于与更新 */
@@ -1816,8 +1830,63 @@ async function onRemovePlugin(p: PluginInfo) {
   padding: var(--space-1) 0;
 }
 
-.settings-page{height:100%;min-height:0;display:grid!important;grid-template-columns:minmax(0,1fr) minmax(240px,360px);grid-template-rows:auto auto minmax(0,1fr);gap:12px!important;padding:0!important;max-width:1040px!important}.settings-page>.page-head{grid-row:1;grid-column:1;margin:0!important;align-self:center}.settings-navigation{display:contents}.settings-search{grid-column:2;grid-row:1;min-width:0}.settings-categories{grid-column:1/-1;grid-row:2;margin:0;border-bottom:1px solid var(--border);padding:0 0 8px;gap:8px}.settings-categories .btn{border:0;border-radius:var(--radius-sm);min-height:36px}.settings-body{grid-column:1/-1;grid-row:3;min-height:0;overflow:auto;scrollbar-gutter:stable;display:flex;flex-direction:column;gap:16px;padding:4px 8px 24px 0}.settings-body>*{flex-shrink:0}.settings-search-results{position:absolute;right:0;top:48px;z-index:20;width:min(480px,100%);padding:12px;background:var(--surface-solid);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow)}.settings-page{position:relative}.settings-page .settings-grid{grid-template-columns:minmax(0,1fr);align-items:start;gap:16px}.settings-page .settings-grid>.card{height:auto}.settings-page [data-section]{scroll-margin-top:12px}.group-inline{align-items:center}.theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.feature-row{min-height:48px}.feature-section-title{font-size:13px;color:var(--text-dim);margin:16px 0 4px}.settings-body .collapse-body{padding:16px 20px}.settings-body .collapse-head{min-height:48px;padding:12px 20px}.settings-body .group-hint{line-height:1.6}.settings-body [data-section=motion]{padding:16px 20px}.settings-body .group-title{font-size:16px}
-@media(min-width:1400px){.theme-options{grid-template-columns:repeat(6,minmax(0,1fr))}}@media(max-width:800px){.settings-page{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr)}.settings-search{grid-row:2;grid-column:1}.settings-categories{grid-row:3}.settings-body{grid-row:4}.settings-search-results{top:92px}.theme-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
-.download-mirror-group{margin-bottom:16px}.download-mirror-options .group-title{font-size:14px}.java-detected>summary{padding:12px 0;color:var(--text-dim);font-size:13px}.settings-body .group-inline{gap:16px}
+/* Two scopes share compact, state-preserving category panels. */
+.settings-page { height:100%;min-height:0;display:grid!important;grid-template-columns:minmax(0,1fr) minmax(220px,340px);grid-template-rows:auto auto auto minmax(0,1fr);gap:10px!important;padding:0!important;max-width:1080px!important;position:relative; }
+.settings-page>.page-head { grid-row:1;grid-column:1;margin:0!important;align-self:center; }
+.settings-navigation { display:contents; }
+.settings-search { grid-column:2;grid-row:1;min-width:0; }
+.settings-scopes { grid-column:1/-1;grid-row:2;display:flex;gap:6px; }
+.settings-scopes .btn { font-size:15px;font-weight:650;min-height:38px;padding:8px 18px;border-color:transparent; }
+.settings-scopes [aria-current] { background:var(--accent-soft);color:var(--accent-2); }
+.settings-categories { grid-column:1/-1;grid-row:3;margin:0;border-bottom:1px solid var(--border);padding:0 0 8px;gap:4px; }
+.settings-categories .btn { border:0;border-radius:var(--radius-sm);min-height:32px;padding:6px 12px;font-size:13px; }
+.settings-body { grid-column:1/-1;grid-row:4;min-height:0;overflow:auto;scrollbar-gutter:stable;display:flex;flex-direction:column;gap:12px;padding:2px 8px 20px 0; }
+.settings-body>* { flex-shrink:0; }
+.settings-search-results { position:absolute;right:0;top:48px;z-index:20;width:min(480px,100%);max-height:60vh;overflow:auto;padding:12px;background:var(--surface-solid);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow); }
+.settings-page .settings-grid { grid-template-columns:minmax(0,1fr);align-items:start;gap:12px; }
+.settings-page .settings-grid>.card { height:auto; }
+.settings-page [data-section] { scroll-margin-top:12px; }
+.settings-body .group { padding:14px 18px; }
+.settings-body .collapse { padding:0;gap:0; }
+.settings-body .collapse-body { padding:10px 18px 14px;gap:8px; }
+.settings-body .collapse-head { min-height:42px;padding:10px 18px; }
+.settings-body .group-title { font-size:15px;margin-bottom:8px; }
+.settings-body .collapse-head .group-title { margin:0; }
+.settings-body .group-hint { font-size:12px;line-height:1.6;margin:6px 0; }
+.settings-body .group-inline { align-items:center;gap:16px; }
+.settings-body .group-inline>div { flex:1;min-width:0; }
+.settings-body .group-inline .switch { flex:none; }
+.settings-body [data-section=motion] { padding:12px 18px;order:1; }
+.settings-body [data-section=motion] p { font-size:12px;line-height:1.6;margin:0; }
+.settings-body .background-settings { order:2;display:grid;gap:12px; }
+.theme-options { display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px; }
+.theme-option { flex-direction:row;justify-content:flex-start;gap:10px;min-height:48px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm); }
+.theme-option.active { border-color:var(--accent);background:var(--accent-soft); }
+.theme-preview { width:46px;height:32px;flex:none;border-radius:5px; }
+.theme-option:hover .theme-preview,.theme-option:active .theme-preview { transform:none; }
+.theme-option.active .theme-preview { box-shadow:none; }
+.theme-label { font-size:13px;white-space:nowrap; }
+.tp-side { width:9px;padding-top:4px; }.tp-dot{width:4px;height:4px}.tp-top{height:6px}.tp-body{gap:2px;padding:3px}.tp-btn{height:4px}.tp-check{width:14px;height:14px;top:1px;right:1px;padding:2px}.tp-palette{width:20px;height:20px}
+.theme-tools { display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap; }
+.personalize-btn { min-height:32px;padding:5px 12px;margin-top:6px; }
+.feature-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px; }
+.feature-grid>.group-hint,.feature-section-title { grid-column:1/-1; }
+.feature-section-title { margin:8px 0 2px;font-size:12px;color:var(--text-dim); }
+.feature-row { min-height:40px;padding:6px 0; }
+.runtime-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start; }
+.runtime-grid [data-section=jvm] { grid-column:1/-1; }
+.runtime-grid .java-auto-row,.runtime-grid .memory-auto-row { margin:0 0 8px;padding:0 0 10px;gap:12px; }
+.runtime-grid .java-auto-title { font-size:13px; }.runtime-grid .java-auto-desc{font-size:12px;line-height:1.55;margin-top:4px}.runtime-grid .memory-info{font-size:12px;margin:10px 0 0}
+.memory-refresh { flex:none;white-space:nowrap; }
+.java-detected>summary { padding:10px 0;color:var(--text-dim);font-size:13px; }
+.runtime-grid .java-list { max-height:200px;overflow:auto; }
+.download-mirror-group { margin-bottom:10px; }.download-mirror-options .group-title{font-size:13px}.download-setting{min-height:44px}.advanced-setting{margin-top:10px}
+.settings-body .resolution-row { margin-top:8px; }.settings-body .resolution-mode{margin-top:10px}
+.settings-body .upd-row { min-height:38px;margin:0;padding:6px 0; }.settings-body .update-maintenance{margin-top:8px}
+@media(max-width:1100px) { .runtime-grid{grid-template-columns:minmax(0,1fr)} }
+@media(max-width:800px) {
+ .settings-page{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto minmax(0,1fr)}
+ .settings-search{grid-row:2;grid-column:1}.settings-scopes{grid-row:3}.settings-categories{grid-row:4}.settings-body{grid-row:5}.settings-search-results{top:92px}
+ .feature-grid{grid-template-columns:minmax(0,1fr)}.theme-options{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 </style>

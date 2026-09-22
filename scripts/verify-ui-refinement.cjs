@@ -92,6 +92,16 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
   await connections();
 
   await nav('settings');
+  // Two scopes expose only their own categories; ordinary items stay compact.
+  await evaluate('[...document.querySelectorAll(".settings-scopes button")].find(e=>e.textContent==="游戏设置").click()');await wait(160);
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".settings-categories button")].map(e=>e.textContent)'),['运行环境','游戏窗口','目录与隔离']);await screenshot('settings-game-runtime');await checkLayout('settings-game-runtime');
+  assert(await evaluate('[...document.querySelectorAll(".runtime-grid>[data-section]")].every(e=>e.getBoundingClientRect().height<350)'),'runtime defaults must stay compact');
+  await evaluate('[...document.querySelectorAll(".settings-categories button")].find(e=>e.textContent==="目录与隔离").click()');await screenshot('settings-game-directories');
+  assert(await evaluate('!!document.querySelector("[data-section=installation]").getClientRects().length'));
+  await evaluate('[...document.querySelectorAll(".settings-scopes button")].find(e=>e.textContent==="启动器设置").click()');await wait(160);
+  assert(await evaluate('[...document.querySelectorAll(".settings-categories button")].some(e=>e.textContent==="行为与登录")'));
+  assert(!await evaluate('document.querySelector("[data-section=memory]").getClientRects().length'));
+  await screenshot('settings-launcher-compact');
   // Every indexed setting must lead to its actual, visible control group.
   const index=require('fs').readFileSync('src/shared/settingsCatalog.ts','utf8');
   const settingIds=[...index.matchAll(/id: '([^']+)', category: '[^']+', name: '([^']+)'/g)];
@@ -117,12 +127,12 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
     for(const id of ['home','game','mods','skins','community','settings','servers','friends','keys','recordings','bridge','packs','shaders']){await nav(id);await checkLayout(id+'-'+width+'-'+zoom);if(['home','mods','settings','community'].includes(id))await screenshot(id+'-'+width+'-'+zoom)}
   }
   await main('testElectron.BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1);testElectron.BrowserWindow.getAllWindows()[0].maximize()');await nav('home');await screenshot('home-maximized');await checkLayout('home-maximized');
-  await main('testElectron.BrowserWindow.getAllWindows()[0].unmaximize();testElectron.BrowserWindow.getAllWindows()[0].setSize(1440,960)');await nav('settings');
+  await main('testElectron.BrowserWindow.getAllWindows()[0].unmaximize();testElectron.BrowserWindow.getAllWindows()[0].setSize(960,620)');await nav('settings');
   // Category changes restore their own scroll position without changing settings.
-  await evaluate('[...document.querySelectorAll(".settings-categories button")].find(e=>e.textContent==="外观").click()');await wait(100);await evaluate('document.querySelector(".settings-body").scrollTop=300');const rememberedScroll=await evaluate('document.querySelector(".settings-body").scrollTop');assert(rememberedScroll>0);
+  await evaluate('[...document.querySelectorAll(".settings-categories button")].find(e=>e.textContent==="外观").click()');await wait(100);await evaluate('document.querySelectorAll(".layout-setting").forEach(e=>e.open=true)');await wait(280);await evaluate('document.querySelector(".settings-body").scrollTop=300');const rememberedScroll=await evaluate('document.querySelector(".settings-body").scrollTop');assert(rememberedScroll>0);
   await evaluate('[...document.querySelectorAll(".settings-categories button")].find(e=>e.textContent==="下载").click()');await wait(100);await evaluate('[...document.querySelectorAll(".settings-categories button")].find(e=>e.textContent==="外观").click()');await wait(100);assert(Math.abs(await evaluate('document.querySelector(".settings-body").scrollTop')-rememberedScroll)<=2,'scroll restore within device-pixel rounding');
   assert.equal(issues.length,0,JSON.stringify(issues));
-  const result={version,complete:true,exeSHA256:process.env.KAMUCL_GUI_DEV?null:require('crypto').createHash('sha256').update(fs.readFileSync(exe)).digest('hex'),catalogReentry:true,disclosureBothDirections:true,dropdownMotion:true,methodEntryMotion:true,settingsScrollRestored:true,asyncLatestWins:true,errorRetry:true,emptySearch:true,modalKeyboard:true,runningState:true,confinedAnimation:true,root,shotDir,issues,settingsTargets:settingIds.length,reducedMotion:true,legacyConfig:true,rapidNavigation:true,themes:process.env.KAMUCL_TEST_THEME||'black-orange',windows:[[960,620,1],[1280,900,1.25],[1440,960,1.5],[980,720,1.5],'maximized']};fs.writeFileSync('out/ui-refinement-'+result.themes+'.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+  const result={version,complete:true,exeSHA256:process.env.KAMUCL_GUI_DEV?null:require('crypto').createHash('sha256').update(fs.readFileSync(exe)).digest('hex'),catalogReentry:true,disclosureBothDirections:true,dropdownMotion:true,methodEntryMotion:true,settingsScopes:true,compactRuntime:true,settingsScrollRestored:true,asyncLatestWins:true,errorRetry:true,emptySearch:true,modalKeyboard:true,runningState:true,confinedAnimation:true,root,shotDir,issues,settingsTargets:settingIds.length,reducedMotion:true,legacyConfig:true,rapidNavigation:true,themes:process.env.KAMUCL_TEST_THEME||'black-orange',windows:[[960,620,1],[1280,900,1.25],[1440,960,1.5],[980,720,1.5],'maximized']};fs.writeFileSync('out/ui-refinement-'+result.themes+'.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
   if(process.env.KAMUCL_UI_HOLD){fs.writeFileSync('out/ui-hold.ready','ready');while(!fs.existsSync('out/ui-hold.done'))await wait(500)}
   mainWs.close();await wait(100);await evaluate("window.kamucl.send('window:close')");for(let i=0;i<50&&child.exitCode===null;i++)await wait(100);assert.equal(child.exitCode,0);
  }finally{if(mainWs?.readyState===WebSocket.OPEN)mainWs.close();if(ws?.readyState===WebSocket.OPEN){ws.send(JSON.stringify({id:999999,method:'Browser.close'}));await wait(1000);ws.close()}fs.closeSync(log)}
