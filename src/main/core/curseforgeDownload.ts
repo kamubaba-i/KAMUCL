@@ -4,6 +4,30 @@ export interface CfMetadataSource { base: string; headers?: Record<string, strin
 export interface ResolvedCfDownload { url: string; fileName: string; sha1: string; size: number }
 export interface ResolvedCfFile extends Omit<ResolvedCfDownload, 'url'> { url: string | null; isAvailable: boolean }
 
+/** Public CDN layout uses the numeric file ID, with no padding on its remainder. */
+export function constructCurseForgeCdnUrl(fileID: number, fileName: string): string {
+  if (!Number.isSafeInteger(fileID) || fileID <= 0) throw new Error('CurseForge 文件标识无效')
+  if (!fileName || /[/\\\x00-\x1f]/.test(fileName) || fileName === '.' || fileName === '..') throw new Error('文件名无效')
+  return `https://edge.forgecdn.net/files/${Math.floor(fileID / 1000)}/${fileID % 1000}/${encodeURIComponent(fileName)}`
+}
+
+/** Edge redirects available files. Do not send Range or download the body while probing.
+ * A failed probe leaves the existing alternate-source/manual-file flow in charge;
+ * the eventual download must still match the metadata size and SHA1.
+ */
+export async function probeCurseForgeCdnUrl(url: string, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted()
+  try {
+    const timeout = AbortSignal.timeout(8000)
+    const res = await httpFetch(url, {
+      method: 'HEAD', redirect: 'manual', signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+    })
+    await res.body?.cancel()
+    signal?.throwIfAborted()
+    return res.status === 302
+  } catch { signal?.throwIfAborted(); return false }
+}
+
 function downloadUrl(value: unknown): string | null {
   if (typeof value !== 'string' || !value) return null
   try {

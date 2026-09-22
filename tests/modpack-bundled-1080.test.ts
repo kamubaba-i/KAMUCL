@@ -90,7 +90,7 @@ for (const outcome of ['included', 'mismatch', 'missing', 'supplied'] as const) 
   try {
     runtime = await versionInstallHarness(root,
       async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01' }] }),
-      url => /\/mods\/\d+\/files\/\d+|\/version_file\/|cursemaven\.com/.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
+      url => /\/mods\/\d+\/files\/\d+|\/version_file\/|cursemaven\.com|forgecdn\.net/.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
     Object.assign(runtime.getSettings(), { gameDir: game, activeFolder: game, folders: [{ path: game, name: 'fixture', isDefault: true }], defaultIsolation: true, mirror: 'bmclapi' })
     const zip = new AdmZip()
     zip.addFile('manifest.json', Buffer.from(JSON.stringify({ name: id, manifestVersion: 1, minecraft: { version: '1.20.1' }, overrides: 'overrides',
@@ -141,7 +141,8 @@ for (const outcome of ['included', 'mismatch', 'missing', 'supplied'] as const) 
       if (outcome === 'included') assert(!fs.existsSync(path.join(instance, 'mods/restricted.jar')))
       assert.deepEqual(fs.readFileSync(path.join(instance, 'mods/network.jar')), network)
       assert.deepEqual(fs.readFileSync(path.join(instance, 'config/player.txt')), Buffer.from('keep'))
-      assert(requests.includes('/network')); assert(!requests.some(r => r.includes('restricted.jar')))
+      assert(requests.includes('/network'))
+      assert.equal(requests.some(r => r.includes('restricted.jar')), outcome === 'supplied', 'only missing files need a CDN probe')
       assert.equal(events.at(-1).stage, 'done')
       const managed = JSON.parse(fs.readFileSync(path.join(instance, '.kamucl-modpack.json'), 'utf8')).managedFiles
       assert(managed.includes('mods/' + localName)); assert(managed.includes('mods/network.jar'))

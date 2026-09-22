@@ -78,7 +78,7 @@ for (const corrupt of [false, true]) test(`整合包真实安装编排：包内 
   try {
     runtime = await versionInstallHarness(root,
       async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01' }] }),
-      url => /curseforge|mcimirror|modrinth|cursemaven/.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
+      url => /curseforge|mcimirror|modrinth|cursemaven|forgecdn/.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
     Object.assign(runtime.getSettings(), { gameDir: game, activeFolder: game, folders: [{ path: game, name: 'new', isDefault: true }, { path: other, name: 'old' }], defaultIsolation: true, mirror: 'bmclapi' })
     const source = path.join(other, 'versions', 'previous', 'mods', 'renamed.jar.disabled')
     fs.mkdirSync(path.dirname(source), { recursive: true }); fs.writeFileSync(source, bytes[1])

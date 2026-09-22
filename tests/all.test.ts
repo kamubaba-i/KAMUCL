@@ -124,3 +124,4 @@ import './download-tail-1100.test'
 import './ui-refinement.test'
 
 import './ui-motion-112.test'
+import './curseforge-cdn-114.test'

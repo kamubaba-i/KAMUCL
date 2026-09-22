@@ -22,7 +22,7 @@ import type { DownloadTask } from './download'
 import { prepareModpackFiles } from './modpackDownloads'
 import { runParallelTasks } from './parallelTasks'
 import { ParallelProgress } from './parallelProgress'
-import { resolveCurseForgeMetadata, resolveCurseForgeFileUrl, curseForgeInstallDir, exactModrinthDownload } from './curseforgeDownload'
+import { resolveCurseForgeMetadata, resolveCurseForgeFileUrl, constructCurseForgeCdnUrl, probeCurseForgeCdnUrl, curseForgeInstallDir, exactModrinthDownload } from './curseforgeDownload'
 import { BundledModpackFiles } from './modpackBundledFiles'
 import { LocalModpackFiles } from './modpackLocalFiles'
 import { prepareCurseMavenFile } from './modpackAlternateDownload'
@@ -1035,6 +1035,10 @@ async function installModpackInFolder(filePath: string, emit: ProgressEmit, opts
                 if (existing) reusedLocal++
                 else {
                   info.url = info.isAvailable ? await resolveCurseForgeFileUrl(f.projectID, f.fileID, sources, signal) : null
+                  if (!info.url && info.isAvailable) {
+                    const cdn = constructCurseForgeCdnUrl(f.fileID, info.fileName)
+                    if (await probeCurseForgeCdnUrl(cdn, signal)) info.url = cdn
+                  }
                   info.url ??= await exactModrinthDownload(info, signal)
                   if (!info.url) {
                     existing = await prepareCurseMavenFile(f.projectID, f.fileID, info, getSettings().mirror, signal)
