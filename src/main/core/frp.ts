@@ -21,6 +21,9 @@ export const DEFAULT_LOCAL_HOST = '127.0.0.1'
 /** 官方 frpc 直链（amd64 Windows；用户可在管理面板自行替换为对应架构）。 */
 export const FRPC_OFFICIAL_URL_WIN_AMD64 =
   'https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe'
+/** frpc 0.51.0-sakura-14 Windows x64 官方二进制的固定校验值。 */
+const FRPC_WIN_AMD64_SHA256 = 'b705262edad9f0de04b38f342e811e9d97d0beada75edab3f790e105dcfb5234'
+const FRPC_WIN_AMD64_SIZE = 14_133_248
 
 export interface FrpConfig {
   accessKey: string
@@ -150,7 +153,16 @@ export function ensureFrpcInstalled(onLog?: (line: string) => void): Promise<str
   }
   fs.mkdirSync(frpcDir(), { recursive: true })
   onLog?.('未检测到 frpc.exe，开始从官方下载…')
-  installingFrpc = downloadFile(FRPC_OFFICIAL_URL_WIN_AMD64, target, undefined, undefined, 'official')
+  installingFrpc = downloadFile(
+    FRPC_OFFICIAL_URL_WIN_AMD64,
+    target,
+    undefined,
+    undefined,
+    'official',
+    undefined,
+    [],
+    { sha256: FRPC_WIN_AMD64_SHA256, size: FRPC_WIN_AMD64_SIZE }
+  )
     .then(() => {
       onLog?.('frpc.exe 下载完成')
       return target
