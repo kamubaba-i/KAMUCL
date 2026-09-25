@@ -18,6 +18,7 @@ import { listGameFolders, setActiveGameFolder } from './gameFolders'
 import { instanceDirectoryState, setNewInstanceIsolation } from './instances'
 import { installVersion, scanInstalledFolder, type VersionJson } from './versions'
 import { throwIfCancelled } from './tasks'
+import { isArchiveSymlink, resolveArchiveEntryPath, safeArchivePath } from './security'
 
 const MAX_LEVEL_DAT = 32 * 1024 * 1024
 const MAX_ARCHIVE_ENTRIES = 250_000
@@ -147,12 +148,11 @@ export function normalizeWorldArchivePath(input: string): string {
   if (process.platform === 'win32' && parts.some((part) => WINDOWS_DEVICE.test(part) || /[:*?"<>|]/.test(part))) {
     throw new Error(`压缩包包含 Windows 非法路径：${input}`)
   }
-  return parts.join('/')
+  return safeArchivePath(input)
 }
 
 function zipEntryIsSymlink(entry: Entry): boolean {
-  const mode = (entry.externalFileAttributes >>> 16) & 0o170000
-  return mode === 0o120000
+  return isArchiveSymlink(entry.externalFileAttributes)
 }
 
 function openZip(filePath: string): Promise<ZipFile> {
@@ -516,11 +516,7 @@ async function copyFolderWorld(
 }
 
 function safeDestination(base: string, relative: string): string {
-  const normalized = normalizeWorldArchivePath(relative)
-  const target = path.resolve(base, ...normalized.split('/').filter(Boolean))
-  const root = path.resolve(base)
-  if (target !== root && !target.startsWith(root + path.sep)) throw new Error('解压目标越界')
-  return target
+  return resolveArchiveEntryPath(base, relative)
 }
 
 async function extractZipWorld(
