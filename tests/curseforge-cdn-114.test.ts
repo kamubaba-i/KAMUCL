@@ -88,8 +88,9 @@ for (const outcome of ['success', 'unavailable', 'corrupt'] as const) test(`real
   })
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r)); base = `http://127.0.0.1:${(server.address() as any).port}`
   try {
+    const versionBody = Buffer.from(JSON.stringify({ id: '1.20.1', mainClass: 'fixture.Main', libraries: [], downloads: { client: { url: base + '/client', sha1: sha1(client), size: client.length } } }))
     runtime = await versionInstallHarness(root,
-      async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01' }] }),
+      async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01', sha1: sha1(versionBody) }] }),
       url => /curseforge|mcimirror|modrinth|cursemaven|forgecdn|pack-test\.invalid/.test(url) ? base + new URL(url).pathname : url)
     Object.assign(runtime.getSettings(), { gameDir: game, activeFolder: game, folders: [{ path: game, name: 'fixture', isDefault: true }], defaultIsolation: true, mirror: 'official' })
     const zip = new AdmZip(), input = path.join(root, 'fixture.zip')

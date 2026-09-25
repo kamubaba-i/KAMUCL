@@ -76,8 +76,9 @@ for (const corrupt of [false, true]) test(`整合包真实安装编排：包内 
   })
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r)); base = `http://127.0.0.1:${(server.address() as any).port}`
   try {
+    const versionBody = Buffer.from(JSON.stringify({ id: '1.20.1', mainClass: 'fixture.Main', libraries: [], downloads: { client: { url: base + '/client', sha1: sha1(client), size: client.length } } }))
     runtime = await versionInstallHarness(root,
-      async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01' }] }),
+      async () => Response.json({ versions: [{ id: '1.20.1', type: 'release', url: base + '/version', releaseTime: '2023-01-01', sha1: sha1(versionBody) }] }),
       url => /curseforge|mcimirror|modrinth|cursemaven|forgecdn/.test(url) ? base + new URL(url).pathname : url.replace('https://pack-test.invalid', base))
     Object.assign(runtime.getSettings(), { gameDir: game, activeFolder: game, folders: [{ path: game, name: 'new', isDefault: true }, { path: other, name: 'old' }], defaultIsolation: true, mirror: 'bmclapi' })
     const source = path.join(other, 'versions', 'previous', 'mods', 'renamed.jar.disabled')
