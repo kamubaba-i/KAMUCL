@@ -27,6 +27,7 @@ import type { MemoryTrimController } from './core/memTrim'
 import { getRunningGamePids } from './core/launch'
 import { exitHistory, rememberExit } from './core/exitHistory'
 import { configureRuntimeGraphics } from './runtimeGraphics'
+import { cleanupCurrentPortableRuntime } from './portableRuntimeCleanup'
 
 configureRuntimeGraphics(app.commandLine, process.platform, dirname(process.execPath))
 
@@ -156,6 +157,7 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
 }
 
 app.whenReady().then(async () => {
+  cleanupCurrentPortableRuntime()
   initializeLauncherLog()
   launcherLogInfo('main', `Electron 就绪（版本 ${app.getVersion()}）`)
   if (await applyUpdateOnStartup()) return
