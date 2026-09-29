@@ -1,4 +1,5 @@
 import './download-cancellation.test'
+import './plugin-security.test'
 import './game-pipe-concurrency.test'
 import './download-policy.test'
 import './download-progress.test'
