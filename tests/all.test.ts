@@ -1,5 +1,6 @@
 import './download-cancellation.test'
 import './game-pipe-concurrency.test'
+import './preload-channel-policy.test'
 import './download-policy.test'
 import './download-progress.test'
 import './download-limits.test'
