@@ -7,6 +7,7 @@
 import path from 'node:path'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { getSettings } from './settings'
+import { isSafeChildName } from './security'
 const launchFolder = new AsyncLocalStorage<{ active: string; shared: string }>()
 /** Freeze an accepted launch's directory across async authentication/downloads and UI folder changes. */
 export function withGameFolder<T>(folder: string, action: () => T): T {
@@ -60,6 +61,7 @@ export function allVersionsDirs(): Array<{ folder: string; dir: string }> {
 }
 
 export function versionDir(id: string): string {
+  if (!isSafeChildName(id)) throw new Error('无效的版本 ID')
   return path.join(folderOfVersion(id), 'versions', id)
 }
 

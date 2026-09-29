@@ -36,6 +36,7 @@ import { throwIfCancelled, waitIfTaskPaused } from './tasks'
 import { listGameFolders, setActiveGameFolder } from './gameFolders'
 import { canonicalPath, samePath } from './folderPaths'
 import { logScope } from './launcherLog'
+import { isArchiveSymlink, resolveContainedPath, safeArchivePath } from './security'
 
 const packLog = logScope('modpack')
 
@@ -113,17 +114,15 @@ const ILLEGAL_WINDOWS_SEGMENT = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
 
 /** 防目录穿越、绝对路径、Windows 设备名与目标根逃逸。 */
 function safeJoin(base: string, rel: string): string | null {
-  if (!rel || rel.includes('\0') || /^(?:[\\/]|[A-Za-z]:)/.test(rel)) return null
-  const parts = rel.split(/[\\/]+/).filter(Boolean)
-  if (
-    !parts.length ||
-    parts.includes('..') ||
-    parts.some((part) => part === '.' || ILLEGAL_WINDOWS_SEGMENT.test(part) || /[:*?"<>|]/.test(part))
-  ) return null
-  const root = path.resolve(base)
-  const target = path.resolve(root, ...parts)
-  const prefix = root.endsWith(path.sep) ? root : root + path.sep
-  return target !== root && target.startsWith(prefix) ? target : null
+  try {
+    const normalized = safeArchivePath(rel)
+    if (normalized.split('/').some((part) => ILLEGAL_WINDOWS_SEGMENT.test(part) || /[:*?"<>|]/.test(part))) {
+      return null
+    }
+    return resolveContainedPath(base, normalized)
+  } catch {
+    return null
+  }
 }
 
 /** 清洗实例 id：去 \\/:*?"<>| 与首尾空格点 */
@@ -169,7 +168,7 @@ function openPackZip(filePath: string, nested?: Buffer): AdmZip {
       if (!entry.isDirectory && !safeJoin(path.parse(filePath).root, normEntry(entry.entryName))) {
         throw new Error(`整合包包含不安全路径：${entry.entryName}`)
       }
-      if (((entry.attr >>> 16) & 0o170000) === 0o120000) {
+      if (isArchiveSymlink(entry.attr)) {
         throw new Error(`整合包包含不允许的符号链接：${entry.entryName}`)
       }
       if (
@@ -713,7 +712,7 @@ export async function extractOverrides(
     const rel = name.slice(pre.length)
     const dest = safeJoin(destDir, rel)
     if (!dest) throw new Error(`overrides 包含不安全路径：${rel}`)
-    if (((entry.attr >>> 16) & 0o170000) === 0o120000) {
+    if (isArchiveSymlink(entry.attr)) {
       throw new Error(`overrides 不允许符号链接：${rel}`)
     }
     if (entry.header.size > 512 * 1024 * 1024) throw new Error(`overrides 单文件超过 512 MB：${rel}`)

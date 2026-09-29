@@ -20,6 +20,7 @@ import { macJavaArchitecture } from './javaArchitecture'
 import { provisionJava, javaPackageSize } from './javaSources'
 import { httpFetch } from './httpClient'
 import { validateJavaRuntime } from './javaRuntimeHealth'
+import { isArchiveSymlink, resolveArchiveEntryPath } from './security'
 const probeCache = new JavaProbeCache(() => path.join(app.getPath('userData'), 'java-probe-cache.json'))
 
 const javaLog = logScope('java')
@@ -38,6 +39,56 @@ const IS_MAC = process.platform === 'darwin'
 const JAVA_EXE = IS_WIN ? 'java.exe' : 'java'
 const SCAN_TTL = 5 * 60 * 1000
 const PERSISTENT_SCAN_TTL = 7 * 24 * 60 * 60 * 1000
+const TAR_TIMEOUT_MS = 120000
+const TAR_LIST_MAX_BUFFER = 64 * 1024 * 1024
+
+export type TarArchiveMemberType = 'file' | 'directory' | 'symlink' | 'hardlink' | 'other'
+
+export interface TarArchiveMember {
+  name: string
+  type: TarArchiveMemberType
+}
+
+export function parseTarArchiveMembers(namesOutput: string, verboseOutput: string): TarArchiveMember[] {
+  const names = namesOutput.split(/\r?\n/).filter(Boolean)
+  const details = verboseOutput.split(/\r?\n/).filter(Boolean)
+  if (names.length !== details.length) throw new Error('Java 解压失败：tar 成员列表不一致')
+  return names.map((name, index) => {
+    const marker = details[index][0]
+    const type: TarArchiveMemberType =
+      marker === 'd' ? 'directory' :
+        marker === '-' ? 'file' :
+          marker === 'l' ? 'symlink' :
+            marker === 'h' ? 'hardlink' : 'other'
+    return { name, type }
+  })
+}
+
+export function validateTarArchiveMembers(extracted: string, members: readonly TarArchiveMember[]): void {
+  for (const member of members) {
+    resolveArchiveEntryPath(extracted, member.name)
+    if (member.type === 'symlink') throw new Error(`Java 解压失败：不允许符号链接：${member.name}`)
+    if (member.type === 'hardlink') throw new Error(`Java 解压失败：不允许硬链接：${member.name}`)
+    if (member.type === 'other') throw new Error(`Java 解压失败：不允许特殊文件：${member.name}`)
+  }
+}
+
+function listTarArchive(archive: string, verbose: boolean): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      '/usr/bin/tar',
+      [verbose ? '-tvzf' : '-tzf', archive],
+      { timeout: TAR_TIMEOUT_MS, maxBuffer: TAR_LIST_MAX_BUFFER },
+      (error, stdout) => error ? reject(error) : resolve(stdout)
+    )
+  })
+}
+
+async function preflightTarArchive(archive: string, extracted: string): Promise<void> {
+  const names = await listTarArchive(archive, false)
+  const verbose = await listTarArchive(archive, true)
+  validateTarArchiveMembers(extracted, parseTarArchiveMembers(names, verbose))
+}
 
 interface JavaCandidate {
   executable: string
@@ -954,8 +1005,22 @@ async function downloadAndExtractJava(need: number, emit: ProgressEmit, architec
       await downloadFile(pkg.url, archive, (done, total) => emit({ stage: 'java', progress: total ? done / total * .85 : 0, bytesDone: done, text: `下载 Java ${need} · ${pkg.provider} ${(done / 1048576).toFixed(1)}${total ? '/' + (total / 1048576).toFixed(1) : ''} MB` }), undefined, 'official', undefined, [], { sha256: pkg.sha256, size, systemProxy: true, maxAttempts: 2 })
       emit({ stage: 'java', progress: .9, text: `校验通过，正在解压 Java ${need} · ${pkg.provider}` })
       fs.mkdirSync(extracted)
-      if (IS_WIN) new AdmZip(archive).extractAllTo(extracted, true)
-      else await new Promise<void>((resolve, reject) => execFile('/usr/bin/tar', ['-xzf', archive, '-C', extracted], { timeout: 120000 }, error => error ? reject(error) : resolve()))
+      if (IS_WIN) {
+        const zip = new AdmZip(archive)
+        for (const entry of zip.getEntries()) {
+          if (isArchiveSymlink(entry.attr)) throw new Error('Java 解压失败：不允许符号链接')
+          if (entry.isDirectory) {
+            fs.mkdirSync(resolveArchiveEntryPath(extracted, entry.entryName), { recursive: true })
+            continue
+          }
+          const output = resolveArchiveEntryPath(extracted, entry.entryName)
+          fs.mkdirSync(path.dirname(output), { recursive: true })
+          fs.writeFileSync(output, entry.getData())
+        }
+      } else {
+        await preflightTarArchive(archive, extracted)
+        await new Promise<void>((resolve, reject) => execFile('/usr/bin/tar', ['-xzf', archive, '-C', extracted], { timeout: TAR_TIMEOUT_MS }, error => error ? reject(error) : resolve()))
+      }
       const entries = fs.readdirSync(extracted)
       const source = entries.length === 1 && fs.statSync(path.join(extracted, entries[0])).isDirectory() ? path.join(extracted, entries[0]) : extracted
       const candidates = IS_MAC ? [path.join(source, 'Contents/Home/bin/java'), path.join(source, 'bin/java')] : [path.join(source, 'bin', JAVA_EXE)]
