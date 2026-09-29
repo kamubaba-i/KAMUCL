@@ -26,6 +26,7 @@ const javaLog = logScope('java')
 import {
   parseJavaProbeOutput,
   javaHomeExecutable,
+  gameJavaExecutable,
   parseRegistryJavaHomes,
   shouldPruneJavaDirectory
 } from './javaScanUtils'

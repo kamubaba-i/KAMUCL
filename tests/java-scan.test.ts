@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import fs from 'node:fs'
+import path from 'node:path'
 import {
   expandWindowsEnvironment,
   javaHomeExecutable,
@@ -9,6 +10,7 @@ import {
   parseRegistryJavaHomes,
   shouldPruneJavaDirectory
 } from '../src/main/core/javaScanUtils'
+import { gameJavaExecutable } from '../src/main/core/javaScanUtils'
 
 test('Java forwarding path resolves to actual java.home runtime across versions and operating systems', () => {
   assert.equal(javaHomeExecutable('    java.home = C:\\Program Files\\Java\\jdk-25.0.2\n', 'win32'), 'C:\\Program Files\\Java\\jdk-25.0.2\\bin\\java.exe')
@@ -16,6 +18,31 @@ test('Java forwarding path resolves to actual java.home runtime across versions 
   assert.equal(javaHomeExecutable('java.home = /opt/jdk-21', 'linux'), '/opt/jdk-21/bin/java')
   assert.equal(javaHomeExecutable('java.home = relative', 'win32'), null)
   assert.equal(javaHomeExecutable('java.version = 25', 'win32'), null)
+})
+
+test('Windows game launch prefers javaw when the GUI entry exists', () => {
+  const root = fs.mkdtempSync('kamucl-javaw-')
+  try {
+    const java = path.join(root, 'bin', 'java.exe')
+    fs.mkdirSync(path.dirname(java), { recursive: true })
+    fs.writeFileSync(path.join(path.dirname(java), 'javaw.exe'), '')
+    assert.equal(gameJavaExecutable(java, 'win32'), path.join(root, 'bin', 'javaw.exe'))
+    assert.equal(gameJavaExecutable(java, 'linux'), java)
+    assert.equal(gameJavaExecutable(path.join(root, 'bin', 'other.exe'), 'win32'), path.join(root, 'bin', 'other.exe'))
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Windows game launch falls back to java when javaw is unavailable', () => {
+  const root = fs.mkdtempSync('kamucl-java-no-javaw-')
+  try {
+    const java = path.join(root, 'bin', 'java.exe')
+    fs.mkdirSync(path.dirname(java), { recursive: true })
+    assert.equal(gameJavaExecutable(java, 'win32'), java)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('resolveJavaExecutable double-decodes GBK java.home for JRE in CJK game dir', async () => {

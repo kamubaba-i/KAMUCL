@@ -1,4 +1,5 @@
 import path from 'node:path'
+import fs from 'node:fs'
 import type { JavaInfo } from '../../shared/types'
 
 /** 将注册表中的 %VAR% 展开；未知变量保持原样，避免误改合法路径。 */
@@ -51,6 +52,13 @@ export function javaHomeExecutable(output: string, platform: NodeJS.Platform = p
   const paths = platform === 'win32' ? path.win32 : path.posix
   if (!home || !paths.isAbsolute(home)) return null
   return paths.join(home, 'bin', platform === 'win32' ? 'java.exe' : 'java')
+}
+
+/** Windows 图形游戏使用 javaw 隐藏控制台；探测和安装器仍使用 java。 */
+export function gameJavaExecutable(exe: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== 'win32' || !/java\.exe$/i.test(exe)) return exe
+  const javaw = path.join(path.dirname(exe), 'javaw.exe')
+  return fs.existsSync(javaw) ? javaw : exe
 }
 
 /** 解析 `java -XshowSettings:properties -version` 的 stdout/stderr。 */
