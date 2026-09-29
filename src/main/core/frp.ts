@@ -21,9 +21,12 @@ export const DEFAULT_LOCAL_HOST = '127.0.0.1'
 /** 官方 frpc 直链（amd64 Windows；用户可在管理面板自行替换为对应架构）。 */
 export const FRPC_OFFICIAL_URL_WIN_AMD64 =
   'https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe'
+/** frpc 0.51.0-sakura-14 Windows x64 官方二进制的固定校验值。 */
+const FRPC_WIN_AMD64_SHA256 = 'b705262edad9f0de04b38f342e811e9d97d0beada75edab3f790e105dcfb5234'
+const FRPC_WIN_AMD64_SIZE = 14_133_248
 
-export function frpcAsset(platform = process.platform, arch = process.arch): { url: string; sha256?: string } {
-  if (platform === 'win32') return { url: FRPC_OFFICIAL_URL_WIN_AMD64 }
+export function frpcAsset(platform = process.platform, arch = process.arch): { url: string; sha256?: string; size?: number } {
+  if (platform === 'win32') return { url: FRPC_OFFICIAL_URL_WIN_AMD64, sha256: FRPC_WIN_AMD64_SHA256, size: FRPC_WIN_AMD64_SIZE }
   const sha256 = arch === 'arm64' ? '465db9daea0e14e3adaa89926640afa8b44737dadc1cf0b75f9b091850d2e331'
     : arch === 'x64' ? '74ee362350314dd5ac8936fbe2299fc76671051e10beb46c8dd37c36a4503935' : undefined
   if (platform !== 'darwin' || !sha256) throw new Error(`樱花穿透暂不支持 ${platform}/${arch}`)
