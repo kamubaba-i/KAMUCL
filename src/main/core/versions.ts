@@ -174,6 +174,19 @@ export async function fetchVersionManifest(_mirror: MirrorPref, refresh = false,
   return (await getVersionCatalog(refresh, signal)).versions
 }
 
+export function parseRemoteVersion(value: unknown): RemoteVersion | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Record<string, unknown>
+  const id = typeof item.id === 'string' ? item.id : ''
+  const type = item.type
+  const url = typeof item.url === 'string' ? item.url : ''
+  const releaseTime = typeof item.releaseTime === 'string' ? item.releaseTime : ''
+  const sha1 = typeof item.sha1 === 'string' ? item.sha1.toLowerCase() : ''
+  if (!id || !['release', 'snapshot', 'old_beta', 'old_alpha'].includes(String(type)) ||
+      !url || !releaseTime || !/^[a-f0-9]{40}$/.test(sha1)) return null
+  return { id, type: type as RemoteVersion['type'], url, releaseTime, sha1 }
+}
+
 // ---------------- 版本 json ----------------
 
 /** 同步读取本地版本 json（容错 BOM 头）；versions/ 没有时回退到 .kamucl/base 依赖原版区 */
@@ -204,7 +217,10 @@ export async function getVersionJson(
     }
     if (!entry) throw new Error(`版本清单中找不到 ${versionId}`)
     fs.mkdirSync(path.dirname(jsonPath), { recursive: true })
-    await downloadFile(entry.url, jsonPath, undefined, undefined, mirror, signal)
+    if (!entry.sha1 || !/^[a-f0-9]{40}$/i.test(entry.sha1)) {
+      throw new Error(`版本 ${versionId} 缺少有效 SHA1，拒绝下载`)
+    }
+    await downloadFile(entry.url, jsonPath, undefined, entry.sha1, mirror, signal)
   }
   return JSON.parse(fs.readFileSync(jsonPath, 'utf-8').replace(/^﻿/, '')) as VersionJson
 }
