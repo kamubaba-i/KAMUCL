@@ -38,7 +38,7 @@ test('instance Java setter persists automatic/manual/inherited without changing 
   fn('a', '')
   assert.deepEqual(saved, { custom: 'preserve' })
   assert.match(read('src/main/core/launch.ts'), /if \(instanceConfig\._javaAuto === true\) \{\s+javaPath = await ensureJava/)
-  assert.match(read('src/main/ipc.ts'), /withGameFolder\(folder \|\| folderOfVersion/)
+  assert.match(read('src/main/ipc.ts'), /withGameFolder\(\s*folder && String\(folder\)\.trim\(\)[\s\S]*?registeredGameFolder[\s\S]*?folderOfVersion/)
 })
 
 test('launch notice follows actual running event, dismisses on timeout/error and cancels timers', () => {

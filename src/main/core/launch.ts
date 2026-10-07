@@ -28,6 +28,7 @@ import { ensureJava, resolveJavaRequirement, javaCompatibilityError, scanJavaFor
 import { gameJavaArchitecture } from './javaArchitecture'
 import { requireDesktopGamePlatform } from '../../shared/platform'
 import { assertNativeElf, resolveNativeIntegrity } from './platformNatives'
+import { isArchiveSymlink, resolveArchiveEntryPath } from './security'
 import {
   assetsDir,
   allFolders,
@@ -511,8 +512,11 @@ async function launchOwned(
         try {
           const zip = new AdmZip(jar)
           for (const entry of zip.getEntries()) {
+            if (isArchiveSymlink(entry.attr)) throw new Error(`natives 包含不允许的符号链接：${entry.entryName}`)
             if (entry.isDirectory || entry.entryName.startsWith('META-INF/')) continue
-            zip.extractEntryTo(entry, nativesPath, true, true)
+            const output = resolveArchiveEntryPath(nativesPath, entry.entryName)
+            fs.mkdirSync(path.dirname(output), { recursive: true })
+            fs.writeFileSync(output, entry.getData())
           }
         } catch (error) {
           if (process.platform === 'linux') throw new Error(`Linux 原生运行库解压失败：${path.basename(jar)}；${String(error)}`)
