@@ -15,6 +15,10 @@ export default defineConfig({
       const bridgeJar = resolve(__dirname, 'bridge/dist/kamucl-bridge-1.0.1.jar')
       if (existsSync(bridgeJar)) copyFileSync(bridgeJar, resolve(__dirname, 'out/main/kamucl-bridge.jar'))
       else throw new Error('[kamucl] bridge/dist/kamucl-bridge-1.0.1.jar missing; run node scripts/build-bridge.cjs')
+      // 内置控制模组（MCP 游戏内能力）：Loom 构建较重，缺失时降级而非阻断（installControl 运行时明确报错）
+      const controlJar = resolve(__dirname, 'control/dist/kamucl-control-1.21.1.jar')
+      if (existsSync(controlJar)) copyFileSync(controlJar, resolve(__dirname, 'out/main/kamucl-control-1.21.1.jar'))
+      else console.warn('[kamucl] control/dist/kamucl-control-1.21.1.jar missing; MCP game control will be unavailable. Run node scripts/build-control.cjs')
       execFileSync(process.execPath, [resolve(__dirname, 'scripts/build-offline-skin-agent.cjs')], { stdio: 'inherit', windowsHide: true })
       copyFileSync(resolve(__dirname, 'offline-skin-agent/dist/kamucl-offline-skin.jar'), resolve(__dirname, 'out/main/kamucl-offline-skin.jar'))
     } }],

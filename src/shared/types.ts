@@ -369,6 +369,8 @@ export type VersionCategoryAction =
   | { type: 'assign'; target: { id: string; folder: string }; categoryId: string }
 
 export interface Settings {
+  /** MCP Host API（本机 AI 客户端经 mcp/server.mjs 访问）；默认开启，false 关闭（下次启动生效） */
+  mcpEnabled?: boolean
   /** Fit the launcher to available desktop space only when explicitly enabled. */
   uiWindowAutoFit?: boolean
   /** Explicit reduction is additive to the operating system preference; absent means follow system. */

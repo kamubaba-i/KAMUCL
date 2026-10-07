@@ -18,3 +18,7 @@ bridge/.cache/
 offline-skin-agent/build/
 offline-skin-agent/dist/
 offline-skins/
+control/build/
+control/dist/
+control/.gradle/
+control/run/

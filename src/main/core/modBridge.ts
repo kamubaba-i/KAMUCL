@@ -28,7 +28,7 @@ export function bridgeInstalled(versionId: string): boolean {
   return false
 }
 
-/** 把内置桥接 MOD 安装到实例 mods 目录（幂等：已安装则跳过） */
+/** 把内置桥接模组安装到实例 mods 目录（可重复调用，已安装则跳过） */
 export function installBridge(versionId: string): { ok: boolean; already?: boolean; error?: string } {
   try {
     if (bridgeInstalled(versionId)) return { ok: true, already: true }

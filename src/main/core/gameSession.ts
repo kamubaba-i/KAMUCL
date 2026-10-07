@@ -62,6 +62,13 @@ export class GameSession {
     return [...this.sessions.values()].some((s) => s.versionId === versionId && !s.exited)
   }
 
+  /** 运行中会话清单（MCP 按实例寻址用；pid 在进程创建前为 undefined） */
+  list(): Array<{ versionId: string; pid?: number }> {
+    return [...this.sessions.values()]
+      .filter(s => !s.exited)
+      .map(s => ({ versionId: s.versionId, pid: s.child?.pid }))
+  }
+
   /** 找到指定版本最近会话的 token（无则 undefined） */
   tokenOf(versionId: string): symbol | undefined {
     for (const [t, s] of [...this.sessions.entries()].reverse()) {

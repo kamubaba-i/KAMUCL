@@ -232,6 +232,11 @@ app.whenReady().then(async () => {
   registerIpc(() => win && !win.isDestroyed() ? win : null)
   launcherLogInfo('main', 'IPC 通道与插件协议注册完成')
 
+  // MCP Host API（本机 AI 客户端接入，仅 127.0.0.1 + token；mcpEnabled=false 时不启动）
+  void import('./core/mcpHost').then(({ startMcpHost }) =>
+    startMcpHost().catch(error => launcherLogWarn('mcp', 'MCP Host API 启动失败（不影响启动器）', error))
+  )
+
   // 存量实例自包含迁移（老式 inheritsFrom 继承 → 合并进实例，幂等）：基础版本改名/删除不再波及已装实例
   void import('./core/versions').then(({ migrateFlattenedInstances }) =>
     migrateFlattenedInstances((m) => launcherLogInfo('migrate', m)).then((n) => {
@@ -330,6 +335,7 @@ app.on('before-quit', event => {
   void stopDirectHost()
   void stopVoxlinkOnQuit()
   void stopTerracottaOnQuit()
+  void import('./core/mcpHost').then(({ stopMcpHost }) => stopMcpHost()).catch(() => undefined)
   void frpManager.shutdown().catch(error => launcherLogWarn('frp', '关闭隧道失败', error))
   launcherLogInfo('main', '所有窗口已关闭，开始清理联机相关资源')
 })
