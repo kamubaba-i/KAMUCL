@@ -1006,7 +1006,7 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     }
     const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     if (result.canceled || !result.filePaths[0]) return null
-    return applyUpdate.checkLocalUpdateFile(result.filePaths[0])
+    return applyUpdate.selectLocalUpdateFile(result.filePaths[0])
   })
   ipcMain.handle(IPC.updateApplyLocal, async (_e, check: import('../shared/types').LocalUpdateCheck) => {
     await applyUpdate.applyLocalUpdateFile(check)
