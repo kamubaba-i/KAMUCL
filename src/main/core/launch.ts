@@ -226,6 +226,20 @@ export const killGame = (forceToken?: string) => {
   return gameSession.requestStop(requestGameWindowClose, forceToken)
 }
 
+/** 终止指定实例最近会话的游戏进程（多开寻址；MCP 等外部调用用） */
+export const killGameVersion = (versionId: string, forceToken?: string) => {
+  launchLog.info(`收到终止游戏进程请求：${versionId}`)
+  if (restartPending) throw new Error('正在处理重启，请先完成或取消重启请求')
+  const token = gameSession.tokenOf(versionId)
+  if (!token) throw new Error(`实例 ${versionId} 当前未运行`)
+  return gameSession.requestStop(requestGameWindowClose, forceToken, 30000, token)
+}
+
+/** 运行中会话清单（版本 id + pid；MCP 多开寻址用） */
+export function getRunningGames(): Array<{ versionId: string; pid?: number }> {
+  return gameSession.list()
+}
+
 /**
  * 沿 inheritsFrom 读取版本链并合并：
  * - libraries 合并（子在前）

@@ -72,6 +72,7 @@ import { getModIcons } from './core/modIcons'
 import * as plugins from './core/plugins'
 import * as keybindings from './core/keybindings'
 import * as modBridge from './core/modBridge'
+import * as controlBridge from './core/controlBridge'
 import * as gamedir from './core/gamedir'
 import { folderOfVersion, instanceIconsDir, withDownloadFolder, withGameFolder } from './core/paths'
 import * as modpacks from './core/modpacks'
@@ -1035,7 +1036,12 @@ export function registerIpc(getWin: () => BrowserWindow | null): void {
     modBridge.bridgeReset(String(versionId ?? ''), id ? String(id) : undefined)
   )
   ipcMain.handle(IPC.bridgeInstalled, (_e, versionId: string) => modBridge.bridgeInstalled(String(versionId ?? '')))
-  ipcMain.handle(IPC.bridgeInstall, (_e, versionId: string) => modBridge.installBridge(String(versionId ?? '')))
+  ipcMain.handle(IPC.bridgeInstall, (_e, versionId: string) => {
+    const id = String(versionId ?? '')
+    // 同时安装控制模组（MCP 游戏内能力）；实例版本不受支持时仅桥接安装成功，控制结果随响应带回
+    const control = controlBridge.installControl(id)
+    return { ...modBridge.installBridge(id), control }
+  })
 
   const modTargets = () => scanModTargets(settings.getSettings().folders.map(f => f.path), versions.scanInstalledFolder)
   ipcMain.handle(IPC.modsTargets, () => modTargets())

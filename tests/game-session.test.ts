@@ -50,3 +50,15 @@ test('stop waits for the owned real process to exit and never announces success 
   try { await session.stop(); await closed; assert(!session.busy) }
   finally { if (child.exitCode === null && child.signalCode === null) child.kill() }
 })
+test('list reports every running session with its pid for per-instance addressing', () => {
+  const session = new GameSession()
+  const preparing = session.reserve('preparing')
+  const running = session.reserve('running')
+  const child = Object.assign(new EventEmitter(), { pid: 43210, exitCode: null, signalCode: null, kill: () => true })
+  session.attach(running, child as unknown as ChildProcess)
+  assert.deepEqual(session.list(), [{ versionId: 'preparing', pid: undefined }, { versionId: 'running', pid: 43210 }])
+  session.release(preparing)
+  assert.deepEqual(session.list(), [{ versionId: 'running', pid: 43210 }])
+  session.release(running)
+  assert.deepEqual(session.list(), [])
+})
