@@ -26,7 +26,7 @@ import { prepareModpackFiles } from './modpackDownloads'
 import { runParallelTasks } from './parallelTasks'
 import { ParallelProgress } from './parallelProgress'
 import { resolveCurseForgeMetadata, resolveCurseForgeFileUrl, constructCurseForgeCdnUrl, probeCurseForgeCdnUrl, curseForgeInstallDir, exactModrinthDownload } from './curseforgeDownload'
-import { BundledModpackFiles } from './modpackBundledFiles'
+import { BundledModpackFiles, assertOverrideFileSize } from './modpackBundledFiles'
 import { LocalModpackFiles } from './modpackLocalFiles'
 import { prepareCurseMavenFile } from './modpackAlternateDownload'
 import { waitForModpackFiles } from './modpackManualFiles'
@@ -766,7 +766,7 @@ export async function extractOverrides(
     if (((entry.attr >>> 16) & 0o170000) === 0o120000) {
       throw new Error(`overrides 不允许符号链接：${rel}`)
     }
-    if (entry.header.size > 512 * 1024 * 1024) throw new Error(`overrides 单文件超过 512 MB：${rel}`)
+    assertOverrideFileSize(entry, rel)
     return { entry, dest, rel: rel.replace(/\\/g, '/') }
   })
   const directories = new Map<string, Promise<unknown>>()

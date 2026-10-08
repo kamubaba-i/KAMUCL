@@ -3,6 +3,22 @@ import type { PackZip, PackEntry } from './streamPackZip'
 
 const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/^\.\//, '')
 
+/**
+ * overrides 单文件上限。内存解码条目（无 writeTo/digest 的 AdmZip 兼容路径）保持
+ * 512 MB；流式条目的内存占用与文件大小无关（1 MiB 管道），放宽到 4 GB 心智护栏，
+ * 合法的大文件（如 PCL 导出整合包内的大体积世界存档）不再被整体拦截。归档级
+ * 条目数量、总解压 32 GB、压缩比与 CRC 校验继续兜底（见 modpacks.openPackZip）。
+ */
+export const OVERRIDE_BUFFERED_FILE_LIMIT = 512 * 1024 * 1024
+export const OVERRIDE_STREAMING_FILE_LIMIT = 4 * 1024 * 1024 * 1024
+
+export function assertOverrideFileSize(entry: PackEntry, rel: string): void {
+  const streaming = Boolean(entry.writeTo || entry.digest)
+  const limit = streaming ? OVERRIDE_STREAMING_FILE_LIMIT : OVERRIDE_BUFFERED_FILE_LIMIT
+  if (entry.header.size <= limit) return
+  throw new Error(`overrides 内单个文件超过 ${streaming ? '4 GB' : '512 MB'}：${rel}（.mrpack 压缩包本身大小不受限制，是该文件解压后超限）`)
+}
+
 /** Locations loaded by Minecraft or common pack loaders; never count loader caches/backups. */
 export const PACK_RESOURCE_DIRS = [
   'mods', 'resourcepacks', 'shaderpacks', 'datapacks',
@@ -39,7 +55,7 @@ export class BundledModpackFiles {
       const key = rel.toLowerCase()
       if (paths.has(key)) throw new Error(`整合包包含重名覆盖文件：${rel}`)
       paths.add(key)
-      if (entry.header.size > 512 * 1024 * 1024) throw new Error(`overrides 单文件超过 512 MB：${rel}`)
+      assertOverrideFileSize(entry, rel)
       const group = this.entries.get(entry.header.size) ?? []
       group.push({ entry, rel })
       this.entries.set(entry.header.size, group)
