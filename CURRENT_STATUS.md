@@ -1,66 +1,60 @@
-# CURRENT STATUS — KAMUCL 1.1.20
+# CURRENT STATUS — KAMUCL 1.1.21
 
-香港产品更新日志：2026-10-08 03:00。本批 Windows x64 和 Mac ARM64，Electron 44.3.0。保留用户图片、收藏、设置、历史计数、旧实例和未提交文件；不操作 wuhui，不强推，资源优化暂停。
+香港产品日志：2026-10-09 01:04。本批Windows x64和Mac ARM64；Electron44.3.0。图片、收藏、设置、全部历史计数、旧实例和未提交文件保留。不操作wuhui、不强推、不结束他人游戏；资源占用优化暂停。
 
 ## Identity
 
 - Project: KAMUCL
-- Version or revision: 1.1.20；最终 master 提交由标签和 DELIVERY 精确绑定
-- Status timestamp: 2026-10-08 04:56 Asia/Hong_Kong
+- Version or revision: 1.1.21；最终master提交由标签与DELIVERY绑定
+- Status timestamp: 2026-10-09 03:47 Asia/Hong_Kong
 
 ## Last verified state
 
-Windows 产品来源 6af4611d819f652b14bd37e6b67b4f32a761fc28，517 项生产输入逐项与冻结字节、Git 内容及出包后文件核对。输入清单读取在构建期间结束，不能宣称先完全读取清单再启动构建；构建期间生产输入未变。生成 Java 组件另外核对实际出包字节。后续 Mac QA、测试与交付文档差异由最终 DELIVERY 绑定。
+Windows产品输入与c6771c4f6a453d6a2b171e372f83b94df224b562一致；实际开建时为b11 checkout加当时未提交的焦点修复，随后这些产品输入以c677提交。539生产输入在最终构建前完全读取并冻结，当前文件和实际ASAR逐字节核对。Windows正式EXE SHA034b64e5…、ASAR1b6b85d8…、renderer dddda49c…。后续QA-only提交263df7aacacbb4577e2f8c0f0232cec5d1a4b9b1的测试和对应矩阵独立列明，没有再改变产品输入；原生Mac8e与后续原包复用补验的来源分别绑定。
 
-Windows `ad279ae2` 全量 1,485 项：1,484 通过、0 失败、1 Linux 专属跳过；Mac 成品来源 `0649ed5c` 原生全量 1,472 通过、0 失败、5 平台限定跳过。之后新增的 8 项编辑合同与 Mac 21 项专项另外记录，不拼成虚构的同源全量摘要。类型、许可、Windows 构建、便携包启动、ZIP 全部成员及干净解压通过。Mac 原生构建完成；实际专项分列，不授完整一致性通过。
+Mac原生构建/QA来源8e29307b0eefa95d12dea948fab2002b7807854b，fresh run37820579554，ARM64、macOS26、Electron44.3.0；正式ASAR75981e1837d06425234c1279db65e499174fd7898be2bf24c978f7aec1964196。Mac包原字节与本地下载完全核对，APP/DMG实际专项分列。后续QA-only与最终交付文档差异不冒充产品重建。
 
-- Build command: npm run build；electron-builder --win portable --x64 --config.electronDist=node_modules/electron/dist --publish never；node scripts/pack-windows-zip.cjs；原生 Mac node scripts/pack-mac.mjs arm64 --package-only
-- Build result: 两平台生产构建完成；Windows 冻结输入和实际成品相符；Mac 实际专项与包完整性分列
-- Test/validation commands: npm test；npx --no-install tsc --noEmit；npm run license:check；node scripts/verify-windows-package.cjs；当前源原生 Mac 工作流及所属界面专项
-- Validation results: Windows ad279ae2 1484/1485、0 fail/1 平台 skip；Mac 0649ed5c 原生 1472/1477、0 fail/5 平台 skip；之后 21 项编辑/绑定合同与实际 APP/DMG 专项另列
-- Finished artifact: Windows EXE、紧凑 ZIP、展开 ZIP；Mac ZIP/DMG 已生成并完成本批修改专项；整体失败与未覆盖单列
-- Artifact SHA256: 已验证 Windows/Mac 如下表；源码和交接 由外部 DELIVERY 与 SHA256SUMS 绑定
+- Build command: npm run build；electron-builder --win portable --x64 --config.electronDist=node_modules/electron/dist --publish never；node scripts/pack-windows-zip.cjs；原生Mac node scripts/pack-mac.mjs arm64 --package-only
+- Build result: 两平台生产构建及包完整性通过；实际功能和游戏验收范围见验证目录
+- Test/validation commands: npm test；npx --no-install tsc --noEmit；npm run license:check；Windows便携包/compact UI；实际native Mac工作流及APP/DMG专项
+- Validation results: Windows QA263df7aacacbb4577e2f8c0f0232cec5d1a4b9b1全量1588/1589，0失败/1平台skip；Mac1556/1561，0失败/5平台skip；Windowsa844实际16/16界面及后续7528/263df7最小窗口烟雾测试；Mac各job和失败独立列明
+- Finished artifact: Windows EXE、紧凑ZIP、展开ZIP；Mac ARM64 ZIP/DMG；源码和交接包由外部DELIVERY绑定
+- Artifact SHA256: 平台成品如下；源码/交接/清单的完整SHA由外部DELIVERY与SHA256SUMS绑定
 
 ## Last verified artifacts
 
 | 文件 | 字节 | SHA256 |
 | --- | ---: | --- |
-| KAMUCL-1.1.20.exe | 97328652 | d2fad1f339c109c306d6a0740e1576b9e7cfd4e1090c63cac926758ecfe2648a |
-| KAMUCL-1.1.20-windows-x64.zip | 97360651 | c17363d30cee39e3f83e6febcdb8385cc99bd5deb5563789cfeb5146e232149e |
-| KAMUCL-1.1.20-windows-x64-unpacked.zip | 142997617 | c14a097dba78303ce5f87305d94756ae67e3fed74de5261608989fc03d252cd9 |
-| KAMUCL-1.1.20-mac-arm64.zip | 125935198 | 0b06dd56486a6b0dbe76313a1e2124a4848efa919352f7efd7e3e69805ff4ebe |
-| KAMUCL-1.1.20-mac-arm64.dmg | 135777035 | 8c4ea12185ac0139e572bba7e9fcff9cd2782489865275f79b739c7b7449a7d1 |
-
-源码、交接及 Mac 成品由最终外部 DELIVERY 与 SHA256SUMS 精确绑定，避免自引用。
+| KAMUCL-1.1.21.exe | 97339567 | 034b64e567dd34ce90f784e1c5d2eda920e5ba9050cfdd84070231c3cbbd12a7 |
+| KAMUCL-1.1.21-windows-x64.zip | 97371675 | 2cb7a1c7a758c725ffbe5d46cb51937e0b7df2304973679d857e98365d82fb6a |
+| KAMUCL-1.1.21-windows-x64-unpacked.zip | 143012837 | cb192afbbc7b1d83705c9b2b7d3e94d90c6bc0a01719b4a780e0fc386ad3e34b |
+| KAMUCL-1.1.21-mac-arm64.zip | 125954202 | a4930cc3a722b9308ee7df18b9f97484419306a0782257ef821b1bcd30b27579 |
+| KAMUCL-1.1.21-mac-arm64.dmg | 135777009 | 36969f1095a211cfede974b34fe0884a4119a6f019095b960ee57861108c07a5 |
 
 ## Completed
 
-- 社区首次默认全部版本；全部、现有实例、自定义精确版本和加载器明确选择。修复手选加载器被覆盖、迟到响应、来源分页和警告丢失。返回保留搜索与结果，下载目标使用精确目录和身份。
-- 中文检索补齐 MC百科公开名称和明确项目关联，不以近似英文首条代替身份。查询失败不缓存为无结果，筛选和合并分页保留真实状态。
-- 下载活动预算、暂停、系统 PAC 晚到、限流及备用来源边界修复，显示当前文件和原因。
-- 旧 Forge 1.7.10 安装使用元数据、内嵌本体及受校验官方资源；修复 native classifiers 被伪造为普通 JAR 的启动前阻断。路径、哈希、取消、提交和回滚守卫保留。
-- 原用户包在最终 Windows 成品完成真实网络导入。独立核对 4,249 资源对象、313 Modrinth 客户端文件、9,499 适用覆盖文件及 68 CurseForge 清单资源；后者为 67 JAR 和 1 材质包 ZIP。
-- 最终 Windows 社区评分：合理性 9.2、功能性 9.1、外观 8.8；下载状态界面 9.1、9.0、8.7，各项单独超过 8.5。
-- 独立 Mac 复评：APP 四主题、DMG 已执行三主题社区 9.2/9.1/8.8，下载状态 9.1/9.0/8.7；观察范围内无新关键产品缺陷。未执行的 DMG 黑主题不评分，整轮 Mac 不放行。
+14组文档要求已实现并映射：[REQUIREMENTS](docs/validation-1.1.21/REQUIREMENTS.md)。实际修复包含错误版本范围、队列非阻断浏览、主题/导航/透明度/焦点、小屏适应、更新镜像与共享传输、嵌套MRPACK、材质包归一/同步、.DS_Store过滤、26.X关联显示和图片单图替换轮播。
+
+不同作者独立交叉评审：社区9.1/9.2/8.9；外观/导航等9.2/9.1/8.7；镜像控件9.1/9.2/8.8，合理性/功能性/外观分别满足8.5。后端外观无UI时不适用；最终scope、实际证据与Mac修改范围另外绑定，不算平均分或全部平台通过。
+
+Mac本批修改范围的18组原生ARM64离屏矩阵及独立评分通过，使用原8e包、QA263df7aacacbb4577e2f8c0f0232cec5d1a4b9b1、run37831726301；实际窗口、游戏、动效和整个平台仍未放行。这是受控renderer/原包专项，不是实体Mac完整验收。
 
 ## Known issues and risks
 
-两原包均无本轮世界验收通过。旧包 Java 8 实际创建正确架构进程及 LWJGL 窗口，原图仍白色；正常停止超时后仅对校验 PID、出生时间、父进程的所属 JVM 强制清理。不将 helper complete=true 当作菜单、画面、世界或正常退出通过。
+Mac完整一致性未放行。原始及fresh1.20.1 GLFW/NSGL用例未进入世界；云GPU格式不可用是观察到的线索，无实体设备不能推断真实机器通过。现代26.2实际加入/保存日志与区域文件不代替画面，原黑/模糊截图未改判。次级Acorn异常原网络断言来源尚未确定。显示恢复等失败按原job保留。
 
-一次游戏冒烟改写旧包测试目录 11 个配置/语言文件；导入时哈希与运行后变化分开保留。最终独立导入审计使用未运行游戏的新目录。33 个未标 UTF-8 文件名按既有 CP437 解码，不作 GBK 猜测，不宣称中文路径逐字正确。
+Windows黑橙原生DWM次级文字较弱，在同机1.1.20原图相同；不宣称全部桌面材质表现一致。页面125%与观察到的DPI120分开。PNG/JPEG/WebP原件未改；native编码一级单通道舍入不是修改用户素材，但不承诺codec内部逐像素完全一致。
 
-Mac 历史 1.20.1 原图为 GLFW 65545 / NSGL 无合适像素格式，AXTrusted=true、AXWindows=-25204。现代 26.2 原生世界通过不能替代 OpenGL 链；尚无实体 Mac、macOS 13、Developer ID 或公证覆盖。新 APP/DMG 原始失败与测试修正分开保留，不以同源或 Windows 通过推断 Mac 一致。
-
-204 PNG 与 800 JPEG 逐文件 SHA、大小及解码核对，未修图、裁剪、插帧或重判低帧率。部分像素包含合成目录主机标签，不冒称人工审核全部 1,004 图。人工听感、完整动效、全部 DPI/输入设备和加载器组合未覆盖。
+原PCL和Nan2uu付费材质包没有取得，合成夹具不代替实物。没有最终新公开Release经镜像完整自动更新实物链。Mac只ad-hoc，无Developer ID/公证、实体Mac/macOS13、人工音效听感或完整帧率覆盖。原帧时间/视频不插帧、不调低标准。
 
 ## Remaining
 
-Mac 完整平台一致性仍未达成：APP 四主题修改模块通过；DMG 三主题通过，黑主题门槛失败且模块未执行；显示模式恢复、原 Cmd keyUp 接收和 1.20.1 OpenGL 用例未通过。实体 Mac/macOS 13、完整帧率及听感仍需新增证据。公开附件、标签、两分支与匿名下载在发布最后核对，不提前记为成功。
+需要原问题包和实机补验上述未覆盖项。最终发布身份/附件完整匿名下载在发布后核对，结果由外部公开核验receipt记录，不能提前写成功。Mac修改专项与整个平台放行分开，详见MAC_ACCEPTANCE。
 
 ## Historical failures
 
-完整历史见 docs/validation-1.1.20/HISTORICAL_FAILURES.md。旧候选和原失败保留：下载末尾停留、官方限流、旧 Forge 不支持 CLI、native-only 伪造普通 JAR、Mac 临时目录别名、浮点坐标、缺少 Cmd keyUp、更新测试无条件依赖和新测试 receipt 重名。不同失败不合并为未验证的单一根因。
+[历史记录](docs/validation-1.1.21/HISTORICAL_FAILURES.md)保留初始测试mock/断言失败、真实异步focus缺陷、中间row重建失败、旧Mac18矩阵/过时确认按钮失败，以及实际图形/显示恢复失败。新QA保持GPU/WebGL/errors/原阈值，要求真实状态；没有降Electron或放宽标准。
 
 ## Recommended next action
 
-接收者核对 SHA256 后使用自己账号和目录。维护者用交接记录的许可命令验证干净解压副本，再按验证目录核对实际范围；最终提交及 QA/文档差异以 DELIVERY 为准。实机、世界、听感及完整动效需要新增证据。
+接收者核对SHA后使用自己的账号与游戏目录。维护者先运行交接记录许可命令，再按验收目录区分真实服务、夹具、故障注入与实际native桌面。完整Mac和原样例未覆盖需要新增证据；最终master/main及成品来源差异以DELIVERY为准。
