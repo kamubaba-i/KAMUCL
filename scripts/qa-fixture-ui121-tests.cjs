@@ -2,7 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { configureGraphics, graphicsPolicy, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection } = require('./qa-fixture-ui121.cjs')
+const { configureGraphics, graphicsPolicy, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection, sourceTypeAheadCharacter, resetSourcePicker, validateSourceTypeAhead } = require('./qa-fixture-ui121.cjs')
 
 test('Darwin fixture preserves its supported default ANGLE and hardware driver', () => {
   const switches = [], disabled = []
@@ -71,23 +71,56 @@ test('fixture drivers preserve exact old customization, errors and real keyboard
   assert(community.includes('heading.headingTop>=heading.barBottom'))
 })
 
-test('native source selection uses one target jump with complete keyDown/keyUp and Enter', async () => {
+test('Windows native source selection preserves one target jump with complete keyDown/keyUp and Enter', async () => {
   for (const [previous, target, expected] of [
     ['auto', 'direct', ['ArrowDown', 'Enter']], ['auto', 'mirror', ['End', 'Enter']],
     ['direct', 'auto', ['Home', 'Enter']], ['direct', 'mirror', ['End', 'Enter']],
     ['mirror', 'auto', ['Home', 'Enter']], ['mirror', 'direct', ['ArrowUp', 'Enter']]
   ]) assert.deepEqual(sourceSelectionKeys(previous, target), expected)
   assert.throws(() => sourceSelectionKeys('auto', 'auto')); assert.throws(() => sourceSelectionKeys('auto', 'foreign'))
-  const calls = [], webContents = { debugger: { isAttached: () => true, sendCommand: async (...args) => calls.push(args) } }
-  const dispatches = await selectSourceInput(webContents, 'auto', 'direct', 'darwin')
-  assert.equal(dispatches.length, 4); assert(calls.every(([method]) => method === 'Input.dispatchKeyEvent'))
+  const calls = [], webContents = { sendInputEvent: event => calls.push(event) }
+  const dispatches = await selectSourceInput(webContents, 'auto', 'direct', 'win32')
+  assert.equal(dispatches.length, 4)
   assert.deepEqual(calls, [
-    ['Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 }],
-    ['Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 }],
-    ['Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }],
-    ['Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }]
+    { type: 'keyDown', keyCode: 'Down', modifiers: [] }, { type: 'keyUp', keyCode: 'Down', modifiers: [] },
+    { type: 'keyDown', keyCode: 'Enter', modifiers: [] }, { type: 'keyUp', keyCode: 'Enter', modifiers: [] }
   ])
-  assert(dispatches.every(event => event.dispatchCompleted && event.transport === 'Chromium CDP keyboard'))
+  assert(dispatches.every(event => event.dispatchCompleted && event.transport === 'Electron sendInputEvent'))
+})
+
+const sourceOptions = [{ value: 'auto', label: '自动择优（直连与镜像）', disabled: false }, { value: 'direct', label: '仅 GitHub 直连', disabled: false }, { value: 'mirror', label: '仅镜像', disabled: false }]
+const pickerState = (id, selected = 'auto', popupOpen = false) => ({ selected, persisted: selected, popupOpen, busy: false, sourceCalls: [], focus: { id, hasFocus: true } })
+test('Mac printable selection derives the next actual label and refuses intermediate patches', () => {
+  for (const [previous, target, char] of [['auto', 'direct', '仅'], ['direct', 'mirror', '仅'], ['mirror', 'auto', '自']]) assert.equal(sourceTypeAheadCharacter(previous, target, sourceOptions), char)
+  assert.throws(() => sourceTypeAheadCharacter('auto', 'mirror', sourceOptions), /intermediate/)
+  assert.throws(() => sourceTypeAheadCharacter('direct', 'direct', sourceOptions))
+  assert.throws(() => sourceTypeAheadCharacter('direct', 'auto', sourceOptions.map(option => ({ ...option, label: '重复' }))), /intermediate/)
+  assert.throws(() => sourceTypeAheadCharacter('auto', 'direct', sourceOptions.map(option => ({ ...option, disabled: true }))))
+})
+
+test('Mac closes and resets the actual popup session without values or artificial events', async () => {
+  const calls = [], scripts = [], states = [pickerState('update-source', 'auto', true), pickerState('update-source', 'auto', true), pickerState(''), pickerState('update-source')]
+  const webContents = { debugger: { isAttached: () => true, sendCommand: async (...args) => calls.push(args) }, executeJavaScript: async code => scripts.push(code) }
+  const setup = await resetSourcePicker(webContents, async () => states.shift())
+  assert.deepEqual(calls.map(([, event]) => [event.type, event.key]), [['keyDown', 'Escape'], ['keyUp', 'Escape']])
+  assert(scripts.every(code => !code.includes('.value=') && !code.includes('dispatchEvent')))
+  assert.equal(setup.beforeJump.focus.id, 'update-source')
+  const failed = {}; await assert.rejects(resetSourcePicker(webContents, async () => pickerState('update-source', 'auto', true), failed))
+  assert.equal(failed.afterBlur.popupOpen, true, 'Retain partial setup evidence when the real picker never closed')
+})
+
+test('Mac typeahead requires fresh trusted receiver events and exactly one completed transaction', async () => {
+  const startedAt = Date.now(), calls = [], dispatches = [], webContents = { debugger: { isAttached: () => true, sendCommand: async (_method, event) => calls.push(event) } }
+  await selectSourceInput(webContents, 'auto', 'direct', 'darwin', { options: sourceOptions, dispatches, beforeEnter: async () => { assert.equal(calls.length, 2); calls.push('actual complete transaction before key release') } })
+  assert.deepEqual(calls.map(event => event.type || event), ['keyDown', 'char', 'actual complete transaction before key release', 'keyUp', 'keyDown', 'keyUp'])
+  const completedAt = Date.now(), sampleEvent = (type, key, targetId = 'update-source') => ({ type, key, targetId, isTrusted: true, at: completedAt })
+  const row = { protocol: 'chromium-select-typeahead-v1', platform: 'darwin', startedAt, completedAt, previous: 'auto', target: 'direct', options: sourceOptions, expectedFailure: true, dispatches,
+    setup: { dispatches: ['keyDown', 'keyUp'].map(type => ({ type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, transport: 'Chromium CDP keyboard', dispatchCompleted: true })), before: pickerState('update-source'), afterEscape: pickerState('update-source'), afterBlur: pickerState(''), beforeJump: pickerState('update-source') },
+    observations: { beforeEnter: pickerState('update-source') }, focusEvents: [sampleEvent('blur'), sampleEvent('focus')], keyEvents: [sampleEvent('keypress', '仅'), sampleEvent('keyup', '仅'), sampleEvent('keydown', 'Enter'), sampleEvent('keyup', 'Enter')],
+    events: [{ ...sampleEvent('change'), value: 'direct' }], invocations: [{ patch: { updateSource: 'direct' }, startedAt, completedAt, outcome: 'rejected' }], final: { selected: 'auto', persisted: 'auto', busy: false, error: 'Controlled updateSource save failure', focus: { id: 'update-source', inSources: true } } }
+  assert.doesNotThrow(() => validateSourceSelection(row))
+  for (const patch of [{ protocol: undefined }, { keyEvents: [] }, { keyEvents: row.keyEvents.map(event => ({ ...event, targetId: 'other' })) }, { keyEvents: row.keyEvents.map(event => ({ ...event, at: startedAt - 1 })) }, { focusEvents: row.focusEvents.slice(1) }, { observations: { beforeEnter: pickerState('') } }, { setup: { ...row.setup, afterEscape: { ...pickerState('update-source'), sourceCalls: [{}] } } }, { setup: { ...row.setup, afterBlur: { ...pickerState(''), persisted: 'direct' } } }]) assert.throws(() => validateSourceTypeAhead({ ...row, ...patch }))
+  for (const patch of [{ invocations: [] }, { invocations: [row.invocations[0], row.invocations[0]] }, { events: [{ ...row.events[0], isTrusted: false }] }, { final: { ...row.final, focus: { id: '', inSources: false } } }]) assert.throws(() => validateSourceSelection({ ...row, ...patch }))
 })
 
 test('native source qualification rejects idle-only, wrong or duplicate invocation, forged changes and lost rollback focus', async () => {

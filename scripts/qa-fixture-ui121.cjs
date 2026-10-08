@@ -95,9 +95,57 @@ function sourceSelectionKeys(previous, target) {
   return [target === 'auto' ? 'Home' : target === 'mirror' ? 'End' : previous === 'auto' ? 'ArrowDown' : 'ArrowUp', 'Enter']
 }
 
-async function selectSourceInput(webContents, previous, target, platform = process.platform) {
+function sourceTypeAheadCharacter(previous, target, options) {
+  assert.notEqual(previous, target)
+  assert.deepEqual(options.map(option => option.value), UPDATE_SOURCES)
+  assert(options.every(option => typeof option.label === 'string' && option.label.trim() && !option.disabled))
+  const char = Array.from(options.find(option => option.value === target).label.trim())[0]
+  const index = options.findIndex(option => option.value === previous)
+  assert(index >= 0)
+  const ordered = [...options.slice(index + 1), ...options.slice(0, index + 1)]
+  assert.equal(ordered.find(option => option.label.trim().startsWith(char))?.value, target, 'The real single printable key must choose the target without an intermediate settings request')
+  return char
+}
+
+async function dispatchSourceKey(webContents, event, records) {
+  if (!webContents.debugger.isAttached()) webContents.debugger.attach('1.3')
+  const record = { transport: 'Chromium CDP keyboard', ...event, startedAt: Date.now(), dispatchCompleted: false }
+  await webContents.debugger.sendCommand('Input.dispatchKeyEvent', event)
+  record.completedAt = Date.now(); record.dispatchCompleted = true; records.push(record)
+  await new Promise(resolve => setTimeout(resolve, 35))
+}
+
+async function resetSourcePicker(webContents, observe, setup = {}) {
+  Object.assign(setup, { classification: 'Chromium Escape plus DOM blur/focus setup only; actual selection remains a trusted printable key event', dispatches: [], before: await observe() })
+  for (const type of ['keyDown', 'keyUp']) await dispatchSourceKey(webContents, { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, setup.dispatches)
+  setup.afterEscape = await observe()
+  // Blur closes the external picker and resets the browser's type-ahead session.
+  // No option value, settings state or synthetic DOM event is assigned here.
+  await webContents.executeJavaScript("document.querySelector('#update-source').blur()")
+  setup.afterBlur = await observe()
+  assert.notEqual(setup.afterBlur.focus.id, 'update-source')
+  assert.equal(setup.afterBlur.popupOpen, false, 'Blur must really close the native picker')
+  await webContents.executeJavaScript("document.querySelector('#update-source').focus({preventScroll:true})")
+  setup.beforeJump = await observe()
+  assert.equal(setup.beforeJump.popupOpen, false)
+  assert.equal(setup.beforeJump.focus.id, 'update-source')
+  assert.equal(setup.beforeJump.focus.hasFocus, true)
+  assert.equal(setup.beforeJump.selected, setup.before.selected)
+  return setup
+}
+
+async function selectSourceInput(webContents, previous, target, platform = process.platform, context) {
+  if (platform === 'darwin') {
+    const char = sourceTypeAheadCharacter(previous, target, context.options), base = { key: char, code: 'Unidentified', windowsVirtualKeyCode: 0 }
+    // This Unicode text key belongs to Chromium, not a physical macOS keyboard.
+    await dispatchSourceKey(webContents, { type: 'keyDown', ...base }, context.dispatches)
+    await dispatchSourceKey(webContents, { type: 'char', ...base, text: char, unmodifiedText: char }, context.dispatches)
+    await context.beforeEnter()
+    await dispatchSourceKey(webContents, { type: 'keyUp', ...base }, context.dispatches)
+    for (const type of ['keyDown', 'keyUp']) await dispatchSourceKey(webContents, { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, context.dispatches)
+    return context.dispatches
+  }
   const dispatches = []
-  if (platform === 'darwin' && !webContents.debugger.isAttached()) webContents.debugger.attach('1.3')
   for (const key of sourceSelectionKeys(previous, target)) for (const type of ['keyDown', 'keyUp']) {
     const { code, windowsVirtualKeyCode, native } = SOURCE_KEYS[key]
     const record = { transport: platform === 'darwin' ? 'Chromium CDP keyboard' : 'Electron sendInputEvent', type, key, code, windowsVirtualKeyCode, dispatchCompleted: false }
@@ -111,6 +159,8 @@ async function selectSourceInput(webContents, previous, target, platform = proce
 }
 
 function validateSourceSelection(row) {
+  if (row.platform === 'darwin') validateSourceTypeAhead(row)
+  else {
   const keys = sourceSelectionKeys(row.previous, row.target)
   assert.equal(row.dispatches.length, keys.length * 2, 'Retain every actual option-navigation keyDown/keyUp and Enter dispatch')
   for (let i = 0; i < keys.length; i++) for (let j = 0; j < 2; j++) {
@@ -119,6 +169,7 @@ function validateSourceSelection(row) {
     assert.equal(event.code, SOURCE_KEYS[keys[i]].code); assert.equal(event.windowsVirtualKeyCode, SOURCE_KEYS[keys[i]].windowsVirtualKeyCode)
     assert.equal(event.dispatchCompleted, true)
     assert.equal(event.transport, row.platform === 'darwin' ? 'Chromium CDP keyboard' : 'Electron sendInputEvent')
+  }
   }
   assert(row.events.some(event => event.type === 'change' && event.isTrusted === true && event.targetId === 'update-source' && event.value === row.target), 'Actual native select change must name the target value')
   assert.equal(row.invocations.length, 1, 'Actual updateSource settings:set must be invoked exactly once; idle alone is not evidence')
@@ -136,4 +187,41 @@ function validateSourceSelection(row) {
   }
 }
 
-module.exports = { graphicsPolicy, configureGraphics, observeGraphics, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection }
+function validateSourceTypeAhead(row) {
+  assert.equal(row.protocol, 'chromium-select-typeahead-v1')
+  assert(Number.isFinite(row.startedAt) && Number.isFinite(row.completedAt) && row.completedAt >= row.startedAt)
+  const char = sourceTypeAheadCharacter(row.previous, row.target, row.options)
+  assert.equal(row.setup.dispatches.length, 2)
+  for (const [index, type] of ['keyDown', 'keyUp'].entries()) {
+    const event = row.setup.dispatches[index]
+    assert.equal(event.type, type); assert.equal(event.key, 'Escape'); assert.equal(event.code, 'Escape'); assert.equal(event.windowsVirtualKeyCode, 27)
+    assert.equal(event.dispatchCompleted, true); assert.equal(event.transport, 'Chromium CDP keyboard')
+  }
+  for (const phase of ['before', 'afterEscape', 'afterBlur', 'beforeJump']) {
+    const observation = row.setup[phase]
+    assert.equal(observation.selected, row.previous); assert.equal(observation.persisted, row.previous)
+    assert.equal(observation.sourceCalls.length, 0, 'Picker setup must not consume the failure or save an intermediate option')
+  }
+  assert.notEqual(row.setup.afterBlur.focus.id, 'update-source'); assert.equal(row.setup.afterBlur.popupOpen, false)
+  assert.equal(row.setup.beforeJump.popupOpen, false); assert.equal(row.setup.beforeJump.focus.id, 'update-source')
+  assert.equal(row.setup.beforeJump.focus.hasFocus, true); assert.equal(row.setup.beforeJump.selected, row.previous)
+  const fresh = event => event.isTrusted === true && Number.isFinite(event.at) && event.at >= row.startedAt && event.at <= row.completedAt
+  const blurIndex = row.focusEvents.findIndex(event => event.type === 'blur' && event.targetId === 'update-source' && fresh(event))
+  assert(blurIndex >= 0 && row.focusEvents.slice(blurIndex + 1).some(event => event.type === 'focus' && event.targetId === 'update-source' && fresh(event)), 'Retain this row actual UA blur then focus reset')
+  const expected = [['keyDown', char], ['char', char], ['keyUp', char], ['keyDown', 'Enter'], ['keyUp', 'Enter']]
+  assert.equal(row.dispatches.length, expected.length)
+  expected.forEach(([type, key], index) => {
+    const event = row.dispatches[index]
+    assert.equal(event.type, type); assert.equal(event.key, key); assert.equal(event.dispatchCompleted, true)
+    assert.equal(event.transport, 'Chromium CDP keyboard'); assert.equal(event.code, index < 3 ? 'Unidentified' : 'Enter'); assert.equal(event.windowsVirtualKeyCode, index < 3 ? 0 : 13)
+    assert(Number.isFinite(event.startedAt) && Number.isFinite(event.completedAt) && event.completedAt >= event.startedAt && event.startedAt >= row.startedAt && event.completedAt <= row.completedAt)
+    if (type === 'char') { assert.equal(event.text, char); assert.equal(event.unmodifiedText, char) }
+  })
+  for (const [type, key] of [['keypress', char], ['keyup', char], ['keydown', 'Enter'], ['keyup', 'Enter']]) assert(row.keyEvents.some(event => event.type === type && event.key === key && event.targetId === 'update-source' && fresh(event)), 'Retain actual trusted Chromium select received key: ' + type + '/' + key)
+  assert.equal(row.observations.beforeEnter.busy, false)
+  assert.equal(row.observations.beforeEnter.selected, row.expectedFailure ? row.previous : row.target)
+  assert.equal(row.observations.beforeEnter.focus.id, 'update-source')
+  assert.equal(row.observations.beforeEnter.popupOpen, false)
+}
+
+module.exports = { graphicsPolicy, configureGraphics, observeGraphics, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection, sourceTypeAheadCharacter, resetSourcePicker, validateSourceTypeAhead }

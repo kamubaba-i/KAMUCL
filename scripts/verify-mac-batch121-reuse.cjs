@@ -111,6 +111,71 @@ function extractPackagedRenderer(asar, archive, destination) {
     return { relative: name, ...result }
   }).sort((a, b) => a.relative.localeCompare(b.relative))
 }
+function validateNativeSourceProtocol(row) {
+  assert.equal(row.protocol, 'chromium-select-typeahead-v1', 'Native source protocol must name the actual collapsed Chromium text-key route')
+  assert.deepEqual(row.options?.map(option => option.value), ['auto', 'direct', 'mirror'])
+  assert(row.options.every(option => typeof option.label === 'string' && option.label.trim() && option.disabled === false))
+  const char = Array.from(row.options.find(option => option.value === row.target).label.trim())[0]
+  const previousIndex = row.options.findIndex(option => option.value === row.previous)
+  assert(previousIndex >= 0)
+  const ordered = [...row.options.slice(previousIndex + 1), ...row.options.slice(0, previousIndex + 1)]
+  assert.equal(ordered.find(option => option.label.trim().startsWith(char))?.value, row.target, 'One real prefix must select the target without saving an intermediate option')
+  assert(Number.isFinite(row.startedAt) && Number.isFinite(row.completedAt) && row.completedAt >= row.startedAt)
+  const snapshot = state => {
+    assert.equal(typeof state.popupOpen, 'boolean'); assert.equal(typeof state.busy, 'boolean'); assert.equal(typeof state.hidden, 'boolean')
+    assert.equal(typeof state.focus.id, 'string'); assert.equal(typeof state.focus.hasFocus, 'boolean')
+    for (const key of ['browserWindowFocused', 'webContentsFocused', 'visible', 'offscreen', 'debuggerAttached']) assert.equal(typeof state.native[key], 'boolean', 'Retain actual native focus/window context: ' + key)
+    assert.equal(state.native.offscreen, true, 'Keep the offscreen fixture classification explicit')
+    assert.deepEqual(state.options, row.options)
+  }
+  assert.equal(row.setup.dispatches.length, 2)
+  for (const [index, type] of ['keyDown', 'keyUp'].entries()) {
+    const event = row.setup.dispatches[index]
+    assert.equal(event.transport, 'Chromium CDP keyboard'); assert.equal(event.type, type); assert.equal(event.key, 'Escape')
+    assert.equal(event.code, 'Escape'); assert.equal(event.windowsVirtualKeyCode, 27); assert.equal(event.dispatchCompleted, true)
+    assert(Number.isFinite(event.startedAt) && Number.isFinite(event.completedAt) && event.completedAt >= event.startedAt && event.startedAt >= row.startedAt && event.completedAt <= row.completedAt)
+  }
+  for (const phase of ['before', 'afterEscape', 'afterBlur', 'beforeJump']) {
+    const state = row.setup[phase]; snapshot(state)
+    assert.equal(state.selected, row.previous); assert.equal(state.persisted, row.previous); assert.equal(state.busy, false)
+    assert.deepEqual(state.sourceCalls, [], 'Escape and blur/focus setup must not consume any settings transaction')
+  }
+  assert.notEqual(row.setup.afterBlur.focus.id, 'update-source'); assert.equal(row.setup.afterBlur.popupOpen, false)
+  assert.equal(row.setup.beforeJump.popupOpen, false); assert.equal(row.setup.beforeJump.focus.id, 'update-source')
+  assert.equal(row.setup.beforeJump.focus.hasFocus, true); assert.equal(row.setup.beforeJump.native.debuggerAttached, true)
+  const freshFocus = event => event.isTrusted === true && event.targetId === 'update-source' && Number.isFinite(event.at) && event.at >= row.startedAt && event.at <= row.completedAt
+  const blurIndex = row.focusEvents.findIndex(event => event.type === 'blur' && freshFocus(event))
+  assert(blurIndex >= 0 && row.focusEvents.slice(blurIndex + 1).some(event => event.type === 'focus' && freshFocus(event)), 'Actual UA blur then focus reset must be retained; this is not physical OS focus')
+  const expected = [['keyDown', char], ['char', char], ['keyUp', char], ['keyDown', 'Enter'], ['keyUp', 'Enter']]
+  assert.equal(row.dispatches.length, expected.length, 'Printable Chromium keyDown/char/keyUp plus Enter down/up are all required')
+  expected.forEach(([type, key], index) => {
+    const event = row.dispatches[index]
+    assert.equal(event.transport, 'Chromium CDP keyboard'); assert.equal(event.type, type); assert.equal(event.key, key); assert.equal(event.dispatchCompleted, true)
+    assert.equal(event.code, index < 3 ? 'Unidentified' : 'Enter'); assert.equal(event.windowsVirtualKeyCode, index < 3 ? 0 : 13)
+    assert(Number.isFinite(event.startedAt) && Number.isFinite(event.completedAt) && event.completedAt >= event.startedAt && event.startedAt >= row.startedAt && event.completedAt <= row.completedAt)
+    if (index) assert(event.startedAt >= row.dispatches[index - 1].completedAt, 'Actual target dispatch order must be retained')
+    if (type === 'char') { assert.equal(event.text, char); assert.equal(event.unmodifiedText, char) }
+  })
+  let last = -1, at = row.startedAt
+  for (const [type, key, targetRequired] of [['keypress', char, true], ['keyup', char, true], ['keydown', 'Enter', true], ['keyup', 'Enter', true]]) {
+    const index = row.keyEvents.findIndex((event, index) => index > last && event.type === type && event.key === key && event.isTrusted === true && (!targetRequired || event.targetId === 'update-source') && Number.isFinite(event.at) && event.at >= at && event.at <= row.completedAt)
+    assert(index >= 0, 'Retain ordered actual Chromium received keys, distinct from dispatch completion: ' + type + '/' + key)
+    last = index; at = row.keyEvents[index].at
+  }
+  const expectedValue = row.expectedFailure ? row.previous : row.target
+  for (const phase of ['beforeFocusSetup', 'beforeEnter', 'afterEnter']) {
+    const state = row.observations[phase]; snapshot(state)
+    assert.equal(state.busy, false); assert.equal(state.selected, expectedValue); assert.equal(state.persisted, expectedValue)
+    assert.deepEqual(state.sourceCalls, row.invocations, 'Enter or QA focus setup cannot consume another settings invocation')
+  }
+  if (row.expectedFailure) {
+    assert.equal(row.observations.beforeFocusSetup.focus.id, 'update-source', 'Product failed-save focus must be observed before any success-only QA focus setup')
+    assert.equal(row.observations.beforeFocusSetup.focus.inSources, true)
+    assert.equal(row.observations.successFocusSetup, undefined)
+  }
+  assert.equal(row.observations.beforeEnter.focus.id, 'update-source'); assert.equal(row.observations.beforeEnter.focus.hasFocus, true)
+  assert.equal(row.observations.beforeEnter.popupOpen, false); assert.equal(row.observations.afterEnter.popupOpen, false)
+}
 function validateSourceSelections(rows, platform = 'darwin') {
   assert.equal(platform, 'darwin')
   assert.equal(rows?.length, 5, 'Five actual source selection transactions required')
@@ -118,14 +183,20 @@ function validateSourceSelections(rows, platform = 'darwin') {
   rows.forEach((row, index) => {
     const [previous, target, failed] = expected[index]
     assert.equal(row.platform, platform); assert.equal(row.previous, previous); assert.equal(row.target, target); assert.equal(row.expectedFailure, failed)
-    const key = target === 'auto' ? 'Home' : target === 'mirror' ? 'End' : previous === 'auto' ? 'ArrowDown' : 'ArrowUp'
-    const keys = [key, 'Enter'], codes = { Home: 36, End: 35, ArrowDown: 40, ArrowUp: 38, Enter: 13 }
-    assert.equal(row.dispatches.length, 4, 'Retain navigation plus Enter keyDown/keyUp, without intermediate saves')
-    keys.forEach((key, i) => ['keyDown', 'keyUp'].forEach((type, j) => { const event = row.dispatches[i * 2 + j]; assert.equal(event.transport, 'Chromium CDP keyboard'); assert.equal(event.type, type); assert.equal(event.key, key); assert.equal(event.code, key); assert.equal(event.windowsVirtualKeyCode, codes[key]); assert.equal(event.dispatchCompleted, true) }))
-    assert(row.events.some(event => event.type === 'change' && event.isTrusted === true && event.targetId === 'update-source' && event.value === target && Number.isFinite(event.at)), 'Actual trusted change of the target select is required; dispatch completion is not receiver acknowledgement')
+    assert.deepEqual(row.options, rows[0].options, 'The same actual unchanged source options must be used by all five transactions')
+    validateNativeSourceProtocol(row)
+    const changes = row.events.filter(event => event.type === 'change' && event.isTrusted === true)
+    assert.equal(changes.length, 1, 'Exactly one actual trusted target change is required; dispatch completion is not receiver acknowledgement')
+    const change = changes[0]; assert.equal(change.targetId, 'update-source'); assert.equal(change.value, target); assert(Number.isFinite(change.at))
     assert.equal(row.invocations.length, 1, 'Idle or a selected value cannot replace the actual one settings patch invocation')
     const call = row.invocations[0]; assert(Number.isSafeInteger(call.index) && !indexes.has(call.index)); indexes.add(call.index)
     assert.deepEqual(call.patch, { updateSource: target }); assert(Number.isFinite(call.startedAt) && Number.isFinite(call.completedAt) && call.completedAt >= call.startedAt)
+    assert(call.startedAt >= row.startedAt && call.completedAt <= row.completedAt)
+    const charStartedAt = row.dispatches[1].startedAt
+    assert(change.at >= row.startedAt && change.at >= charStartedAt && change.at <= call.startedAt, 'Trusted change must belong to this actual character and precede its actual settings invocation')
+    assert(call.startedAt >= charStartedAt)
+    if (failed) assert(call.completedAt - call.startedAt >= 150, 'The controlled failed save must retain its real 150ms asynchronous interval')
+    assert(row.dispatches[2].startedAt >= call.completedAt, 'Real Unicode key release must follow completion of the actual target save')
     assert.equal(call.outcome, failed ? 'rejected' : 'resolved'); assert.equal(row.final.busy, false)
     assert.equal(row.final.selected, failed ? previous : target); assert.equal(row.final.persisted, failed ? previous : target)
     if (failed) { assert(row.final.error?.includes('Controlled updateSource save failure')); assert.equal(row.final.focus.id, 'update-source'); assert.equal(row.final.focus.inSources, true) }
@@ -219,5 +290,5 @@ async function main() {
   } catch (error) { receipt.error = { name: error.name, message: error.message, status: error.status ?? null, signal: error.signal ?? null }; console.error(error); process.exitCode = 1 }
   finally { receipt.finishedAt = new Date().toISOString(); save() }
 }
-module.exports = { SOURCE, RUN, PACKAGE_JOB, REPOSITORY, REPOSITORY_ID, ARTIFACT, MANIFEST, ASAR, ASSETS, ALLOWED, APPEARANCE_PNG, validateWorkflowContext, validateQaPaths, proveReuseSource, validateOrigin, verifyManifest, originalPackageFiles, extractPackagedRenderer, validateSourceSelections, validateReuseProof, runAttempt, assertMatrixComplete }
+module.exports = { SOURCE, RUN, PACKAGE_JOB, REPOSITORY, REPOSITORY_ID, ARTIFACT, MANIFEST, ASAR, ASSETS, ALLOWED, APPEARANCE_PNG, validateWorkflowContext, validateQaPaths, proveReuseSource, validateOrigin, verifyManifest, originalPackageFiles, extractPackagedRenderer, validateNativeSourceProtocol, validateSourceSelections, validateReuseProof, runAttempt, assertMatrixComplete }
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })

@@ -18,8 +18,20 @@ function manifest() {
 }
 function selections() {
   return [['auto', 'direct', true], ['auto', 'direct', false], ['direct', 'mirror', true], ['direct', 'mirror', false], ['mirror', 'auto', false]].map(([previous, target, expectedFailure], index) => {
-    const key = target === 'auto' ? 'Home' : target === 'mirror' ? 'End' : 'ArrowDown', code = { Home: 36, End: 35, ArrowDown: 40, Enter: 13 }
-    return { platform: 'darwin', previous, target, expectedFailure, dispatches: [key, 'Enter'].flatMap(key => ['keyDown', 'keyUp'].map(type => ({ transport: 'Chromium CDP keyboard', type, key, code: key, windowsVirtualKeyCode: code[key], dispatchCompleted: true }))), events: [{ type: 'change', isTrusted: true, targetId: 'update-source', value: target, at: 100 }], invocations: [{ index, patch: { updateSource: target }, startedAt: 110, completedAt: expectedFailure ? 260 : 115, outcome: expectedFailure ? 'rejected' : 'resolved' }], final: { selected: expectedFailure ? previous : target, persisted: expectedFailure ? previous : target, busy: false, error: expectedFailure ? 'Controlled updateSource save failure after 150ms' : null, focus: { id: 'update-source', inSources: true } } }
+    const options = [{ value: 'auto', label: '自动择优（直连与镜像）', disabled: false }, { value: 'direct', label: '仅 GitHub 直连', disabled: false }, { value: 'mirror', label: '仅镜像', disabled: false }]
+    const char = target === 'auto' ? '自' : '仅', start = index * 1000 + 100, selected = expectedFailure ? previous : target
+    const call = { index, patch: { updateSource: target }, startedAt: start + 21, completedAt: start + (expectedFailure ? 171 : 30), outcome: expectedFailure ? 'rejected' : 'resolved' }
+    const snapshot = (value, id = 'update-source', sourceCalls = []) => ({ selected: value, persisted: value, popupOpen: false, busy: false, hidden: false, options, focus: { id, hasFocus: true, inSources: id === 'update-source' }, sourceCalls, native: { browserWindowFocused: false, webContentsFocused: false, visible: true, offscreen: true, debuggerAttached: true } })
+    return {
+      protocol: 'chromium-select-typeahead-v1', platform: 'darwin', previous, target, expectedFailure, startedAt: start, completedAt: start + 400, options,
+      setup: { dispatches: ['keyDown', 'keyUp'].map((type, i) => ({ transport: 'Chromium CDP keyboard', type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, dispatchCompleted: true, startedAt: start + i, completedAt: start + i + 1 })), before: snapshot(previous), afterEscape: snapshot(previous), afterBlur: snapshot(previous, ''), beforeJump: snapshot(previous) },
+      dispatches: [['keyDown', char], ['char', char], ['keyUp', char], ['keyDown', 'Enter'], ['keyUp', 'Enter']].map(([type, key], index) => ({ transport: 'Chromium CDP keyboard', type, key, code: index < 3 ? 'Unidentified' : 'Enter', windowsVirtualKeyCode: index < 3 ? 0 : 13, dispatchCompleted: true, startedAt: start + [15,20,200,210,220][index], completedAt: start + [16,21,201,211,221][index], ...(type === 'char' ? { text: char, unmodifiedText: char } : {}) })),
+      keyEvents: [['keypress', char, 'update-source'], ['keyup', char, 'update-source'], ['keydown', 'Enter', 'update-source'], ['keyup', 'Enter', 'update-source']].map(([type, key, targetId], i) => ({ type, key, targetId, isTrusted: true, at: start + [20,200,210,220][i] })),
+      focusEvents: ['blur', 'focus'].map((type, i) => ({ type, targetId: 'update-source', isTrusted: true, at: start + 5 + i })),
+      observations: { beforeFocusSetup: snapshot(selected, 'update-source', [call]), beforeEnter: snapshot(selected, 'update-source', [call]), afterEnter: snapshot(selected, 'update-source', [call]) },
+      events: [{ type: 'change', isTrusted: true, targetId: 'update-source', value: target, at: start + 21 }], invocations: [call],
+      final: { selected, persisted: selected, busy: false, error: expectedFailure ? 'Controlled updateSource save failure after 150ms' : null, focus: { id: 'update-source', inSources: true } },
+    }
   })
 }
 const row = matrixPlan()[0], expected = { version: '1.1.21', commit: reuse.SOURCE, electron: '44.3.0', rendererHashes: { 'index.html': 'b'.repeat(64) }, sourceHashes: { [row.script]: 'c'.repeat(64), 'scripts/qa-fixture-ui121.cjs': 'd'.repeat(64) } }
@@ -66,7 +78,33 @@ test('unsafe, linked, unpacked, colliding or incomplete renderer archives reject
 })
 test('source selection qualifies only actual trusted change, one completed patch and paired native dispatches', () => {
   assert.doesNotThrow(() => reuse.validateSourceSelections(selections()))
-  for (const mutate of [r => r.pop(), r => r[0].events[0].isTrusted = false, r => r[0].events[0].value = 'mirror', r => r[0].events[0].targetId = 'foreign', r => r[0].dispatches.pop(), r => r[0].dispatches[3].type = 'keyDown', r => r[0].dispatches[3].dispatchCompleted = false, r => r[0].dispatches[3].transport = 'DOM setter', r => r[0].invocations = [], r => r[0].invocations.push({ ...r[0].invocations[0] }), r => r[0].invocations[0].completedAt = undefined, r => r[0].invocations[0].patch = { updateSource: 'mirror' }, r => r[0].invocations[0].outcome = 'resolved', r => r[0].final.busy = true, r => r[0].final.error = undefined, r => r[0].final.focus.id = '', r => r[0].final.persisted = 'direct', r => r[1].final.persisted = 'auto', r => r[1].invocations[0].index = 0]) { const value = selections(); mutate(value); assert.throws(() => reuse.validateSourceSelections(value)) }
+  for (const mutate of [r => r.pop(), r => r[0].events[0].isTrusted = false, r => r[0].events[0].value = 'mirror', r => r[0].events[0].targetId = 'foreign', r => r[0].dispatches.pop(), r => r[0].dispatches[4].type = 'keyDown', r => r[0].dispatches[3].dispatchCompleted = false, r => r[0].dispatches[3].transport = 'DOM setter', r => r[0].invocations = [], r => r[0].invocations.push({ ...r[0].invocations[0] }), r => r[0].invocations[0].completedAt = undefined, r => r[0].invocations[0].patch = { updateSource: 'mirror' }, r => r[0].invocations[0].outcome = 'resolved', r => r[0].final.busy = true, r => r[0].final.error = undefined, r => r[0].final.focus.id = '', r => r[0].final.persisted = 'direct', r => r[1].final.persisted = 'auto', r => r[1].invocations[0].index = 0]) { const value = selections(); mutate(value); assert.throws(() => reuse.validateSourceSelections(value)) }
+})
+test('Darwin collapsed picker route retains actual options, unchanged setup, trusted key receipt and native context', () => {
+  assert.doesNotThrow(() => reuse.validateSourceSelections(selections()))
+  const invalid = [
+    r => r[0].protocol = 'arrow-dispatch-only', r => r[0].platform = 'win32', r => r[0].options.reverse(),
+    r => r[0].options[1].disabled = true, r => r[0].options[1].label = '自动重复前缀',
+    r => r[0].setup.dispatches.pop(), r => r[0].setup.dispatches[1].key = 'Enter', r => r[0].setup.dispatches[1].dispatchCompleted = false,
+    r => r[0].setup.before.sourceCalls.push({ patch: { updateSource: 'direct' } }), r => r[0].setup.afterEscape.selected = 'direct',
+    r => r[0].setup.afterBlur.popupOpen = true, r => r[0].setup.afterBlur.focus.id = 'update-source',
+    r => r[0].setup.beforeJump.focus.hasFocus = false, r => r[0].setup.beforeJump.native.offscreen = false, r => delete r[0].setup.beforeJump.native.visible,
+    r => r[0].focusEvents = [], r => r[0].focusEvents[0].isTrusted = false,
+    r => r[0].dispatches[1].text = '自', r => r[0].dispatches[2].windowsVirtualKeyCode = 40,
+    r => r[0].keyEvents = [], r => r[0].keyEvents[0].isTrusted = false, r => r[0].keyEvents[0].targetId = 'foreign',
+    r => r[0].keyEvents[1].type = 'keydown', r => r[0].keyEvents[1].targetId = 'foreign', r => r[0].keyEvents[2].targetId = 'foreign', r => r[0].keyEvents[3].targetId = 'foreign',
+    r => r[0].dispatches[2].startedAt = r[0].invocations[0].completedAt - 1, r => r[0].dispatches[1].completedAt = undefined,
+    r => r[0].events[0].at = r[0].startedAt - 1, r => r[0].events[0].at = r[0].dispatches[1].startedAt - 1,
+    r => r[0].events[0].at = r[0].invocations[0].startedAt + 1, r => r[0].events.push({ ...r[0].events[0] }),
+    r => r[0].invocations[0].startedAt = r[0].dispatches[1].startedAt - 1,
+    r => r[0].invocations[0].completedAt = r[0].invocations[0].startedAt + 149,
+    r => r[0].keyEvents.reverse(), r => r[0].keyEvents[3].at = r[0].completedAt + 1,
+    r => r[0].observations.beforeFocusSetup.focus.id = '', r => r[0].observations.successFocusSetup = 'QA repaired failed product focus',
+    r => r[0].observations.beforeEnter.popupOpen = true, r => r[0].observations.beforeEnter.busy = true, r => r[0].observations.afterEnter.sourceCalls = [],
+    r => r[0].observations.beforeEnter.persisted = 'direct', r => r[0].completedAt = undefined,
+  ]
+  for (const mutate of invalid) { const rows = structuredClone(selections()); mutate(rows); assert.throws(() => reuse.validateSourceSelections(rows)) }
+  const success = structuredClone(selections()); success[1].observations.beforeFocusSetup.focus.id = ''; success[1].observations.successFocusSetup = 'QA select focus after successful disabled save'; assert.doesNotThrow(() => reuse.validateSourceSelections(success))
 })
 test('additive proof gate keeps old graphics/selection/renderer gates and rejects stale or missing new source protocol', () => {
   assert.doesNotThrow(() => reuse.validateReuseProof(proof(), row, expected))
