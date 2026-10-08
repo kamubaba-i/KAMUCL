@@ -1,6 +1,24 @@
 // QA-only platform graphics and Chromium editing commands. No product policy changes.
 const assert = require('node:assert/strict')
 
+// Timer callbacks can wake before their requested delay. Qualify the real
+// elapsed interval with both a monotonic clock and the journal's wall clock;
+// early wake-ups schedule another actual wait instead of changing timestamps.
+async function waitForMinimumDuration(durationMs, { wallNow = Date.now, monotonicNow = () => performance.now(), sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), wallStartedAt = wallNow() } = {}) {
+  assert(Number.isFinite(durationMs) && durationMs >= 0)
+  assert(Number.isFinite(wallStartedAt))
+  const monotonicStartedAt = monotonicNow(); assert(Number.isFinite(monotonicStartedAt))
+  const waits = []
+  for (;;) {
+    const wallCompletedAt = wallNow(), monotonicCompletedAt = monotonicNow()
+    assert(Number.isFinite(wallCompletedAt) && Number.isFinite(monotonicCompletedAt))
+    const wallElapsedMs = wallCompletedAt - wallStartedAt, monotonicElapsedMs = monotonicCompletedAt - monotonicStartedAt
+    if (wallElapsedMs >= durationMs && monotonicElapsedMs >= durationMs) return { requestedMs: durationMs, wallStartedAt, wallCompletedAt, wallElapsedMs, monotonicStartedAt, monotonicCompletedAt, monotonicElapsedMs, waits }
+    const requestedMs = Math.max(1, Math.ceil(durationMs - Math.min(wallElapsedMs, monotonicElapsedMs)))
+    waits.push(requestedMs); await sleep(requestedMs)
+  }
+}
+
 function graphicsPolicy(platform = process.platform) {
   return platform === 'darwin'
     ? { platform, backend: 'platform-default', hardwareAcceleration: 'default', angle: 'default' }
@@ -224,4 +242,4 @@ function validateSourceTypeAhead(row) {
   assert.equal(row.observations.beforeEnter.popupOpen, false)
 }
 
-module.exports = { graphicsPolicy, configureGraphics, observeGraphics, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection, sourceTypeAheadCharacter, resetSourcePicker, validateSourceTypeAhead }
+module.exports = { graphicsPolicy, configureGraphics, observeGraphics, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection, sourceTypeAheadCharacter, resetSourcePicker, validateSourceTypeAhead, waitForMinimumDuration }
