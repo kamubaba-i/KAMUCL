@@ -3,7 +3,7 @@
 // Theme QA aliases use the persisted product keys: dark -> black-orange, black-purple -> transparent.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto'),sharp=require('sharp')
 const {app,BrowserWindow,ipcMain,session}=require('electron'),{buildSync}=require('esbuild')
-const {configureGraphics,observeGraphics,validateGraphics,selectAllInput,backspaceInput,validateSelection,selectSourceInput,validateSourceSelection,resetSourcePicker}=require('./qa-fixture-ui121.cjs')
+const {configureGraphics,observeGraphics,validateGraphics,selectAllInput,backspaceInput,validateSelection,selectSourceInput,validateSourceSelection,resetSourcePicker,waitForMinimumDuration}=require('./qa-fixture-ui121.cjs')
 const args=process.argv.slice(2),arg=(name,fallback)=>{const i=args.indexOf('--'+name);return i<0?fallback:args[i+1]}
 const requestedTheme=arg('theme','blue-white'),themeKeys={dark:'black-orange','black-orange':'black-orange','blue-white':'blue-white','black-purple':'transparent',transparent:'transparent',custom:'custom'}
 assert(Object.hasOwn(themeKeys,requestedTheme),'Unknown QA theme: '+requestedTheme)
@@ -42,7 +42,7 @@ ipcMain.handle('appearance-fixture:invoke',(_event,channel,...args)=>{
  case 'settings:get':return settings
  case 'settings:set':{
   const invocation={index:settingsPatchInvocations.length,patch:structuredClone(args[0]),startedAt:Date.now()};settingsPatchInvocations.push(invocation);writes.push(args[0])
-  if(failNextSettingsPatch&&Object.hasOwn(args[0],failNextSettingsPatch)){const key=failNextSettingsPatch;failNextSettingsPatch=null;return new Promise((_resolve,reject)=>setTimeout(()=>{invocation.completedAt=Date.now();invocation.outcome='rejected';reject(Error('Controlled '+key+' save failure after 150ms'))},150))}
+  if(failNextSettingsPatch&&Object.hasOwn(args[0],failNextSettingsPatch)){const key=failNextSettingsPatch;failNextSettingsPatch=null;return waitForMinimumDuration(proof.configuration.controlledFailureDelayMs,{wallStartedAt:invocation.startedAt}).then(observation=>{invocation.controlledDelay=observation;invocation.completedAt=Date.now();invocation.outcome='rejected';throw Error('Controlled '+key+' save failure after 150ms')})}
   settings={...settings,...args[0]};invocation.completedAt=Date.now();invocation.outcome='resolved';return settings
  }
  case 'accounts:list':return [account]
@@ -60,7 +60,7 @@ ipcMain.handle('appearance-fixture:invoke',(_event,channel,...args)=>{
  case 'game:launch':throw Error('A UI screenshot fixture must never launch a game')
  case 'appearance:draftRead':return draft
  case 'appearance:draftSave':draft=args[0];return draft
- case 'appearance:draftApply':if(failNextDraftApply){failNextDraftApply=false;return new Promise((_resolve,reject)=>setTimeout(()=>reject(Error('Controlled draft save failure after 150ms')),150))};settings={...settings,...args[0]};draft=null;return settings
+ case 'appearance:draftApply':if(failNextDraftApply){failNextDraftApply=false;return waitForMinimumDuration(proof.configuration.controlledFailureDelayMs).then(observation=>{proof.failedDraftApplyDelay=observation;throw Error('Controlled draft save failure after 150ms')})};settings={...settings,...args[0]};draft=null;return settings
  case 'appearance:draftDiscard':draft=null;return true
  default:return []
  }

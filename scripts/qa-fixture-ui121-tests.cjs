@@ -2,7 +2,43 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { configureGraphics, graphicsPolicy, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection, sourceTypeAheadCharacter, resetSourcePicker, validateSourceTypeAhead } = require('./qa-fixture-ui121.cjs')
+const { configureGraphics, graphicsPolicy, validateGraphics, selectAllInput, backspaceInput, validateSelection, validateQueueControls, sourceSelectionKeys, selectSourceInput, validateSourceSelection, sourceTypeAheadCharacter, resetSourcePicker, validateSourceTypeAhead, waitForMinimumDuration } = require('./qa-fixture-ui121.cjs')
+
+async function observedDelay(wakes) {
+  let wall = 1000, monotonic = 200; const requested = []
+  const observation = await waitForMinimumDuration(150, { wallStartedAt: wall, wallNow: () => wall, monotonicNow: () => monotonic, sleep: async ms => { requested.push(ms); assert(wakes.length, 'An early timer must request another actual wait'); const next = wakes.shift(); wall += next.wall; monotonic += next.monotonic } })
+  assert.equal(observation.wallCompletedAt, wall); assert.equal(observation.monotonicCompletedAt, monotonic)
+  assert(observation.wallElapsedMs >= 150 && observation.monotonicElapsedMs >= 150)
+  assert.deepEqual(observation.waits, requested); assert.equal(wakes.length, 0)
+  return observation
+}
+
+test('150ms failure injection retries an actual early149 timer instead of fabricating completion', async () => {
+  const observed = await observedDelay([{ wall: 149, monotonic: 149 }, { wall: 1, monotonic: 1 }])
+  assert.deepEqual(observed.waits, [150, 1]); assert.equal(observed.wallElapsedMs, 150); assert.equal(observed.monotonicElapsedMs, 150)
+})
+
+test('multiple early failure timers retain the minimum actual asynchronous interval', async () => {
+  const observed = await observedDelay([{ wall: 149, monotonic: 149 }, { wall: 0, monotonic: 0 }, { wall: 0, monotonic: 0 }, { wall: 1, monotonic: 1 }])
+  assert.deepEqual(observed.waits, [150, 1, 1, 1])
+})
+
+test('normal150 timer completes once with real unchanged clock samples', async () => {
+  const observed = await observedDelay([{ wall: 150, monotonic: 150 }]); assert.deepEqual(observed.waits, [150])
+})
+
+test('failure delay requires both monotonic and actual journal clocks', async () => {
+  assert.deepEqual((await observedDelay([{ wall: 149, monotonic: 150 }, { wall: 1, monotonic: 1 }])).waits, [150, 1])
+  assert.deepEqual((await observedDelay([{ wall: 200, monotonic: 149 }, { wall: 1, monotonic: 1 }])).waits, [150, 1])
+})
+
+test('all controlled settings and draft failures use the shared actual minimum wait', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'verify-appearance-121-ui.cjs'), 'utf8')
+  assert(source.includes('waitForMinimumDuration(proof.configuration.controlledFailureDelayMs,{wallStartedAt:invocation.startedAt})'))
+  assert(source.includes('invocation.controlledDelay=observation;invocation.completedAt=Date.now()'))
+  assert(source.includes('waitForMinimumDuration(proof.configuration.controlledFailureDelayMs).then(observation=>{proof.failedDraftApplyDelay=observation'))
+  assert(!source.includes('new Promise((_resolve,reject)=>setTimeout'))
+})
 
 test('Darwin fixture preserves its supported default ANGLE and hardware driver', () => {
   const switches = [], disabled = []
