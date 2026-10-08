@@ -196,8 +196,15 @@ export async function encodeManagedImageBuffer(
   const header = data.subarray(0, HEADER_LIMIT)
   const declared = validateImageInput(sourceName, data.length, readImageDimensions(header))
   const actualFormat = sniffImageFormat(header)
-  if (!actualFormat || actualFormat !== expectedImageFormat(sourceName)) {
-    throw new Error('图片扩展名与实际格式不一致')
+  if (!actualFormat) {
+    throw new Error('无法识别图片的真实格式，请用看图软件重新导出为 PNG、JPG 或 WebP 后再导入')
+  }
+  const expected = expectedImageFormat(sourceName)
+  if (actualFormat !== expected) {
+    const label = { png: 'PNG', jpeg: 'JPG', webp: 'WebP' }[actualFormat]
+    throw new Error(
+      `图片扩展名与实际格式不一致：文件内容实际是 ${label}。请把扩展名改为 .${actualFormat === 'jpeg' ? 'jpg' : actualFormat} 后重新导入，或用看图软件重新导出`
+    )
   }
 
   if (actualFormat === 'webp') {
