@@ -3,6 +3,7 @@
 // Theme QA aliases use the persisted product keys: dark -> black-orange, black-purple -> transparent.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto'),sharp=require('sharp')
 const {app,BrowserWindow,ipcMain,session}=require('electron'),{buildSync}=require('esbuild')
+const {configureGraphics,observeGraphics,validateGraphics,selectAllInput,backspaceInput,validateSelection}=require('./qa-fixture-ui121.cjs')
 const args=process.argv.slice(2),arg=(name,fallback)=>{const i=args.indexOf('--'+name);return i<0?fallback:args[i+1]}
 const requestedTheme=arg('theme','blue-white'),themeKeys={dark:'black-orange','black-orange':'black-orange','blue-white':'blue-white','black-purple':'transparent',transparent:'transparent',custom:'custom'}
 assert(Object.hasOwn(themeKeys,requestedTheme),'Unknown QA theme: '+requestedTheme)
@@ -13,7 +14,7 @@ assert([1,1.25].includes(pageZoom),'QA page zoom must be 1 or 1.25')
 const packageVersion=JSON.parse(fs.readFileSync('package.json','utf8')).version
 assert.equal(packageVersion,'1.1.21','Build the final 1.1.21 renderer before QA')
 const root=fs.mkdtempSync(path.resolve(`out/appearance-121-ui-${requestedTheme}-${viewport}-${pageZoom*100}-`))
-app.setPath('userData',path.join(root,'userData'));app.disableHardwareAcceleration();app.commandLine.appendSwitch('enable-unsafe-swiftshader');app.commandLine.appendSwitch('use-angle','swiftshader');app.commandLine.appendSwitch('force-device-scale-factor','1')
+app.setPath('userData',path.join(root,'userData'));const graphics=configureGraphics(app)
 function bundle(entry,name){const file=path.join(root,name+'.cjs');buildSync({entryPoints:[entry],bundle:true,platform:'node',format:'cjs',external:['electron'],outfile:file});return require(file)}
 const types=bundle('src/shared/types.ts','types'),assets=bundle('src/main/core/appearanceAssets.ts','assets')
 const folder=path.join(root,'games'),account={id:'fixture',type:'offline',username:'Appearance Test',uuid:'00000000000000000000000000000000'}
@@ -32,8 +33,8 @@ const actions=bundle('src/main/core/appearanceAssetActions.ts','assetActions').c
 const rendererSourceDir=path.resolve('out/renderer'),rendererDir=path.join(root,'renderer'),digest=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
 fs.cpSync(rendererSourceDir,rendererDir,{recursive:true})
 const rendererArtifacts=[path.join(rendererDir,'index.html'),...fs.readdirSync(path.join(rendererDir,'assets')).filter(name=>/\.(js|css)$/.test(name)).map(name=>path.join(rendererDir,'assets',name))].map(file=>({file,sha256:digest(file)}))
-const sourceFiles=['scripts/verify-appearance-121-ui.cjs','src/renderer/src/composables/useDesignSession.ts','src/renderer/src/designNavigationScroll.ts','src/renderer/src/composables/useNavigationBubble.ts','src/renderer/src/components/UpdateSources.vue','src/renderer/src/controlFocus.ts','src/renderer/src/views/ServersView.vue','src/shared/serverVersionDisplay.ts'].map(file=>({file:path.resolve(file),sha256:digest(file)}))
-let draft=null,failNextDraftApply=false,failNextSettingsPatch=null;const writes=[],failures=[],proof={root,classification:'Actual renderer/native codec with disposable profile and controlled service fixtures; offscreen Chromium and software GPU, not a visible desktop/native production-session test',runtime:{platform:process.platform,arch:process.arch,electron:process.versions.electron,chromium:process.versions.chrome},configuration:{requestedTheme,theme,physicalViewport:{width,height},pageZoom,packageVersion,compositor:'offscreen, hardware acceleration disabled, SwiftShader allowed',controlledFailureDelayMs:150,fixtureCustomColors:theme==='custom'?settings.custom.colors:undefined},executionDriver:{file:__filename,sha256:digest(__filename)},rendererSourceDir,rendererArtifacts,sourceFiles,windowFocusEvents:[],rendererFocusEvents:[],interactions:[],updateSources:[],checks:[],geometry:[],images:[]}
+const sourceFiles=['scripts/verify-appearance-121-ui.cjs','scripts/qa-fixture-ui121.cjs','src/renderer/src/composables/useDesignSession.ts','src/renderer/src/designNavigationScroll.ts','src/renderer/src/composables/useNavigationBubble.ts','src/renderer/src/components/UpdateSources.vue','src/renderer/src/controlFocus.ts','src/renderer/src/views/ServersView.vue','src/shared/serverVersionDisplay.ts'].map(file=>({file:path.resolve(file),sha256:digest(file)}))
+let draft=null,failNextDraftApply=false,failNextSettingsPatch=null;const writes=[],failures=[],proof={root,classification:'Actual renderer/native codec with disposable profile and controlled service fixtures; offscreen Chromium with '+graphics.backend+' GPU, not a visible desktop/native production-session test; Mac Cmd+A uses the Chromium editing command, not an OS physical shortcut',runtime:{platform:process.platform,arch:process.arch,electron:process.versions.electron,chromium:process.versions.chrome},configuration:{requestedTheme,theme,physicalViewport:{width,height},pageZoom,packageVersion,compositor:graphics,controlledFailureDelayMs:150,fixtureCustomColors:theme==='custom'?settings.custom.colors:undefined},executionDriver:{file:__filename,sha256:digest(__filename)},rendererSourceDir,rendererArtifacts,sourceFiles,windowFocusEvents:[],rendererFocusEvents:[],interactions:[],inputReplacements:[],updateSources:[],checks:[],geometry:[],images:[]}
 const save=()=>fs.writeFileSync(path.join(root,'proof.json'),JSON.stringify(proof,null,2))
 ipcMain.on('appearance-fixture:focus',(_event,payload)=>{proof.rendererFocusEvents.push(payload)})
 ipcMain.handle('appearance-fixture:invoke',(_event,channel,...args)=>{
@@ -90,7 +91,7 @@ app.whenReady().then(async()=>{
   win.webContents.sendInputEvent({type:'mouseMove',...physical});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...physical});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...physical});await wait(200)
  }
  const key=async(keyCode,modifiers=[])=>{win.webContents.sendInputEvent({type:'keyDown',keyCode,modifiers});win.webContents.sendInputEvent({type:'keyUp',keyCode,modifiers});await wait(100)}
- const type=async(selector,value)=>{await click(selector);assert(await run(`document.activeElement===document.querySelector(${JSON.stringify(selector)})`),'Native click focuses '+selector);await key('A',[process.platform==='darwin'?'meta':'control']);await key('Backspace');await win.webContents.insertText(value);await ready(`document.querySelector(${JSON.stringify(selector)}).value===${JSON.stringify(value)}`)}
+ const type=async(selector,value)=>{await click(selector);await selectAllInput(win.webContents);await wait(100);const selection=await run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return{focused:document.activeElement===e,value:e?.value,start:e?.selectionStart,end:e?.selectionEnd}})()`);proof.inputReplacements.push({selector,command:process.platform==='darwin'?'CDP Cmd+A selectAll editing command and Backspace key events':'Ctrl+A and Backspace input events',selection,expectedValue:value});save();validateSelection(selection);await backspaceInput(win.webContents);await ready(`document.querySelector(${JSON.stringify(selector)}).value===''`);proof.inputReplacements.at(-1).emptyValue=await run(`document.querySelector(${JSON.stringify(selector)}).value`);save();await win.webContents.insertText(value);await ready(`document.querySelector(${JSON.stringify(selector)}).value===${JSON.stringify(value)}`);proof.inputReplacements.at(-1).value=await run(`document.querySelector(${JSON.stringify(selector)}).value`);save()}
  const button=async text=>{const id='fixture-button';await run(`(()=>{document.querySelectorAll('#fixture-button').forEach(e=>e.removeAttribute('id'));const b=[...document.querySelectorAll('.designer-toolbar button,.designer-panel button,.designer-dialog button')].find(e=>e.textContent.trim()===${JSON.stringify(text)});if(!b)throw Error('Missing button '+${JSON.stringify(text)});b.id=${JSON.stringify(id)}})()`);await click('#'+id)}
  const clearNotifications=async()=>{while(await run("!!document.querySelector('.toast-close')")){await run("document.querySelector('.toast-close').id='fixture-toast-close'");await click('#fixture-toast-close');await ready("!document.querySelector('#fixture-toast-close')")}}
  const geometry=async(label,visible=false)=>{
@@ -101,6 +102,7 @@ app.whenReady().then(async()=>{
   if(visible)assert(value.item.y>=value.nav.top-1.6&&value.item.y+value.item.height<=value.nav.bottom+1.6,`${label} current nav item is clipped: ${JSON.stringify(value)}`)
  }
  await win.loadFile(path.join(rendererDir,'index.html'));await ready("!!document.querySelector('[data-nav=\"settings\"]')")
+ proof.graphics=await observeGraphics(app,win.webContents,graphics);save();validateGraphics(proof.graphics)
  await resize(width,height)
  assert.equal(await run("document.querySelector('.logo-version')?.textContent.trim()"),'v1.1.21','The actual loaded renderer must be version 1.1.21')
  proof.configuration.renderedTheme=await run("document.documentElement.getAttribute('data-theme')")
@@ -110,6 +112,7 @@ app.whenReady().then(async()=>{
  await click('[data-nav="settings"]');await ready("!!document.querySelector('.personalize-btn')")
  proof.oldThemeKey=await run("(()=>{const path=[];for(let e=document.querySelector('[data-section=\"theme\"] h3');e;e=e.parentElement)if(e.dataset.ui)path.unshift(e.dataset.ui);return path.join('/')+'~0'})()")
  assert.equal(proof.oldThemeKey,oldThemeTitleKey)
+ await ready("getComputedStyle(document.querySelector('[data-section=\"theme\"] h3')).color==='rgb(155, 62, 23)'")
  assert.equal(await run("getComputedStyle(document.querySelector('[data-section=\"theme\"] h3')).color"),'rgb(155, 62, 23)')
  proof.checks.push('1.1.20 generated theme title ID still resolves its existing saved customization after component extraction')
  assert.equal(await run("document.querySelector('[aria-label=\"UI 窗口自适应\"]').checked"),false)
@@ -154,7 +157,7 @@ app.whenReady().then(async()=>{
  await button('应用外观');await ready("!document.querySelector('.design-workspace')")
  assert(Object.values(settings.visualDesign.pages.global.components).some(value=>value.background==='#e1a454'));assert.equal(draft,null);await clearNotifications();await geometry('after apply editor',true);await shot('after-apply')
  proof.checks.push(`${viewport} physical viewport at ${pageZoom*100}% page zoom: default fit disabled; actual-coordinate selection outline and nav surfaces align in fit and 100% editor and after exit; cancel/keep/recover/apply retain persistence boundaries; preview navigation remains usable; alpha 0%/100% fills correct endpoints`)
- // Use actual native coordinates/keyboard input for every update-source control.
+ // Use observed coordinates and Chromium keyboard/edit commands for update-source controls.
  await run("(()=>{const e=[...document.querySelectorAll('.settings-categories button')].find(e=>e.textContent.includes('关于'));if(!e)throw Error('Missing About category');e.id='fixture-about-category'})()");await click('#fixture-about-category');await ready("!!document.querySelector('#update-mirror')")
  const sourceState=async(label,expected)=>{
   const state=await run("(()=>{const e=document.querySelector('.update-sources'),r=e.getBoundingClientRect(),f=document.activeElement;return{selected:document.querySelector('#update-source').value,busy:document.querySelector('#update-source').disabled,presets:[...document.querySelectorAll('.source-preset')].map(e=>e.textContent),help:document.querySelector('.update-sources .source-help').textContent,custom:[...document.querySelectorAll('.custom-mirror-list li>span')].map(e=>e.textContent.trim()),input:document.querySelector('#update-mirror')?.value,error:document.querySelector('.source-error')?.textContent,focus:{tag:f?.tagName,id:f?.id,classes:f?.className,inSources:!!f?.closest('.update-sources'),hasFocus:document.hasFocus()},rect:{x:r.x,y:r.y,width:r.width,height:r.height}}})()")
@@ -181,7 +184,7 @@ app.whenReady().then(async()=>{
  failNextSettingsPatch='updateSource';await chooseSource('mirror');failedState=await sourceState('failed mirror source save rolls back','direct');assert(failedState.error.includes('Controlled updateSource save failure'));assert.equal(failedState.focus.id,'update-source','Failed mirror source save restores select focus');await shot('update-mirror-failed');await clearNotifications()
  await chooseSource('mirror');await sourceState('retried mirror source restores preset controls','mirror');assert(await run("!!document.querySelector('#update-mirror')"));await shot('update-mirror')
  await chooseSource('auto');await sourceState('auto source restored after direct/mirror failure recovery','auto');await shot('update-auto-restored')
- proof.checks.push('Actual-coordinate and native-keyboard update-source controls verify all three presets, custom/legacy append/remove, invalid HTTP and duplicate rejection without writes, and 150ms failed add/remove/direct/mirror saves preserving persisted settings and restoring focus before successful retry')
+ proof.checks.push('Actual-coordinate and Chromium-keyboard/edit-command update-source controls verify all three presets, custom/legacy append/remove, invalid HTTP and duplicate rejection without writes, and 150ms failed add/remove/direct/mirror saves preserving persisted settings and restoring focus before successful retry')
  await clearNotifications()
  // Production server list/details use resolved instance metadata while masking
  // only synthetic .invalid fixture addresses. No socket or game is started.
@@ -208,6 +211,6 @@ app.whenReady().then(async()=>{
  assert.deepEqual(serverRecords,serverRecordsBefore)
  proof.serverDisplay={rows:rowText,originalSavedMinecraftVersion:serverRecords[0].minecraftVersion,originalSavedLoaderVersion:serverRecords[0].loaderVersion,addressesMasked:true,sourceRecordsUnchanged:true}
  proof.checks.push('Actual coordinate server selection renders resolved 26.1.2/Fabric and missing-target unknown in list/details, keeps unbound version, masks synthetic fixture addresses, and leaves saved 0.0.0 records unchanged')
- proof.failures=failures;proof.writes=writes;proof.complete=true;save();console.log(JSON.stringify({ok:true,root,checks:proof.checks,failures},null,2));win.destroy();app.quit()
+ proof.failures=failures;proof.writes=writes;assert.deepEqual(failures,[]);proof.complete=true;save();console.log(JSON.stringify({ok:true,root,checks:proof.checks,failures},null,2));win.destroy();app.quit()
  }catch(error){proof.error=String(error.stack||error);proof.failures=failures;if(win&&!win.isDestroyed()){try{fs.writeFileSync(path.join(root,'failed-state.png'),(await win.webContents.capturePage()).toPNG())}catch(captureError){proof.failureCaptureError=String(captureError)}}save();console.error(error);win?.destroy();app.exit(1)}
 })

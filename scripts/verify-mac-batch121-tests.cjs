@@ -9,7 +9,7 @@ const { assertNativeHost, matrixPlan, validateManifest, rendererHashMap, validat
 const expected = { version: '1.1.21', commit: 'a'.repeat(40), electron: '44.3.0', rendererHashes: { 'index.html': 'b'.repeat(64) } }
 const manifest = () => ({ version: expected.version, arch: 'arm64', commit: expected.commit, runtimeVersion: expected.electron, buildIdentity: { version: expected.version, sourceCommit: expected.commit, runtimeVersion: expected.electron }, packageIntegrity: true, assets: ['dmg', 'zip'].map(ext => ({ name: `KAMUCL-${expected.version}-mac-arm64.${ext}`, bytes: 123, sha256: 'c'.repeat(64) })) })
 const row = matrixPlan()[0]
-const proof = () => ({ complete: true, failures: [], classification: 'Actual renderer and controlled fixtures; offscreen software GPU', runtime: { platform: 'darwin', arch: 'arm64', electron: expected.electron }, configuration: { packageVersion: expected.version, pageZoom: row.zoom, requestedTheme: row.theme, physicalViewport: { width: 960, height: 620 }, cssViewport: { width: 960, height: 620 } }, rendererArtifacts: [{ file: '/disposable/renderer/index.html', sha256: 'b'.repeat(64) }] })
+const proof = () => ({ complete: true, failures: [], classification: 'Actual renderer and controlled fixtures; offscreen platform-default GPU', runtime: { platform: 'darwin', arch: 'arm64', electron: expected.electron }, configuration: { packageVersion: expected.version, pageZoom: row.zoom, requestedTheme: row.theme, physicalViewport: { width: 960, height: 620 }, cssViewport: { width: 960, height: 620 } }, graphics: { policy: { platform: 'darwin', backend: 'platform-default', hardwareAcceleration: 'default', angle: 'default' }, featureStatus: { webgl: 'enabled' }, info: { gpuDevice: [] }, webgl: { created: true, renderer: 'Contract sample' } }, inputReplacements: Array.from({ length: 4 }, () => ({ selection: { focused: true, value: 'old', start: 0, end: 3 }, emptyValue: '', expectedValue: 'new', value: 'new' })), rendererArtifacts: [{ file: '/disposable/renderer/index.html', sha256: 'b'.repeat(64) }] })
 
 test('native batch refuses foreign hosts and preserves the original failed receipt', () => {
   assert.doesNotThrow(() => assertNativeHost({ platform: 'darwin', arch: 'arm64' }))
@@ -55,6 +55,8 @@ test('a failed, foreign-runtime, old-version, wrong-zoom or foreign-renderer pro
     { ...proof(), runtime: { ...proof().runtime, electron: '43.0.0' } },
     { ...proof(), configuration: { ...proof().configuration, packageVersion: '1.1.20' } },
     { ...proof(), configuration: { ...proof().configuration, pageZoom: 1.25 } },
+    { ...proof(), graphics: { ...proof().graphics, webgl: { created: false } } },
+    { ...proof(), inputReplacements: [{ selection: { focused: true, value: 'old', start: 2, end: 3 }, value: 'new' }] },
     { ...proof(), rendererArtifacts: [{ file: '/elsewhere/index.html', sha256: 'd'.repeat(64) }] }
   ]) assert.throws(() => validateProof(changed, row, expected))
   assert.throws(() => rendererHashMap([{ file: 'a/index.html', sha256: 'b'.repeat(64) }, { file: 'b/index.html', sha256: 'b'.repeat(64) }]), /Duplicate/)
@@ -68,6 +70,7 @@ test('community qualification requires evidence for each actual theme and physic
     configuration: { packageVersion: expected.version, pageZoom: 1, themes, physicalViewports: [{ width: 1366, height: 768 }, { width: 960, height: 620 }], fixtureCustomColors: Object.fromEntries(['accent', 'bg', 'card', 'text', 'textDim', 'border', 'sidebarBg', 'sidebarText', 'bannerText'].map(key => [key, '#059669'])) },
     geometry: [...themes.flatMap(theme => [{ width: 1366, height: 768 }, { width: 960, height: 620 }].flatMap(bounds => [
       { label: 'search action center hits', theme, ...bounds, searchHits: [{ inViewport: true, correct: true }, { inViewport: true, correct: true }] },
+      { label: 'scrollable queue controls reachable', theme, ...bounds, controls: Array.from({ length: 4 }, () => ({ inViewport: true, correct: true })) },
       { label: 'sticky queue jump keeps heading visible', theme, ...bounds, headingTop: 160, barBottom: 139 }
     ])), ...themes.map(theme => ({ label: 'actual rendered theme accent', theme, accent: theme === 'transparent' ? '#9475ed' : '#059669' }))]
   }
@@ -76,6 +79,8 @@ test('community qualification requires evidence for each actual theme and physic
   assert.throws(() => validateProof({ ...actual, geometry: actual.geometry.map((item, i) => i ? item : { ...item, searchHits: [{ inViewport: true, correct: false }] }) }, community, expected), /intended controls/)
   assert.throws(() => validateProof({ ...actual, geometry: actual.geometry.map(item => item.label.startsWith('sticky') ? { ...item, headingTop: 120 } : item) }, community, expected), /cover/)
   assert.throws(() => validateProof({ ...actual, geometry: actual.geometry.filter(item => item.label !== 'actual rendered theme accent') }, community, expected), /observed renderer/)
+  assert.throws(() => validateProof({ ...actual, geometry: actual.geometry.filter(item => item.label !== 'scrollable queue controls reachable') }, community, expected), /every scrolled action/)
+  assert.throws(() => validateProof({ ...actual, geometry: actual.geometry.map(item => item.controls ? { ...item, controls: item.controls.map((control, i) => i ? control : { ...control, correct: false }) } : item) }, community, expected), /intended control/)
 })
 
 test('workflow routes only matching batch versions and keeps original real application qualification', () => {

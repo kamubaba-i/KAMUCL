@@ -5,6 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
 const { execFileSync } = require('node:child_process')
+const { validateGraphics, validateSelection, validateQueueControls } = require('./qa-fixture-ui121.cjs')
 
 const THEMES = ['dark', 'black-purple', 'blue-white', 'custom']
 const VIEWPORTS = ['960x620', '1366x768']
@@ -65,6 +66,7 @@ function validateProof(proof, row, expected) {
   assert.equal(proof.configuration.pageZoom, row.zoom)
   assert.match(proof.classification, /fixture/i)
   assert.match(proof.classification, /offscreen/i)
+  validateGraphics(proof.graphics, 'darwin')
   assert.deepEqual(rendererHashMap(proof.rendererArtifacts ?? proof.rendererFiles), expected.rendererHashes, 'UI must load this exact fully built renderer')
   if (row.kind === 'appearance') {
     assert.equal(proof.configuration.requestedTheme, row.theme)
@@ -72,6 +74,8 @@ function validateProof(proof, row, expected) {
     assert.deepEqual(proof.configuration.physicalViewport, { width, height })
     assert(Math.abs(proof.configuration.cssViewport.width - width / row.zoom) < 1)
     assert(Math.abs(proof.configuration.cssViewport.height - height / row.zoom) < 1)
+    assert(proof.inputReplacements?.length >= 4, 'Retain actual full-selection, empty and replacement observations')
+    for (const item of proof.inputReplacements) { validateSelection(item.selection); assert.equal(item.emptyValue, ''); assert.equal(typeof item.expectedValue, 'string'); assert.equal(item.value, item.expectedValue) }
   } else {
     assert.deepEqual(proof.configuration.themes, ['blue-white', 'black-orange', 'black-pink', 'white-pink', 'transparent', 'custom'])
     assert.deepEqual(proof.configuration.physicalViewports, [{ width: 1366, height: 768 }, { width: 960, height: 620 }])
@@ -87,6 +91,11 @@ function validateProof(proof, row, expected) {
     const headings = proof.geometry.filter(item => item.label === 'sticky queue jump keeps heading visible')
     assert.equal(headings.length, 12, 'Every actual queue jump requires a heading observation')
     for (const item of headings) assert(Number.isFinite(item.headingTop) && Number.isFinite(item.barBottom) && item.headingTop >= item.barBottom, 'Sticky entry must not cover the queue heading')
+    const controls = proof.geometry.filter(item => item.label === 'scrollable queue controls reachable')
+    assert.equal(controls.length, 12, 'Every queue layout requires every scrolled action to be observed')
+    const controlLayouts = new Set(controls.map(item => `${item.theme}:${item.width}x${item.height}`))
+    for (const theme of proof.configuration.themes) for (const viewport of VIEWPORTS) assert(controlLayouts.has(theme + ':' + viewport), 'Missing actual queue action layout: ' + theme + ':' + viewport)
+    for (const item of controls) validateQueueControls(item.controls)
   }
 }
 
@@ -99,7 +108,7 @@ async function fileSha(file) {
 async function main() {
   fs.mkdirSync('out', { recursive: true })
   const root = fs.mkdtempSync(path.resolve('out/mac-batch121-ui-'))
-  const receipt = { complete: false, root, startedAt: new Date().toISOString(), classification: 'Supplementary actual native ARM64 Electron with production renderer; isolated IPC and software GPU. Does not replace packaged APP/DMG/native-game/startup qualification.', runtime: { platform: process.platform, arch: process.arch, node: process.versions.node, osRelease: os.release() }, attempts: [] }
+  const receipt = { complete: false, root, startedAt: new Date().toISOString(), classification: 'Supplementary actual native ARM64 Electron with production renderer; isolated IPC, offscreen renderer and platform-default ANGLE/GPU. Does not replace packaged APP/DMG/native-game/startup qualification.', runtime: { platform: process.platform, arch: process.arch, node: process.versions.node, osRelease: os.release() }, attempts: [] }
   const save = () => fs.writeFileSync(path.join(root, 'receipt.json'), JSON.stringify(receipt, null, 2))
   try {
     save()
@@ -119,7 +128,7 @@ async function main() {
     receipt.packageManifest = fingerprint(manifestFile); receipt.packageAssets = manifest.assets
     receipt.runtime.electron = runtimeVersion; receipt.runtime.executable = electron
     receipt.runtime.executableSHA256 = await fileSha(electron)
-    receipt.qaSources = ['.github/workflows/mac-build.yml', 'scripts/verify-mac-batch121.cjs', 'scripts/verify-appearance-121-ui.cjs', 'scripts/verify-community121-ui.cjs'].map(fingerprint)
+    receipt.qaSources = ['.github/workflows/mac-build.yml', 'scripts/verify-mac-batch121.cjs', 'scripts/verify-appearance-121-ui.cjs', 'scripts/verify-community121-ui.cjs', 'scripts/qa-fixture-ui121.cjs'].map(fingerprint)
     save()
     for (const asset of manifest.assets) {
       const file = path.join('release', asset.name)

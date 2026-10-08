@@ -90,6 +90,38 @@ function readMountedInstallInput(){
  // actual reactive props, preserving every original field without setters.
  return JSON.parse(JSON.stringify({file:p.input.file,target:p.target}))
 }
+function readCommunityQueueState(){
+ const observer=window.__macParityObserver
+ return{route:document.querySelector('[data-nav][aria-current=page]')?.dataset.nav,blocked:!!document.querySelector('.download-modal,.community-confirm'),items:[...document.querySelectorAll('.community-queue .queue-item')].map(element=>({id:observer.nodeForElement('CommunityDownloadQueue',element).key,state:element.dataset.state,fileName:element.querySelector('.queue-name')?.textContent.trim(),target:element.querySelector('.queue-info small')?.textContent.trim(),status:element.querySelector('[role=status]')?.textContent.trim()}))}
+}
+function readCommunityConfirmation(){
+ const rows=window.__macParityObserver.instances().filter(row=>row.type?.__name==='CommunityInstallConfirmation')
+ if(!rows.length)return{}
+ if(rows.length!==1)throw Error('Expected one actual CommunityInstallConfirmation, found '+rows.length)
+ return JSON.parse(JSON.stringify(rows[0].props.item))
+}
+function assertCommunityQueuePrepare(state,call,file,target){
+ assert.equal(state.blocked,false,'background preparation cannot retain a blocking install/file dialog')
+ assert.equal(state.items.length,1,'one original queue item must survive browsing')
+ const item=state.items[0];assert.match(item.id,/^[a-f0-9-]{36}$/);assert(['preparing','confirmation'].includes(item.state),item.status||'actual queue must prepare or await explicit confirmation')
+ assert.equal(item.fileName,file.fileName);assert(item.target.includes(target.id)&&item.target.includes(target.folder))
+ assert.equal(call?.channel,'mods:prepare');assert.equal(call.arguments.length,3);assert.deepEqual(call.arguments[0],{id:target.id,folder:target.folder});assert.deepEqual(call.arguments[1],{file});assert.match(call.arguments[2],/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/)
+ assert(Number.isFinite(call.startedAt));assert(!call.error,'real prepare errors cannot be accepted as pending work')
+ return item
+}
+function assertCommunityQueueConfirmation(item,call,file,target,queueId){
+ assert.equal(item.id,queueId);assert.equal(item.state,'confirmation');assert.equal(item.operationId,call.arguments[2]);assert.equal(item.folder,target.folder);assert.deepEqual(item.file,file)
+ for(const field of ['id','mcVersion','loader','folder'])assert.equal(item.target[field],target[field])
+ assert(Number.isFinite(call.completedAt)&&call.completedAt>=call.startedAt);assert(!call.error);assert.deepEqual(item.plan,call.result,'visible confirmation must use the exact completed original plan')
+ assert.equal(item.plan.warnings.length,0);assert.equal(item.plan.target.id,target.id);assert.equal(item.plan.target.folder,target.folder)
+ return item.plan
+}
+function classifyPreparationBrowse(call,actions){
+ assert.equal(call.channel,'mods:prepare');assert(Number.isFinite(call.startedAt)&&Number.isFinite(call.completedAt)&&call.completedAt>=call.startedAt)
+ assert(actions.length&&actions.every(row=>Number.isFinite(row.at)&&row.at>=call.startedAt),'browsing must follow the actual accepted prepare')
+ for(const row of actions){const click=row.originalTrustedClick;assert(click?.isTrusted===true&&click.type==='click'&&Number.isFinite(click.timeOrigin)&&click.timeOrigin>0&&Number.isFinite(click.at),'browsing timing requires the original trusted native click');assert.equal(row.at,click.timeOrigin+click.at);assert(Number.isFinite(row.observedAt)&&row.observedAt>=row.at,'later state observation cannot be presented as the original input time')}
+ return{classification:'Original public-service timing; no handler delay or fabricated latency',duringPrepare:actions.some(row=>row.at<call.completedAt),actions}
+}
 function assertActualCommitTrace(call,plan,prepareOperationId,progress){
  assert.equal(call.channel,'mods:commit');assert(!call.error);assert.equal(call.arguments.length,3)
  const operationId=call.arguments[2];assert.match(operationId,/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);assert.notEqual(operationId,prepareOperationId,'commit has its own original operation')
@@ -549,24 +581,38 @@ module.exports=async function verifyMacParity(h){
    const selectedTarget=await until('real intended download target',()=>evaluate(`(${readDownloadSelectionState.toString()})()`),row=>{try{assertMatchingDownloadResponse(row,matchingCall);assertDownloadTargetSelection(row,expectedTarget);return true}catch{return false}})
    proof.realService.targetSelection=selectedTarget;proof.realService.targetOption=assertDownloadTargetSelection(selectedTarget,expectedTarget);save()
    await screenshot('mac-parity-first-real-file-target-selection')
-   await textCoordinate('.download-modal .modal-actions','确认下载')
-   const observedInput=await until('actual mounted installer input',()=>evaluate(`(${readMountedInstallInput.toString()})()`),r=>!!r.file&&!!r.target)
-   proof.realService.chosen=observedInput;save()
-   assert.equal(observedInput.file.fileId,proof.realService.filteredFile.fileId);assert.equal(observedInput.file.sha1,proof.realService.filteredFile.sha1);assert.equal(observedInput.target.id,expectedTarget.id);assert.equal(observedInput.target.mcVersion,expectedTarget.mcVersion);assert.equal(observedInput.target.loader,expectedTarget.loader);assert.equal(fs.realpathSync.native(observedInput.target.folder),expectedTarget.folder)
-   await until('real prepared install UI',()=>evaluate(`(()=>{const e=document.querySelector('.modinstall-modal'),button=e?.querySelector('.btn-gold');return{ready:!!e&&!e.querySelector('.modal-loading')&&!!button&&!button.disabled,rows:e?[...e.querySelectorAll('.dependency-row')].map(r=>r.innerText):[],error:e?.querySelector('.modal-error')?.textContent}})()`),r=>r.ready,60000)
-   const chosen=await evaluate(`(${readMountedInstallInput.toString()})()`)
-   proof.realService.chosen=chosen;save()
-   assert(chosen.file&&chosen.file.sha1&&chosen.file.projectId==='P7dR8mSH','actual mounted installer receives selected public file with service hash')
+   const modsDirectory=path.join(games,'versions',expectedTarget.id,'mods'),beforeFiles=fs.readdirSync(modsDirectory).sort(),beforeCommitCalls=await main("macParityInstallTrace.calls.filter(c=>c.channel==='mods:commit')");assert.equal(beforeCommitCalls.length,0)
+   const browseActions=[],recordBrowse=async(label)=>{const click=proof.operations.filter(row=>row.complete&&row.trustedTargets).at(-1)?.trustedTargets.records.find(row=>row.type==='click');assert(click?.isTrusted&&Number.isFinite(click.timeOrigin)&&Number.isFinite(click.at),'browsing must retain its original trusted control click');const calls=await main('macParityInstallTrace.calls'),preparing=calls.find(c=>c.channel==='mods:prepare');browseActions.push({label,at:click.timeOrigin+click.at,originalTrustedClick:click,observedAt:Date.now(),prepareStartedAt:preparing?.startedAt,prepareCompletedAt:preparing?.completedAt,state:await evaluate(`(${readCommunityQueueState.toString()})()`),classification:'at binds the original native control click; state is a later read, and native search value is independently checked'});save()}
+   await textCoordinate('.download-modal .modal-actions','加入队列并检测')
+   const accepted=await until('real queue accepted and original prepare started',async()=>{const state=await evaluate(`(${readCommunityQueueState.toString()})()`),calls=await main('macParityInstallTrace.calls');const prepare=calls.find(c=>c.channel==='mods:prepare');if(prepare?.error)throw Error('Original preparation failed: '+prepare.error.message);return{state,prepare}},row=>{try{assertCommunityQueuePrepare(row.state,row.prepare,proof.realService.filteredFile,expectedTarget);return true}catch{return false}})
+   const queueId=assertCommunityQueuePrepare(accepted.state,accepted.prepare,proof.realService.filteredFile,expectedTarget).id;proof.realService.queueAcceptance=accepted;save()
+   // Use the original native editable control and routes immediately, before
+   // waiting for the public plan. Natural service timing is recorded honestly.
+   await type('input[aria-label="搜索收藏模组"]','P7dR8mSH');await recordBrowse('actual native favorite search while queue is active')
+   assert.equal(await evaluate('document.querySelector(\'input[aria-label="搜索收藏模组"]\')?.value'),'P7dR8mSH');assert(await evaluate("!!document.querySelector('[data-favorite-key=\"modrinth:P7dR8mSH\"]')"))
+   await route('home');await recordBrowse('actual home route while queue is active');assert.equal(browseActions.at(-1).state.route,'home');assert.equal(browseActions.at(-1).state.blocked,false)
+   await route('community');await recordBrowse('actual community return preserves queued request')
+   const returned=await main("macParityInstallTrace.calls.find(c=>c.channel==='mods:prepare')");assert.equal(assertCommunityQueuePrepare(browseActions.at(-1).state,returned,proof.realService.filteredFile,expectedTarget).id,queueId)
+   const prepared=await until('real queue awaits explicit install confirmation',async()=>{const state=await evaluate(`(${readCommunityQueueState.toString()})()`),calls=await main('macParityInstallTrace.calls');assert.equal(calls.filter(c=>c.channel==='mods:commit').length,0,'prepare and browsing must never auto-commit');const prepare=calls.find(c=>c.channel==='mods:prepare');if(prepare?.error||state.items.some(item=>item.state==='failed'))throw Error(prepare?.error?.message||state.items[0].status);return{state,prepare}},row=>row.state.items.length===1&&row.state.items[0].id===queueId&&row.state.items[0].state==='confirmation'&&!!row.prepare?.completedAt,60000)
+   assert.deepEqual(fs.readdirSync(modsDirectory).sort(),beforeFiles,'preparation must not write the target MOD directory before explicit confirmation')
+   proof.realService.backgroundBrowse=classifyPreparationBrowse(prepared.prepare,browseActions);proof.realService.queuePrepared=prepared;save();await screenshot('mac-parity-first-real-background-queue')
+   await coordinate('[data-ui="community:queue-shortcut"]');await textCoordinate('.community-queue .queue-actions','确认前置与安装')
+   const confirmation=await until('actual visible completed queue plan',()=>evaluate(`(${readCommunityConfirmation.toString()})()`),r=>!!r.file&&!!r.target&&!!r.plan)
+   const plan=assertCommunityQueueConfirmation(confirmation,prepared.prepare,proof.realService.filteredFile,expectedTarget,queueId),chosen={file:confirmation.file,target:confirmation.target};proof.realService.chosen=chosen;proof.realService.confirmation=confirmation;save()
+   assert(chosen.file&&chosen.file.sha1&&chosen.file.projectId==='P7dR8mSH','actual visible queue confirmation receives selected public file with service hash')
    assert(chosen.file.gameVersions.includes('1.20.1')&&chosen.file.loaders.includes('fabric'),'the actual selected file is compatible')
+   const visiblePlan=await evaluate("(()=>{const e=document.querySelector('.community-confirm'),button=e?.querySelector('.modal-actions .btn-gold'),choice=e?.querySelector('.dependency-choice input');return{present:!!e,enabled:!!button&&!button.disabled,rows:e?.querySelectorAll('.dependency-row').length,error:e?.querySelector('.modal-error')?.textContent,dependenciesChecked:choice?choice.checked:null}})()")
+   assert(visiblePlan.present&&visiblePlan.enabled&&!visiblePlan.error);assert.equal(visiblePlan.rows,plan.files.length);if(plan.files.some(file=>file.dependency))assert.equal(visiblePlan.dependenciesChecked,true,'necessary dependencies require explicit included confirmation');proof.realService.visiblePlan=visiblePlan
    const observedPlans=await main(`macParityInstallTrace.calls.filter(c=>c.channel==='mods:prepare'&&c.completedAt)`);proof.realService.originalHandlerTrace=await main(`macParityInstallTrace.calls`);save()
    const observedPlan=observedPlans.filter(row=>row.arguments[0].id===expectedTarget.id&&row.arguments[0].folder===chosen.target.folder&&row.arguments[1]?.file?.fileId===chosen.file.fileId);assert.equal(observedPlan.length,1,'exactly one completed original prepare for the actual selected target and public file');assert(!observedPlan[0].error)
-   const plan=observedPlan[0].result
+   assert.deepEqual(plan,observedPlan[0].result)
    proof.realService.plan=plan;save()
    assert(!plan.warnings.length,'real dependency plan has no compatibility warnings')
    assert.equal(plan.target.id,'联机验证实例');assert.equal(fs.realpathSync.native(plan.target.folder),fs.realpathSync.native(games));assert.deepEqual(observedPlan[0].arguments[0],{id:plan.target.id,folder:plan.target.folder})
    proof.realService.file=chosen.file;proof.realService.plan=plan;await screenshot('mac-parity-first-real-install-plan');save()
-   await coordinate('.modinstall-modal .modal-actions .btn-gold')
-   await until('real install completes without swallowing failure',()=>evaluate(`({done:!document.querySelector('.modinstall-modal')&&!document.querySelector('.download-modal'),error:document.querySelector('.modinstall-modal .modal-error')?.textContent})`),r=>r.done,90000)
+   assert.equal((await main("macParityInstallTrace.calls.filter(c=>c.channel==='mods:commit')")).length,0,'opening the prepared confirmation must not commit')
+   await coordinate('.community-confirm .modal-actions .btn-gold')
+   await until('real queued install completes without swallowing failure',async()=>{const state=await evaluate(`(${readCommunityQueueState.toString()})()`),calls=await main("macParityInstallTrace.calls.filter(c=>c.channel==='mods:commit')");if(state.items.some(item=>item.state==='failed')||calls.some(call=>call.error))throw Error(state.items.find(item=>item.state==='failed')?.status||calls.find(call=>call.error).error.message);return{state,calls}},r=>!r.state.blocked&&r.state.items.length===1&&r.state.items[0].id===queueId&&r.state.items[0].state==='completed'&&r.calls.length===1&&!!r.calls[0].completedAt,90000)
    const installed=path.join(games,'versions','联机验证实例','mods',chosen.file.fileName),stats=fs.statSync(installed)
    const bytes=fs.readFileSync(installed),actualSHA1=crypto.createHash('sha1').update(bytes).digest('hex')
    assert.equal(actualSHA1,chosen.file.sha1);assert.equal(stats.size,chosen.file.size)
@@ -584,4 +630,4 @@ module.exports=async function verifyMacParity(h){
  finally{try{proof.trustedTargetObserverRestoration=await evaluate(require('./qa-coordinate-geometry114.cjs').trustedTargetRestoreExpression());save();assert.equal(proof.trustedTargetObserverRestoration.complete,true)}catch(error){proof.complete=false;proof.trustedTargetRestorationError={name:error.name,message:error.message};save();if(!proof.error){preservePrimaryFailure(proof,error,save);throw error}}}
 }
 async function coordinatePosition(evaluate,selector){return evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)}),r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;if(!e.contains(document.elementFromPoint(x,y)))throw Error('actual queue hit target obscured');return{x,y}})()`)}
-Object.assign(module.exports,{ROUTES,THEMES,LAYOUTS,ROUTE_COMPONENTS,assertEditableNativeTextInput,nativeInputLayoutReady,nativeNavigationLayoutReady,assertNavigationCoverage,assertQueueLedger,publicAccount,stableHash,installMacParityObserver,readDownloadSelectionState,assertMatchingDownloadResponse,assertDownloadTargetSelection,readMountedInstallInput,assertActualCommitTrace,createQueueClickObserver,createInstallHandlerObserver,restoreInstallHandlerObserver,preserveInstallObservation,collectAndRestoreInstallObserver,collectAndRestoreCommitObservation,preservePrimaryFailure,assertParityTrustedTarget,assertParityPointerDismissal,observePointerDismissInteger,assertPointerDismissNative,createParityCoordinate,parityReloadReady,createParityReload})
+Object.assign(module.exports,{ROUTES,THEMES,LAYOUTS,ROUTE_COMPONENTS,assertEditableNativeTextInput,nativeInputLayoutReady,nativeNavigationLayoutReady,assertNavigationCoverage,assertQueueLedger,publicAccount,stableHash,installMacParityObserver,readDownloadSelectionState,assertMatchingDownloadResponse,assertDownloadTargetSelection,readMountedInstallInput,readCommunityQueueState,readCommunityConfirmation,assertCommunityQueuePrepare,assertCommunityQueueConfirmation,classifyPreparationBrowse,assertActualCommitTrace,createQueueClickObserver,createInstallHandlerObserver,restoreInstallHandlerObserver,preserveInstallObservation,collectAndRestoreInstallObserver,collectAndRestoreCommitObservation,preservePrimaryFailure,assertParityTrustedTarget,assertParityPointerDismissal,observePointerDismissInteger,assertPointerDismissNative,createParityCoordinate,parityReloadReady,createParityReload})
