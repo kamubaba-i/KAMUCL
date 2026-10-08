@@ -29,6 +29,18 @@ export async function resolveResourceDirectory(folder: string, id: string, kind:
   return dir
 }
 
+/**
+ * 操作系统在资源目录里生成的索引/元数据文件（macOS Finder、Windows 资源管理器、
+ * 以及拷贝到非 HFS 卷时产生的 AppleDouble 边车文件）。它们不是资源，展示在
+ * 模组/资源包/光影列表里只会干扰用户，读取时统一跳过，不删除磁盘上的文件。
+ */
+const SYSTEM_METADATA_FILES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini'])
+
+export function isSystemMetadataFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  return SYSTEM_METADATA_FILES.has(lower) || lower.startsWith('._')
+}
+
 /** Non-recursive, bounded asynchronous metadata reads. Rendering is paged separately. */
 export async function listResourceEntries(dir: string): Promise<FsEntry[]> {
   const start = performance.now()
@@ -43,9 +55,7 @@ export async function listResourceEntries(dir: string): Promise<FsEntry[]> {
   await Promise.all(Array.from({ length: Math.min(16, names.length) }, async () => {
     while (index < names.length) {
       const name = names[index++]
-      // Finder metadata is not a playable resource. Hide it without deleting
-      // the user's file (including when this directory lives on another OS).
-      if (name.isSymbolicLink() || name.name === '.DS_Store') continue
+      if (name.isSymbolicLink() || isSystemMetadataFile(name.name)) continue
       try {
         const stat = await fs.promises.lstat(path.join(dir, name.name))
         if (stat.isSymbolicLink()) continue
