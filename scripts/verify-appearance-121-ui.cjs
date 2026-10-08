@@ -3,7 +3,7 @@
 // Theme QA aliases use the persisted product keys: dark -> black-orange, black-purple -> transparent.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto'),sharp=require('sharp')
 const {app,BrowserWindow,ipcMain,session}=require('electron'),{buildSync}=require('esbuild')
-const {configureGraphics,observeGraphics,validateGraphics,selectAllInput,backspaceInput,validateSelection}=require('./qa-fixture-ui121.cjs')
+const {configureGraphics,observeGraphics,validateGraphics,selectAllInput,backspaceInput,validateSelection,selectSourceInput,validateSourceSelection}=require('./qa-fixture-ui121.cjs')
 const args=process.argv.slice(2),arg=(name,fallback)=>{const i=args.indexOf('--'+name);return i<0?fallback:args[i+1]}
 const requestedTheme=arg('theme','blue-white'),themeKeys={dark:'black-orange','black-orange':'black-orange','blue-white':'blue-white','black-purple':'transparent',transparent:'transparent',custom:'custom'}
 assert(Object.hasOwn(themeKeys,requestedTheme),'Unknown QA theme: '+requestedTheme)
@@ -34,13 +34,17 @@ const rendererSourceDir=path.resolve('out/renderer'),rendererDir=path.join(root,
 fs.cpSync(rendererSourceDir,rendererDir,{recursive:true})
 const rendererArtifacts=[path.join(rendererDir,'index.html'),...fs.readdirSync(path.join(rendererDir,'assets')).filter(name=>/\.(js|css)$/.test(name)).map(name=>path.join(rendererDir,'assets',name))].map(file=>({file,sha256:digest(file)}))
 const sourceFiles=['scripts/verify-appearance-121-ui.cjs','scripts/qa-fixture-ui121.cjs','src/renderer/src/composables/useDesignSession.ts','src/renderer/src/designNavigationScroll.ts','src/renderer/src/composables/useNavigationBubble.ts','src/renderer/src/components/UpdateSources.vue','src/renderer/src/controlFocus.ts','src/renderer/src/views/ServersView.vue','src/shared/serverVersionDisplay.ts'].map(file=>({file:path.resolve(file),sha256:digest(file)}))
-let draft=null,failNextDraftApply=false,failNextSettingsPatch=null;const writes=[],failures=[],proof={root,classification:'Actual renderer/native codec with disposable profile and controlled service fixtures; offscreen Chromium with '+graphics.backend+' GPU, not a visible desktop/native production-session test; Mac Cmd+A uses the Chromium editing command, not an OS physical shortcut',runtime:{platform:process.platform,arch:process.arch,electron:process.versions.electron,chromium:process.versions.chrome},configuration:{requestedTheme,theme,physicalViewport:{width,height},pageZoom,packageVersion,compositor:graphics,controlledFailureDelayMs:150,fixtureCustomColors:theme==='custom'?settings.custom.colors:undefined},executionDriver:{file:__filename,sha256:digest(__filename)},rendererSourceDir,rendererArtifacts,sourceFiles,windowFocusEvents:[],rendererFocusEvents:[],interactions:[],inputReplacements:[],updateSources:[],checks:[],geometry:[],images:[]}
+let draft=null,failNextDraftApply=false,failNextSettingsPatch=null;const writes=[],settingsPatchInvocations=[],failures=[],proof={root,classification:'Actual renderer/native codec with disposable profile and controlled service fixtures; offscreen Chromium with '+graphics.backend+' GPU, not a visible desktop/native production-session test; Mac Cmd+A uses the Chromium editing command, not an OS physical shortcut',runtime:{platform:process.platform,arch:process.arch,electron:process.versions.electron,chromium:process.versions.chrome},configuration:{requestedTheme,theme,physicalViewport:{width,height},pageZoom,packageVersion,compositor:graphics,controlledFailureDelayMs:150,fixtureCustomColors:theme==='custom'?settings.custom.colors:undefined},executionDriver:{file:__filename,sha256:digest(__filename)},rendererSourceDir,rendererArtifacts,sourceFiles,windowFocusEvents:[],rendererFocusEvents:[],interactions:[],inputReplacements:[],updateSources:[],sourceSelections:[],settingsPatchInvocations,checks:[],geometry:[],images:[]}
 const save=()=>fs.writeFileSync(path.join(root,'proof.json'),JSON.stringify(proof,null,2))
 ipcMain.on('appearance-fixture:focus',(_event,payload)=>{proof.rendererFocusEvents.push(payload)})
 ipcMain.handle('appearance-fixture:invoke',(_event,channel,...args)=>{
  switch(channel){
  case 'settings:get':return settings
- case 'settings:set':writes.push(args[0]);if(failNextSettingsPatch&&Object.hasOwn(args[0],failNextSettingsPatch)){const key=failNextSettingsPatch;failNextSettingsPatch=null;return new Promise((_resolve,reject)=>setTimeout(()=>reject(Error('Controlled '+key+' save failure after 150ms')),150))};return settings={...settings,...args[0]}
+ case 'settings:set':{
+  const invocation={index:settingsPatchInvocations.length,patch:structuredClone(args[0]),startedAt:Date.now()};settingsPatchInvocations.push(invocation);writes.push(args[0])
+  if(failNextSettingsPatch&&Object.hasOwn(args[0],failNextSettingsPatch)){const key=failNextSettingsPatch;failNextSettingsPatch=null;return new Promise((_resolve,reject)=>setTimeout(()=>{invocation.completedAt=Date.now();invocation.outcome='rejected';reject(Error('Controlled '+key+' save failure after 150ms'))},150))}
+  settings={...settings,...args[0]};invocation.completedAt=Date.now();invocation.outcome='resolved';return settings
+ }
  case 'accounts:list':return [account]
  case 'accounts:selected':return account
  case 'versions:installed':return []
@@ -164,9 +168,15 @@ app.whenReady().then(async()=>{
   proof.updateSources.push({label,...state,persisted:{source:settings.updateSource,legacy:settings.updateMirrorUrl,custom:structuredClone(settings.updateMirrorUrls)}});save();assert.equal(state.selected,expected);assert.equal(settings.updateSource,expected);assert.equal(state.busy,false)
   assert.deepEqual(state.presets,expected==='direct'?[]:['ghproxy.net','gh-proxy.com','ghfast.top']);assert(state.help.includes(expected==='direct'?'只通过 GitHub':expected==='mirror'?'不使用 GitHub 直连':'自动切换来源'));return state
  }
+ await run("(()=>{window.__qaSourceEvents121=[];window.__qaSourceObserver121=event=>{if(event.target?.id==='update-source')window.__qaSourceEvents121.push({type:event.type,isTrusted:event.isTrusted,targetId:event.target.id,value:event.target.value,at:Date.now()})};for(const type of ['input','change'])document.addEventListener(type,window.__qaSourceObserver121,true)})()")
  const chooseSource=async value=>{
-  const previous=await run("document.querySelector('#update-source').value");assert.notEqual(previous,value);await click('#update-source');await key('Escape');assert(await run("document.activeElement===document.querySelector('#update-source')"),'Native select click retains focus')
-  await key(value==='auto'?'Home':value==='mirror'?'End':previous==='auto'?'Down':'Up');await ready("!document.querySelector('#update-source').disabled")
+  const previous=await run("document.querySelector('#update-source').value"),baseline=settingsPatchInvocations.length,expectedFailure=failNextSettingsPatch==='updateSource';assert.notEqual(previous,value)
+  await run("window.__qaSourceEvents121=[]");await click('#update-source');if(process.platform!=='darwin')await key('Escape');assert(await run("document.activeElement===document.querySelector('#update-source')"),'Native select click retains focus')
+  const row={platform:process.platform,previous,target:value,expectedFailure,classification:'Original Chromium/Electron key dispatch completion plus real trusted select change and actual controlled settings IPC invocation; no offscreen OS receiver acknowledgement',dispatches:await selectSourceInput(win.webContents,previous,value),events:[],invocations:[]};proof.sourceSelections.push(row)
+  for(let i=0;i<50;i++){row.events=await run("window.__qaSourceEvents121");row.invocations=structuredClone(settingsPatchInvocations.slice(baseline).filter(call=>Object.hasOwn(call.patch,'updateSource')));save();if(row.invocations.length&&row.invocations.every(call=>Number.isFinite(call.completedAt)))break;await wait(100)}
+  assert.equal(row.invocations.length,1,'Native source selection must invoke exactly one actual updateSource settings:set: '+JSON.stringify(row));assert.equal(row.invocations[0].patch.updateSource,value,'Native source selection must request its target option')
+  await ready("!document.querySelector('#update-source').disabled")
+  row.final={...await run("(()=>{const e=document.querySelector('#update-source'),f=document.activeElement;return{selected:e.value,busy:e.disabled,error:document.querySelector('.source-error')?.textContent,focus:{tag:f?.tagName,id:f?.id,classes:f?.className,inSources:!!f?.closest('.update-sources'),hasFocus:document.hasFocus()}}})()"),persisted:settings.updateSource};save();validateSourceSelection(row)
  }
  const addMirror=async url=>{await type('#update-mirror',url);await click('.update-sources .source-row button');await ready("!document.querySelector('#update-source').disabled")}
  await sourceState('initial auto source and preserved legacy mirror','auto');assert.equal(settings.updateMirrorUrl,'https://legacy.example.test/');await shot('update-auto')
