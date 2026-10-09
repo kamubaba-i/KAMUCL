@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { createStartupSplash } from './startupSplash'
 import { prepareStartupFrames } from './startupRendering'
 import { authorizeManagedImage } from './core/appearanceAssets'
+import { openExternalLink } from './core/externalLinks'
 import {
   initializeLauncherLog,
   launcherLogError,
@@ -187,8 +188,12 @@ function createWindow(startup?: Awaited<ReturnType<typeof createStartupSplash>>)
     launcherLogWarn('window', '渲染进程无响应')
   })
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    void openExternalLink(url).catch(error => launcherLogWarn('window', '外部链接打开失败', error))
     return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
+    void openExternalLink(url).catch(error => launcherLogWarn('window', '外部导航被拒绝', error))
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {

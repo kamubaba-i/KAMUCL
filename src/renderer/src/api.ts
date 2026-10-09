@@ -377,6 +377,7 @@ export const findModCrossDuplicates = (versionIds: string[], folder?: string) =>
 // ---------------- 文件/目录 ----------------
 /** 用系统资源管理器打开游戏目录下的子目录（'' = 游戏根目录） */
 export const openDir = (rel = '', folder?: string) => invoke<void>(IPC.appOpenDir, rel, folder)
+export const openExternal = (url: string) => invoke<void>(IPC.appOpenExternal, url)
 /** 列出游戏目录下某个子目录的文件 */
 export const listFs = (rel: string, folder?: string) => invoke<FsEntry[]>(IPC.fsList, rel, folder)
 export const fsPath = (rel: string, folder?: string) => invoke<string>(IPC.fsPath, rel, folder)
