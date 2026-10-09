@@ -6,7 +6,8 @@ import type { FrpConfig, FrpEvent, FrpState, StartResult } from './frp'
 export interface TunnelRecord {
   id: string; config: FrpConfig; name: string; nodeName: string; localIp: string; desired: boolean
 }
-export interface ManagedTunnel extends FrpState {
+export interface ManagedTunnel extends Omit<FrpState, 'config'> {
+  config: Pick<FrpConfig, 'tunnelId' | 'localPort'>
   id: string; name: string; nodeName: string; localIp: string; desired: boolean; busy: boolean; deleting?: boolean
 }
 export interface FrpRegistry { version: 2; accessKey: string; tunnels: TunnelRecord[]; deletedIds?: string[] }
@@ -56,7 +57,7 @@ export class FrpManager {
     const live = this.workers.get(r.id)?.status()
     const s = live?.config ? live : this.lastStates.get(r.id)
     const error = this.failures.get(r.id)
-    return { status: error ? 'error' : s?.status || 'idle', config: r.config, remoteAddress: s?.remoteAddress || null,
+    return { status: error ? 'error' : s?.status || 'idle', config: { tunnelId: r.config.tunnelId, localPort: r.config.localPort }, remoteAddress: s?.remoteAddress || null,
       pid: s?.pid || null, startedAt: s?.startedAt || null, message: error || s?.message || '尚未启动', logs: s?.logs || [],
       id: r.id, name: r.name, nodeName: r.nodeName, localIp: r.localIp, desired: r.desired, busy: this.pending.has(r.id), deleting: this.deletions.has(r.id) }
   }

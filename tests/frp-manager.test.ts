@@ -73,6 +73,14 @@ test('FRP 相同隧道 ID 在不同密钥下分别管理，重复请求合并',a
   assert.equal(f.workers.length,2);await f.manager.stop(other);assert.equal(f.workers[0].status().status,'running')
 })
 
+test('FRP public tunnel snapshots do not expose access keys', t => {
+ const snapshot=fixture(t).manager.list()
+ assert.equal(snapshot.accessKey,'fixture-key')
+ assert(snapshot.tunnels.every(tunnel => !('accessKey' in tunnel.config)))
+ assert(snapshot.tunnels.every(tunnel => tunnel.config.tunnelId && Number.isInteger(tunnel.config.localPort)))
+ assert(!JSON.stringify(snapshot.tunnels).includes('fixture-key'))
+})
+
 test('FRP 删除远端成功后只移除目标，保存墓碑防止旧列表复活，重启不恢复',async t=>{
  const f=fixture(t);await Promise.all(f.ids.map(id=>f.manager.start(id)));const calls:string[]=[]
  Object.assign(f.deps,{deleteRemote:async(key:string,id:string)=>{calls.push(key+':'+id);assert.equal(f.workers[0].state.pid,null);return {remoteDisconnectPending:false}}})
