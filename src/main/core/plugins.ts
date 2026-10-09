@@ -52,6 +52,16 @@ function writeEnabled(enabled: string[]): void {
   fs.writeFileSync(statePath(), JSON.stringify({ enabled }, null, 2), 'utf-8')
 }
 
+function requireRegularFile(file: string, label: string): void {
+  const stat = fs.lstatSync(file)
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label}不能是符号链接`)
+}
+
+function requireRegularDirectory(dir: string, label: string): void {
+  const stat = fs.lstatSync(dir)
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`${label}不能是符号链接`)
+}
+
 function readMeta(dir: string, id: string): PluginMeta {
   try {
     const j = JSON.parse(fs.readFileSync(path.join(dir, 'plugin.json'), 'utf-8'))
@@ -91,13 +101,16 @@ export function listPlugins(): PluginInfo[] {
 /** 安装插件：支持单个 .js 文件或含 plugin.json + main.js 的文件夹。返回插件 id。 */
 export function installPlugin(sourcePath: string): string {
   const src = path.resolve(String(sourcePath ?? ''))
-  const st = fs.statSync(src)
+  const st = fs.lstatSync(src)
+  if (st.isSymbolicLink()) throw new Error('插件源不能是符号链接')
   let id: string
   let files: Array<{ from: string; to: string }>
   if (st.isDirectory()) {
     const manifest = path.join(src, 'plugin.json')
     const main = path.join(src, 'main.js')
     if (!fs.existsSync(main)) throw new Error('插件文件夹缺少 main.js')
+    requireRegularFile(main, '插件 main.js')
+    if (fs.existsSync(manifest)) requireRegularFile(manifest, '插件清单')
     let name = path.basename(src)
     if (fs.existsSync(manifest)) {
       try {
@@ -116,9 +129,34 @@ export function installPlugin(sourcePath: string): string {
     files = [{ from: src, to: 'main.js' }]
   }
   const dest = path.join(pluginsRoot(), id)
-  if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true })
-  fs.mkdirSync(dest, { recursive: true })
-  for (const f of files) fs.copyFileSync(f.from, path.join(dest, f.to))
+  const root = pluginsRoot()
+  fs.mkdirSync(root, { recursive: true })
+  const stage = fs.mkdtempSync(path.join(root, `.${id}-`))
+  try {
+    for (const f of files) {
+      requireRegularFile(f.from, '插件文件')
+      fs.copyFileSync(f.from, path.join(stage, f.to), fs.constants.COPYFILE_EXCL)
+    }
+    if (fs.existsSync(dest)) requireRegularDirectory(dest, '已安装插件目录')
+    const old = fs.existsSync(dest) ? `${dest}.old-${process.pid}-${Date.now()}` : ''
+    if (old) fs.renameSync(dest, old)
+    try {
+      fs.renameSync(stage, dest)
+    } catch (error) {
+      if (old) fs.renameSync(old, dest)
+      throw error
+    }
+    if (old) {
+      try {
+        fs.rmSync(old, { recursive: true, force: true })
+      } catch {
+        // 新插件已经发布，旧目录残留不应让安装报告失败。
+      }
+    }
+  } catch (error) {
+    if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true, force: true })
+    throw error
+  }
   return id
 }
 
@@ -146,7 +184,8 @@ export function readPluginCode(id: string): string {
   if (!ID_RE.test(id)) throw new Error('插件 id 无效')
   if (!readEnabled().includes(id)) throw new Error('插件未启用')
   const file = path.join(pluginsRoot(), id, 'main.js')
-  const stat = fs.statSync(file)
+  requireRegularFile(file, '插件 main.js')
+  const stat = fs.lstatSync(file)
   if (stat.size > 1024 * 1024) throw new Error('插件文件过大（上限 1 MB）')
   return fs.readFileSync(file, 'utf-8')
 }
@@ -165,7 +204,8 @@ export function registerPluginProtocol(): void {
       if (!ID_RE.test(id) || url.pathname !== '/main.js') return new Response('not found', { status: 404 })
       if (!readEnabled().includes(id)) return new Response('plugin disabled', { status: 403 })
       const file = path.join(pluginsRoot(), id, 'main.js')
-      const stat = fs.statSync(file)
+      requireRegularFile(file, '插件 main.js')
+      const stat = fs.lstatSync(file)
       if (stat.size > 1024 * 1024) return new Response('plugin too large', { status: 413 })
       // 直接读文件返回：net.fetch(file://) 会命中缓存，插件热更新将拿到旧代码
       return new Response(fs.readFileSync(file), {
