@@ -165,6 +165,13 @@ export async function verifyFile(file: string, expected: Integrity, signal?: Abo
   signal?.throwIfAborted()
   return null
 }
+async function rejectSymlink(file: string, label: string): Promise<void> {
+  try {
+    if ((await fs.promises.lstat(file)).isSymbolicLink()) throw new Error(`${label}不能是符号链接`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+}
 async function reuse(dest: string, expected: Integrity, roots: string[], signal?: AbortSignal, files: string[] = []): Promise<boolean> {
   if (!expected.sha1 && !expected.sha512 && !expected.sha256) return false
   const copy = async (file: string) => {
@@ -172,7 +179,11 @@ async function reuse(dest: string, expected: Integrity, roots: string[], signal?
     if (normalize(file) === normalize(dest)) return false
     // A bound folder may be offline/read-protected. It is only an optional cache;
     // target write failures still propagate instead of hiding a disk problem.
-    try { if (await verifyFile(file, expected, signal)) return false } catch { signal?.throwIfAborted(); return false }
+    try {
+      if ((await fs.promises.lstat(file)).isSymbolicLink()) return false
+      if (await verifyFile(file, expected, signal)) return false
+    } catch { signal?.throwIfAborted(); return false }
+    await rejectSymlink(dest + '.part', '下载临时文件')
     try { await fs.promises.copyFile(file, dest + '.part') } catch (error) {
       signal?.throwIfAborted()
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
@@ -477,6 +488,8 @@ export async function downloadFile(url: string, dest: string, progress?: Progres
     const budget = new CooldownBudget(signal)
     await fs.promises.mkdir(path.dirname(dest), { recursive: true })
     try {
+      await rejectSymlink(dest, '下载目标')
+      await rejectSymlink(temporary, '下载临时文件')
       if (!await verifyFile(dest, expected, signal)) { const size = (await fs.promises.stat(dest)).size; progress?.(size, size); return }
       if (!await verifyFile(temporary, expected, signal) && (sha1 || integrity.sha512 || integrity.sha256)) { signal?.throwIfAborted(); await fs.promises.rename(temporary, dest); return }
       if (await reuse(dest, expected, integrity.reuseDirs ?? [], signal, integrity.reuseFiles)) { const size = (await fs.promises.stat(dest)).size; progress?.(size, size); return }
