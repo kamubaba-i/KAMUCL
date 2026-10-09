@@ -35,6 +35,7 @@ import {
   JAVA_PROBE_VM_ARGS,
   parseJavaProbeOutput,
   javaHomeExecutable,
+  gameJavaExecutable,
   parseRegistryJavaHomes,
   shouldPruneJavaDirectory
 } from './javaScanUtils'

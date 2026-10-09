@@ -25,6 +25,7 @@ import { getSettings, saveSettings } from './settings'
 import { getValidAccount, selectedAccount } from './accounts'
 import { validateJavaRuntime } from './javaRuntimeHealth'
 import { ensureJava, resolveJavaRequirement, javaCompatibilityError, scanJavaForLaunch, resolveJavaExecutable, selectHealthyJava, probeJavaAsync } from './java'
+import { gameJavaExecutable } from './javaScanUtils'
 import { gameJavaArchitecture } from './javaArchitecture'
 import { requireDesktopGamePlatform } from '../../shared/platform'
 import { assertNativeElf, resolveNativeIntegrity } from './platformNatives'
@@ -585,6 +586,7 @@ async function launchOwned(
 
       const selectedJavaPath = javaPath
       javaPath = await resolveJavaExecutable(javaPath, deadline.signal)
+      javaPath = gameJavaExecutable(javaPath)
       if (selectedJavaPath !== javaPath) log(`[KAMUCL] Java 转发入口已解析到真实运行时: ${javaPath}`)
       const javaInfo = await probeJavaAsync(javaPath, deadline.signal)
       const incompatibility = javaInfo ? javaCompatibilityError(javaInfo, requirement, requiredArch, automatic) : 'Java 无法正常运行'
