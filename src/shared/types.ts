@@ -86,6 +86,7 @@ export interface RemoteVersion {
   type: 'release' | 'snapshot' | 'old_beta' | 'old_alpha'
   url: string
   releaseTime: string
+  sha1?: string
 }
 
 // ---------------- 游戏文件夹 ----------------

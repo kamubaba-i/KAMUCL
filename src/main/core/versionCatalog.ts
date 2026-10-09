@@ -30,7 +30,7 @@ export function parseVersionCatalog(data: unknown): RemoteVersion[] {
     if (!v || typeof v.id !== 'string' || !v.id || !['release','snapshot','old_beta','old_alpha'].includes(v.type)
       || !Number.isFinite(Date.parse(v.releaseTime))) return []
     try { if (!['https:', 'http:'].includes(new URL(v.url).protocol)) return [] } catch { return [] }
-    return [{ id: v.id, type: v.type, url: v.url, releaseTime: v.releaseTime }]
+    return [{ id: v.id, type: v.type, url: v.url, releaseTime: v.releaseTime, ...(typeof v.sha1 === 'string' ? { sha1: v.sha1.toLowerCase() } : {}) }]
   })
   if (!versions.length) throw new Error('版本清单为空或损坏')
   return versions

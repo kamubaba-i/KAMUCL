@@ -106,7 +106,7 @@ for (const outcome of ['success', 'failure', 'cancel'] as const) test(`真实四
   await new Promise<void>(r=>server.listen(0,'127.0.0.1',r)); base=`http://127.0.0.1:${(server.address() as any).port}`
   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),7000)
   try {
-    runtime=await versionInstallHarness(root,async()=>Response.json({versions:[{id:'1.20.1',type:'release',url:base+'/version',releaseTime:'2023-01-01'}]}),url=>url.includes('resources.download.minecraft.net')?base+'/asset':url.replace('https://pack-test.invalid',base))
+    runtime=await versionInstallHarness(root,async()=>Response.json({versions:[{id:'1.20.1',type:'release',url:base+'/version',releaseTime:'2023-01-01',sha1:sha1(Buffer.from(JSON.stringify(version())))}]}),url=>url.includes('resources.download.minecraft.net')?base+'/asset':url.replace('https://pack-test.invalid',base))
     Object.assign(runtime.getSettings(),{gameDir:game,activeFolder:game,folders:[{path:game,name:'fixture',isDefault:true}],defaultIsolation:true,mirror:'official'})
     const pack=new AdmZip();pack.addFile('modrinth.index.json',Buffer.from(JSON.stringify({formatVersion:1,game:'minecraft',name:id,versionId:'1',dependencies:{minecraft:'1.20.1'},files:[{path:'mods/a.jar',hashes:{sha1:sha1(bodies.mod)},downloads:['https://pack-test.invalid/mod'],fileSize:bodies.mod.length}]})))
     pack.addFile('overrides/options.txt',Buffer.from('fixture'))
