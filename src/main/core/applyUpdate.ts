@@ -13,6 +13,7 @@ import { updateDownloadCandidates, type UpdateSourceSettings } from './updateSou
 export { updateDownloadCandidates } from './updateSources'
 import { finishTask, registerTask } from './tasks'
 import { currentVersion, fetchSha256Sums, sha256File } from './selfUpdate'
+import { pathIdentity } from './folderPaths'
 import { logScope } from './launcherLog'
 import { isolatedUpdateTest, trustedUpdateRelease, updateAssetName } from './updateTrust'
 import { macAppTarget, macUpdateSupported, macUpdateDir, readMacUpdate, clearMacUpdate, stageMacUpdate, blockedMacVersion, applyMacUpdateOnStartup, acknowledgeMacUpdate, stageMacBackup } from './macUpdate'
@@ -397,11 +398,34 @@ export async function checkLocalUpdateFile(filePath: string): Promise<LocalUpdat
   return { filePath, fileName, fileSize: st.size, version, versionOk, sha256: sha, detail }
 }
 
+/** 文件选择框确认过的本地包路径；渲染层回传的 filePath 只用于界面展示。 */
+let selectedLocalPackage: string | null = null
+
+/** 选择框专用：校验并记住本次可安装的本地包。 */
+export async function selectLocalUpdateFile(filePath: string): Promise<LocalUpdateCheck> {
+  const check = await checkLocalUpdateFile(filePath)
+  selectedLocalPackage = check.filePath
+  return check
+}
+
+/** 回传路径必须与选择框确认的一致（Windows 下不区分大小写）。 */
+function matchesSelectedPackage(claimed: string, selected: string): boolean {
+  try {
+    return pathIdentity(claimed) === pathIdentity(selected)
+  } catch {
+    return false
+  }
+}
+
 /** Copy the explicitly chosen local package before staging; never move the user's file. */
 export async function applyLocalUpdateFile(check: LocalUpdateCheck): Promise<void> {
+  const selected = selectedLocalPackage
+  const claimed = check && typeof check.filePath === 'string' ? check.filePath : ''
+  if (!selected || !claimed || !matchesSelectedPackage(claimed, selected)) throw new Error('本地更新包未经文件选择框确认，请重新选择')
   const exe = currentPortableExe()
   if (!exe) throw new Error('当前运行形态不支持自更新（仅便携版）')
-  const verified = await checkLocalUpdateFile(check.filePath)
+  selectedLocalPackage = null
+  const verified = await checkLocalUpdateFile(selected)
   if (!verified.version || verified.sha256 === 'mismatch') throw new Error('本地更新包校验未通过')
   const dest = path.join(updateDirOf(exe), randomUUID(), verified.fileName)
   fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(verified.filePath, dest)

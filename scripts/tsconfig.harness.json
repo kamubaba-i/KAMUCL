@@ -5,6 +5,7 @@
     "moduleResolution": "Bundler",
     "target": "ES2022",
     "paths": {
+      "@shared/*": ["src/shared/*"],
       "electron": ["scripts/electron-shim.ts"]
     }
   },
