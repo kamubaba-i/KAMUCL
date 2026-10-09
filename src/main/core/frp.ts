@@ -21,9 +21,12 @@ export const DEFAULT_LOCAL_HOST = '127.0.0.1'
 /** 官方 frpc 直链（amd64 Windows；用户可在管理面板自行替换为对应架构）。 */
 export const FRPC_OFFICIAL_URL_WIN_AMD64 =
   'https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_windows_amd64.exe'
+/** frpc 0.51.0-sakura-14 Windows x64 官方二进制的固定校验值。 */
+const FRPC_WIN_AMD64_SHA256 = 'b705262edad9f0de04b38f342e811e9d97d0beada75edab3f790e105dcfb5234'
+const FRPC_WIN_AMD64_SIZE = 14_133_248
 
-export function frpcAsset(platform = process.platform, arch = process.arch): { url: string; sha256?: string } {
-  if (platform === 'win32') return { url: FRPC_OFFICIAL_URL_WIN_AMD64 }
+export function frpcAsset(platform = process.platform, arch = process.arch): { url: string; sha256?: string; size?: number } {
+  if (platform === 'win32') return { url: FRPC_OFFICIAL_URL_WIN_AMD64, sha256: FRPC_WIN_AMD64_SHA256, size: FRPC_WIN_AMD64_SIZE }
   if (platform === 'linux' && (arch === 'x64' || arch === 'arm64')) return {
     url: `https://nya.globalslb.net/natfrp/client/frpc/0.51.0-sakura-14/frpc_linux_${arch === 'x64' ? 'amd64' : 'arm64'}`,
     sha256: arch === 'x64' ? '8d3fcf1e24537719c36c6270c122fcdc09954d22ae9dd74105241675e6dce4d0' : '7f1bf530eb6b46b47e9b1e4bb022d689b5f26f5132581c29c5f43d922a42e595'
